@@ -30,6 +30,7 @@ AIGC 检测模型训练脚本
     --data-dir      训练数据目录 (默认 data/training)
     --eval-split    验证集比例 (默认 0.15)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -40,6 +41,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # 数据加载
 # ---------------------------------------------------------------------------
+
 
 def load_samples(data_dir: str) -> tuple[list[str], list[int]]:
     """从 data_dir 加载训练数据，返回 (texts, labels)。"""
@@ -96,14 +98,21 @@ def load_samples(data_dir: str) -> tuple[list[str], list[int]]:
 # 训练
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="训练 AIGC 段落级二分类模型")
-    parser.add_argument("--model-name", default="hfl/chinese-roberta-wwm-ext", help="HuggingFace 底座模型")
+    parser.add_argument(
+        "--model-name",
+        default="hfl/chinese-roberta-wwm-ext",
+        help="HuggingFace 底座模型",
+    )
     parser.add_argument("--epochs", type=int, default=5, help="训练轮数")
     parser.add_argument("--batch-size", type=int, default=16, help="批大小")
     parser.add_argument("--lr", type=float, default=2e-5, help="学习率")
     parser.add_argument("--max-length", type=int, default=512, help="最大 token 长度")
-    parser.add_argument("--output-dir", default="data/models/aigc-detector", help="模型输出目录")
+    parser.add_argument(
+        "--output-dir", default="data/models/aigc-detector", help="模型输出目录"
+    )
     parser.add_argument("--data-dir", default="data/training", help="训练数据目录")
     parser.add_argument("--eval-split", type=float, default=0.15, help="验证集比例")
     args = parser.parse_args()
@@ -139,16 +148,22 @@ def main() -> None:
     # 加载数据
     texts, labels = load_samples(args.data_dir)
     if len(texts) < 100:
-        print(f"训练数据不足 ({len(texts)} 条)，建议至少准备 1000 条 human + 1000 条 AI 段落。")
+        print(
+            f"训练数据不足 ({len(texts)} 条)，建议至少准备 1000 条 human + 1000 条 AI 段落。"
+        )
         if len(texts) < 20:
             print("数据量太少，无法训练。")
             sys.exit(1)
 
     # 构建 Dataset
     dataset = Dataset.from_dict({"text": texts, "label": labels})
-    dataset = dataset.cast_column("label", datasets.ClassLabel(names=["human", "ai_generated"]))
+    dataset = dataset.cast_column(
+        "label", datasets.ClassLabel(names=["human", "ai_generated"])
+    )
     dataset = dataset.shuffle(seed=42)
-    split = dataset.train_test_split(test_size=args.eval_split, seed=42, stratify_by_column="label")
+    split = dataset.train_test_split(
+        test_size=args.eval_split, seed=42, stratify_by_column="label"
+    )
     train_dataset = split["train"]
     eval_dataset = split["test"]
     print(f"训练集: {len(train_dataset)}, 验证集: {len(eval_dataset)}")
@@ -175,7 +190,9 @@ def main() -> None:
             padding="max_length",
         )
 
-    train_dataset = train_dataset.map(tokenize_fn, batched=True, remove_columns=["text"])
+    train_dataset = train_dataset.map(
+        tokenize_fn, batched=True, remove_columns=["text"]
+    )
     eval_dataset = eval_dataset.map(tokenize_fn, batched=True, remove_columns=["text"])
     train_dataset.set_format("torch")
     eval_dataset.set_format("torch")
@@ -254,10 +271,14 @@ def main() -> None:
         "max_length": args.max_length,
         "train_samples": len(split["train"]),
         "eval_samples": len(split["test"]),
-        "eval_metrics": {k: v for k, v in metrics.items() if isinstance(v, (int, float))},
+        "eval_metrics": {
+            k: v for k, v in metrics.items() if isinstance(v, (int, float))
+        },
     }
     meta_path = final_dir / "training_meta.json"
-    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    meta_path.write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     print(f"训练元信息已保存到: {meta_path}")
 
 

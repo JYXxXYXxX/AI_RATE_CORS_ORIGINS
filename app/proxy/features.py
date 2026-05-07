@@ -37,7 +37,9 @@ def build_feature_dict_from_runtime(
 ) -> dict[str, float]:
     provider_map = _provider_feature_map(provider_payloads)
     top_scores = [float(item.get("combined_score", 0.0)) for item in top_risk_sections]
-    chapter_scores = [float(item.get("combined_score", 0.0)) for item in chapter_heatmap]
+    chapter_scores = [
+        float(item.get("combined_score", 0.0)) for item in chapter_heatmap
+    ]
     base = {
         "local_ai_like_score": float(ai_like_score),
         "local_duplication_score": float(duplication_score),
@@ -53,7 +55,9 @@ def build_feature_dict_from_runtime(
     return {name: round(float(base.get(name, 0.0)), 6) for name in FEATURE_NAMES}
 
 
-def build_feature_dict_from_snapshot(report_json: dict[str, Any], provider_payloads: list[dict[str, Any]]) -> dict[str, float]:
+def build_feature_dict_from_snapshot(
+    report_json: dict[str, Any], provider_payloads: list[dict[str, Any]]
+) -> dict[str, float]:
     local_metrics = report_json.get("local_metrics", {})
     summary = report_json.get("summary", {})
     return build_feature_dict_from_runtime(
@@ -86,8 +90,12 @@ def _provider_feature_map(provider_payloads: list[dict[str, Any]]) -> dict[str, 
 
     for provider, payload_row in latest_by_provider.items():
         payload = payload_row.get("payload") or {}
-        dup_rate = _value_to_rate(payload.get("duplication_rate"), payload.get("duplication_percent"))
-        aigc_rate = _value_to_rate(payload.get("aigc_rate"), payload.get("aigc_percent"))
+        dup_rate = _value_to_rate(
+            payload.get("duplication_rate"), payload.get("duplication_percent")
+        )
+        aigc_rate = _value_to_rate(
+            payload.get("aigc_rate"), payload.get("aigc_percent")
+        )
         if provider == "wanfang":
             features["wanfang_dup"] = dup_rate
             features["wanfang_aigc"] = aigc_rate

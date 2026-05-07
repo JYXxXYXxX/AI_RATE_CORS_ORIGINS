@@ -1,4 +1,5 @@
 """审计日志中间件，记录关键写入操作。"""
+
 from __future__ import annotations
 
 import logging

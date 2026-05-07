@@ -14,7 +14,9 @@ DISCLAIMER = (
     "低分不能证明未使用 AI，高分也不能单独作为学术不端结论，建议结合人工复核和写作过程材料判断。"
 )
 
-RETAINED_CONTENT_POLICY = "检测完成后不持久化保存论文原文，仅保留匿名特征、分数、模型版本与报告摘要。"
+RETAINED_CONTENT_POLICY = (
+    "检测完成后不持久化保存论文原文，仅保留匿名特征、分数、模型版本与报告摘要。"
+)
 
 
 class PaperAnalyzer:
@@ -40,19 +42,27 @@ class PaperAnalyzer:
             text = text[: self.settings.max_text_chars]
 
         segments = segment_document(text, self.settings)
-        segment_reports = [self._score_segment(segment, segments) for segment in segments]
+        segment_reports = [
+            self._score_segment(segment, segments) for segment in segments
+        ]
         total_chars = sum(report.char_count for report in segment_reports)
 
         if total_chars == 0:
             ai_like_score = 0.0
         else:
-            weighted = sum(report.ai_like_score * report.char_count for report in segment_reports)
+            weighted = sum(
+                report.ai_like_score * report.char_count for report in segment_reports
+            )
             ai_like_score = weighted / total_chars
 
         dispersion = self._segment_dispersion(segment_reports)
-        predicted_range = self.calibrator.predict_range(ai_like_score, dispersion, subject)
+        predicted_range = self.calibrator.predict_range(
+            ai_like_score, dispersion, subject
+        )
         confidence = self.calibrator.confidence(len(segment_reports), dispersion)
-        high_risk_segments = [report.index for report in segment_reports if report.ai_like_score >= 0.70]
+        high_risk_segments = [
+            report.index for report in segment_reports if report.ai_like_score >= 0.70
+        ]
 
         return AnalyzeResponse(
             report_id=str(uuid4()),
@@ -75,12 +85,19 @@ class PaperAnalyzer:
             retained_content_policy=RETAINED_CONTENT_POLICY,
         )
 
-    def _score_segment(self, segment: TextSegment, all_segments: list[TextSegment]) -> SegmentReport:
+    def _score_segment(
+        self, segment: TextSegment, all_segments: list[TextSegment]
+    ) -> SegmentReport:
         raw_texts = [item.text for item in all_segments]
-        results = [detector.score(segment.text, raw_texts) for detector in self.detectors]
+        results = [
+            detector.score(segment.text, raw_texts) for detector in self.detectors
+        ]
         active_results = [result for result in results if result.weight > 0]
         total_weight = sum(result.weight for result in active_results) or 1.0
-        raw_score = sum(result.score * result.weight for result in active_results) / total_weight
+        raw_score = (
+            sum(result.score * result.weight for result in active_results)
+            / total_weight
+        )
         calibrated = calibrate_score(raw_score)
 
         reasons: list[str] = []
@@ -119,6 +136,7 @@ class PaperAnalyzer:
 
 def calibrate_score(raw_score: float) -> float:
     import math
+
     centered = (raw_score - 0.47) * 4.0
     probability = 1 / (1 + math.exp(-centered))
     return max(0.04, min(0.94, probability))

@@ -25,7 +25,7 @@ def get_connection_pool() -> ConnectionPool:
             break
         except Exception as exc:
             last_exc = exc
-            time.sleep(min(2 ** attempt, 30))
+            time.sleep(min(2**attempt, 30))
     else:
         raise RuntimeError(f"Database connection failed after 10 attempts: {last_exc}")
     return pool

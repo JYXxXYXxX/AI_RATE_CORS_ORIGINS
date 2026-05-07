@@ -10,7 +10,9 @@ class TrainingDatasetBuilder:
     def __init__(self, repository: UnifiedRepository) -> None:
         self.repository = repository
 
-    def build_rows(self, model_type: str, scene_key: str | None = None) -> list[dict[str, Any]]:
+    def build_rows(
+        self, model_type: str, scene_key: str | None = None
+    ) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
         for record in self.repository.list_feedback_records():
             if scene_key and record.get("scene_key") != scene_key:
@@ -28,7 +30,9 @@ class TrainingDatasetBuilder:
             if snapshot is None:
                 continue
             provider_payloads = self.repository.list_provider_payloads(str(run_id))
-            features = build_feature_dict_from_snapshot(snapshot.get("report_json") or {}, provider_payloads)
+            features = build_feature_dict_from_snapshot(
+                snapshot.get("report_json") or {}, provider_payloads
+            )
             rows.append(
                 {
                     "document_id": str(record["document_id"]),

@@ -1,8 +1,13 @@
 """提供商配置与结果相关路由。"""
-from fastapi import APIRouter, Depends, HTTPException, Request
+
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.db import get_repository
-from app.integrations import ConfiguredProviderFetchService, ManualProviderImportService, ProviderRegistryService
+from app.integrations import (
+    ConfiguredProviderFetchService,
+    ManualProviderImportService,
+    ProviderRegistryService,
+)
 from app.routes.admin import require_admin
 from app.routes.deps import (
     AuthContext,
@@ -28,7 +33,9 @@ router = APIRouter(prefix="/v1", tags=["providers"])
 
 
 @router.get("/providers", response_model=ProviderCatalogResponse)
-def get_provider_catalog(registry: ProviderRegistryService = Depends(get_provider_registry)) -> ProviderCatalogResponse:
+def get_provider_catalog(
+    registry: ProviderRegistryService = Depends(get_provider_registry),
+) -> ProviderCatalogResponse:
     items: list[ProviderConfigSummary] = []
     for detail in registry.list_public_configs():
         items.append(
@@ -43,13 +50,22 @@ def get_provider_catalog(registry: ProviderRegistryService = Depends(get_provide
 
 
 @router.get("/providers/config", response_model=ProviderConfigListResponse)
-def get_provider_configs(registry: ProviderRegistryService = Depends(get_provider_registry)) -> ProviderConfigListResponse:
+def get_provider_configs(
+    registry: ProviderRegistryService = Depends(get_provider_registry),
+) -> ProviderConfigListResponse:
     return ProviderConfigListResponse(
-        providers=[ProviderConfigDetail.model_validate(item) for item in registry.list_public_configs()]
+        providers=[
+            ProviderConfigDetail.model_validate(item)
+            for item in registry.list_public_configs()
+        ]
     )
 
 
-@router.put("/providers/config/{provider}", response_model=ProviderConfigDetail, dependencies=[Depends(require_admin)])
+@router.put(
+    "/providers/config/{provider}",
+    response_model=ProviderConfigDetail,
+    dependencies=[Depends(require_admin)],
+)
 def update_provider_config(
     provider: str,
     payload: ProviderConfigUpdateRequest,
@@ -62,7 +78,11 @@ def update_provider_config(
     return ProviderConfigDetail.model_validate(config)
 
 
-@router.delete("/providers/config/{provider}", response_model=ProviderConfigDetail, dependencies=[Depends(require_admin)])
+@router.delete(
+    "/providers/config/{provider}",
+    response_model=ProviderConfigDetail,
+    dependencies=[Depends(require_admin)],
+)
 def reset_provider_config(
     provider: str,
     registry: ProviderRegistryService = Depends(get_provider_registry),
@@ -80,7 +100,9 @@ def import_manual_provider_result(
     importer: ManualProviderImportService = Depends(get_manual_import_service),
     auth: AuthContext = Depends(get_auth_context),
 ) -> ProviderResultImportResponse:
-    ensure_document_access(document_id=payload.document_id, auth=auth, repository=get_repository())
+    ensure_document_access(
+        document_id=payload.document_id, auth=auth, repository=get_repository()
+    )
     try:
         result = importer.import_result(
             document_id=payload.document_id,
@@ -112,10 +134,14 @@ def import_manual_provider_result(
 @router.post("/provider-results/fetch", response_model=ProviderFetchResponse)
 def fetch_provider_result(
     payload: ProviderFetchRequest,
-    fetcher: ConfiguredProviderFetchService = Depends(get_configured_provider_fetch_service),
+    fetcher: ConfiguredProviderFetchService = Depends(
+        get_configured_provider_fetch_service
+    ),
     auth: AuthContext = Depends(get_auth_context),
 ) -> ProviderFetchResponse:
-    ensure_document_access(document_id=payload.document_id, auth=auth, repository=get_repository())
+    ensure_document_access(
+        document_id=payload.document_id, auth=auth, repository=get_repository()
+    )
     try:
         result = fetcher.fetch_and_import(
             document_id=payload.document_id,

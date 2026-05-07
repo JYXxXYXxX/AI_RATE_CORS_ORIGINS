@@ -3,11 +3,12 @@
 简单实现：通过环境变量 AI_RATE_ADMIN_TOKEN 配置管理员令牌。
 生产环境应替换为 RBAC 权限系统。
 """
+
 from __future__ import annotations
 
 import os
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import HTTPException, Request
 
 
 def get_admin_token() -> str | None:
@@ -22,7 +23,9 @@ def require_admin(request: Request) -> None:
     """
     expected = get_admin_token()
     if not expected:
-        raise HTTPException(status_code=403, detail="admin authentication not configured")
+        raise HTTPException(
+            status_code=403, detail="admin authentication not configured"
+        )
 
     authorization = request.headers.get("Authorization", "")
     admin_header = request.headers.get("X-Admin-Token", "")

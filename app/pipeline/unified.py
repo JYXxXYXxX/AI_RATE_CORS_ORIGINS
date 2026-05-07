@@ -13,7 +13,7 @@ from fastapi import UploadFile
 
 from app.config import Settings
 from app.db.repositories import UnifiedRepository
-from app.plagiarism.scoring import build_embedding_vector, build_embedding_vectors_batch, score_duplication
+from app.plagiarism.scoring import build_embedding_vectors_batch, score_duplication
 from app.proxy.features import build_feature_dict_from_runtime
 from app.proxy.runtime import ProxyRuntime
 from app.reporting.composer import compose_report
@@ -44,7 +44,12 @@ class UploadResult:
 
 
 class UnifiedPipeline:
-    def __init__(self, settings: Settings, repository: UnifiedRepository, calibrator: CnkiCalibrator) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        repository: UnifiedRepository,
+        calibrator: CnkiCalibrator,
+    ) -> None:
         self.settings = settings
         self.repository = repository
         self.calibrator = calibrator
@@ -78,8 +83,12 @@ class UnifiedPipeline:
         doc_hash = hashlib.sha256(cleaned_text.encode("utf-8")).hexdigest()
         existing = self.repository.get_document_by_hash(doc_hash)
 
-        original_path = self._write_binary(self.settings.upload_storage_dir, filename, content)
-        cleaned_path = self._write_text(self.settings.cleaned_storage_dir, filename, cleaned_text)
+        original_path = self._write_binary(
+            self.settings.upload_storage_dir, filename, content
+        )
+        cleaned_path = self._write_text(
+            self.settings.cleaned_storage_dir, filename, cleaned_text
+        )
 
         document = self.repository.upsert_document(
             title=title or Path(filename).stem,
@@ -148,7 +157,9 @@ class UnifiedPipeline:
                         for item, emb in zip(raw_sections, embeddings)
                     ],
                 )
-            self.repository.mark_document_status(document_id, "processing", section_count=len(sections))
+            self.repository.mark_document_status(
+                document_id, "processing", section_count=len(sections)
+            )
 
             analyzer = PaperAnalyzer(self.settings, calibrator=self.calibrator)
             ai_report = analyzer.analyze(
@@ -176,12 +187,18 @@ class UnifiedPipeline:
                     cross_doc_matches.extend(hits)
                 except Exception as exc:  # noqa: BLE001 - 跨文档检索失败不应中断分析
                     logging.getLogger(__name__).warning(
-                        "跨文档语义检索失败 (section_index=%s): %s", section.get("section_index"), exc
+                        "跨文档语义检索失败 (section_index=%s): %s",
+                        section.get("section_index"),
+                        exc,
                     )
 
-            duplication = score_duplication(sections, cross_doc_matches=cross_doc_matches or None)
+            duplication = score_duplication(
+                sections, cross_doc_matches=cross_doc_matches or None
+            )
 
-            section_id_by_index = {section["section_index"]: section["id"] for section in sections}
+            section_id_by_index = {
+                section["section_index"]: section["id"] for section in sections
+            }
             ai_scores = [
                 {
                     "document_section_id": section_id_by_index[item.index],
@@ -215,7 +232,9 @@ class UnifiedPipeline:
                 for item in duplication.section_scores
                 if item.section_index in section_id_by_index
             ]
-            self.repository.insert_section_scores(run["id"], ai_scores + duplication_scores)
+            self.repository.insert_section_scores(
+                run["id"], ai_scores + duplication_scores
+            )
 
             similarity_matches = [
                 {
@@ -233,7 +252,9 @@ class UnifiedPipeline:
             ]
             self.repository.insert_similarity_matches(run["id"], similarity_matches)
 
-            proxy_prediction = self._build_proxy_prediction(document, run, ai_report, duplication)
+            proxy_prediction = self._build_proxy_prediction(
+                document, run, ai_report, duplication
+            )
             self.repository.insert_provider_payload(
                 run["id"],
                 "local",
@@ -260,12 +281,18 @@ class UnifiedPipeline:
                 duplication=duplication,
                 proxy_prediction=prediction_row,
             )
-            self.repository.save_report_snapshot(document_id=document_id, run_id=run["id"], report_json=report_json)
-            self.repository.mark_document_status(document_id, "completed", section_count=len(sections))
+            self.repository.save_report_snapshot(
+                document_id=document_id, run_id=run["id"], report_json=report_json
+            )
+            self.repository.mark_document_status(
+                document_id, "completed", section_count=len(sections)
+            )
             return {"run": final_run, "report": report_json}
         except Exception as exc:
             self.repository.mark_run_failed(run["id"], str(exc))
-            self.repository.mark_document_status(document_id, "failed", section_count=document.get("section_count", 0))
+            self.repository.mark_document_status(
+                document_id, "failed", section_count=document.get("section_count", 0)
+            )
             raise
 
     def add_cnki_feedback(
@@ -288,11 +315,16 @@ class UnifiedPipeline:
         if evidence_file is not None:
             content = evidence_file.file.read()
             if content:
-                evidence_path = self._write_binary(self.settings.feedback_storage_dir, evidence_file.filename or "feedback.bin", content)
+                evidence_path = self._write_binary(
+                    self.settings.feedback_storage_dir,
+                    evidence_file.filename or "feedback.bin",
+                    content,
+                )
 
         # 如果有片段，尝试与原文段落匹配
         if details and details.get("fragments"):
             from app.services.cnki_ocr import match_fragments_to_sections
+
             sections = self.repository.list_document_sections(document_id)
             matched = match_fragments_to_sections(details["fragments"], sections)
             details["fragments"] = matched
@@ -312,7 +344,9 @@ class UnifiedPipeline:
         calibration_updated = False
         if predicted_run_id and cnki_aigc_percent is not None:
             snapshot = self.repository.get_report_snapshot(predicted_run_id)
-            local_metrics = (snapshot or {}).get("report_json", {}).get("local_metrics", {})
+            local_metrics = (
+                (snapshot or {}).get("report_json", {}).get("local_metrics", {})
+            )
             ai_like_score = local_metrics.get("ai_like_score")
             if ai_like_score is not None:
                 self.calibrator.append_sample(
@@ -359,7 +393,9 @@ class UnifiedPipeline:
         report = dict(snapshot["report_json"])
         provider_payloads = self.repository.list_provider_payloads(run_id)
         provider_results = _serialize_provider_results(provider_payloads)
-        feedback_rows = self.repository.list_cnki_feedback_for_document(str(report["document_id"]), limit=12)
+        feedback_rows = self.repository.list_cnki_feedback_for_document(
+            str(report["document_id"]), limit=12
+        )
         feedback_timeline = _serialize_feedback_timeline(feedback_rows)
         report["provider_results"] = provider_results
         report["feedback_timeline"] = feedback_timeline
@@ -415,7 +451,9 @@ class UnifiedPipeline:
         scene_key = _scene_key(document.get("subject"), document.get("degree_level"))
         preview_risks = _build_preview_risk_sections(ai_report, duplication)
         preview_chapters = _build_preview_chapters(preview_risks)
-        comfort_score = _estimate_comfort_score(dup_high, aigc_high, len(ai_report.high_risk_segments))
+        comfort_score = _estimate_comfort_score(
+            dup_high, aigc_high, len(ai_report.high_risk_segments)
+        )
         provider_payloads = self.repository.list_provider_payloads(str(run["id"]))
         features = build_feature_dict_from_runtime(
             ai_like_score=ai_report.ai_like_score,
@@ -428,8 +466,12 @@ class UnifiedPipeline:
             provider_payloads=provider_payloads,
         )
 
-        trained_dup = self.proxy_runtime.predict(model_type="cnki_dup_proxy", scene_key=scene_key, features=features)
-        trained_aigc = self.proxy_runtime.predict(model_type="cnki_aigc_proxy", scene_key=scene_key, features=features)
+        trained_dup = self.proxy_runtime.predict(
+            model_type="cnki_dup_proxy", scene_key=scene_key, features=features
+        )
+        trained_aigc = self.proxy_runtime.predict(
+            model_type="cnki_aigc_proxy", scene_key=scene_key, features=features
+        )
         final_dup = trained_dup or {
             "model_version": self.settings.unified_proxy_model_version,
             "center": round(dup_center, 4),
@@ -466,7 +508,9 @@ class UnifiedPipeline:
             "confidence": confidence,
             "summary": {
                 "scene_key": scene_key,
-                "risk_level": risk_level(max(ai_report.ai_like_score, duplication.overall_score)),
+                "risk_level": risk_level(
+                    max(ai_report.ai_like_score, duplication.overall_score)
+                ),
                 "ai_like_score": round(ai_report.ai_like_score, 4),
                 "duplication_score": round(duplication.overall_score, 4),
                 "high_risk_segments": len(ai_report.high_risk_segments),
@@ -533,18 +577,28 @@ def _progress_from_status(status: str) -> int:
     return mapping.get(status, 0)
 
 
-def _estimate_comfort_score(dup_high: float, aigc_high: float, high_risk_segments: int) -> int:
+def _estimate_comfort_score(
+    dup_high: float, aigc_high: float, high_risk_segments: int
+) -> int:
     score = 100 - dup_high * 42 - aigc_high * 38 - high_risk_segments * 3.5
     return max(18, min(96, round(score)))
 
 
-def _build_preview_risk_sections(ai_report: Any, duplication: Any) -> list[dict[str, Any]]:
-    duplication_map = {item.section_index: item.normalized_score for item in duplication.section_scores}
+def _build_preview_risk_sections(
+    ai_report: Any, duplication: Any
+) -> list[dict[str, Any]]:
+    duplication_map = {
+        item.section_index: item.normalized_score for item in duplication.section_scores
+    }
     risks: list[dict[str, Any]] = []
     for item in ai_report.segment_reports:
         risks.append(
             {
-                "combined_score": round(item.ai_like_score * 0.58 + duplication_map.get(item.index, 0.0) * 0.42, 4),
+                "combined_score": round(
+                    item.ai_like_score * 0.58
+                    + duplication_map.get(item.index, 0.0) * 0.42,
+                    4,
+                ),
                 "section_title": item.section_title,
             }
         )
@@ -556,17 +610,29 @@ def _build_preview_chapters(risks: list[dict[str, Any]]) -> list[dict[str, Any]]
     for item in risks:
         title = item.get("section_title") or "正文主体"
         grouped.setdefault(title, []).append(float(item["combined_score"]))
-    return [{"combined_score": sum(scores) / len(scores)} for scores in grouped.values()]
+    return [
+        {"combined_score": sum(scores) / len(scores)} for scores in grouped.values()
+    ]
 
 
-def _serialize_provider_results(payload_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    normalized_rows = [row for row in payload_rows if row.get("payload_type") == "normalized"]
+def _serialize_provider_results(
+    payload_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    normalized_rows = [
+        row for row in payload_rows if row.get("payload_type") == "normalized"
+    ]
     normalized_rows.sort(key=lambda item: item.get("created_at") or "", reverse=True)
     results: list[dict[str, Any]] = []
     for row in normalized_rows:
         payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
-        raw_payload = payload.get("raw_payload") if isinstance(payload.get("raw_payload"), dict) else {}
-        source_type = "manual_import" if raw_payload.get("imported_from_ui") else "auto_fetch"
+        raw_payload = (
+            payload.get("raw_payload")
+            if isinstance(payload.get("raw_payload"), dict)
+            else {}
+        )
+        source_type = (
+            "manual_import" if raw_payload.get("imported_from_ui") else "auto_fetch"
+        )
         provider = str(row.get("provider") or payload.get("provider") or "manual")
         results.append(
             {
@@ -585,12 +651,16 @@ def _serialize_provider_results(payload_rows: list[dict[str, Any]]) -> list[dict
     return results[:12]
 
 
-def _serialize_feedback_timeline(feedback_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _serialize_feedback_timeline(
+    feedback_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     timeline: list[dict[str, Any]] = []
     for row in feedback_rows:
         item: dict[str, Any] = {
             "feedback_id": str(row["id"]),
-            "predicted_run_id": str(row["predicted_run_id"]) if row.get("predicted_run_id") else None,
+            "predicted_run_id": str(row["predicted_run_id"])
+            if row.get("predicted_run_id")
+            else None,
             "cnki_dup_percent": row.get("cnki_dup_percent"),
             "cnki_aigc_percent": row.get("cnki_aigc_percent"),
             "report_date": row.get("report_date"),
@@ -605,7 +675,9 @@ def _serialize_feedback_timeline(feedback_rows: list[dict[str, Any]]) -> list[di
     return timeline[:12]
 
 
-def _build_cnki_report_details(feedback_rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+def _build_cnki_report_details(
+    feedback_rows: list[dict[str, Any]],
+) -> dict[str, Any] | None:
     """从最新 feedback 的 details 构建知网报告详情。"""
     if not feedback_rows:
         return None
@@ -663,12 +735,16 @@ def _build_workflow_overview(
         "closure_label": closure_label,
         "provider_result_count": provider_count,
         "feedback_count": feedback_count,
-        "latest_feedback_at": feedback_timeline[0]["created_at"] if feedback_timeline else None,
+        "latest_feedback_at": feedback_timeline[0]["created_at"]
+        if feedback_timeline
+        else None,
         "next_step": next_step,
     }
 
 
-def _build_calibration_insight(summary: dict[str, Any], feedback_timeline: list[dict[str, Any]]) -> dict[str, Any] | None:
+def _build_calibration_insight(
+    summary: dict[str, Any], feedback_timeline: list[dict[str, Any]]
+) -> dict[str, Any] | None:
     if not feedback_timeline:
         return {
             "latest_cnki_dup_percent": None,
@@ -683,7 +759,11 @@ def _build_calibration_insight(summary: dict[str, Any], feedback_timeline: list[
     predicted_aigc = summary.get("predicted_cnki_aigc", {}).get("center_percent")
     latest_dup = latest.get("cnki_dup_percent")
     latest_aigc = latest.get("cnki_aigc_percent")
-    dup_delta = round(float(predicted_dup) - float(latest_dup), 2) if predicted_dup is not None and latest_dup is not None else None
+    dup_delta = (
+        round(float(predicted_dup) - float(latest_dup), 2)
+        if predicted_dup is not None and latest_dup is not None
+        else None
+    )
     aigc_delta = (
         round(float(predicted_aigc) - float(latest_aigc), 2)
         if predicted_aigc is not None and latest_aigc is not None

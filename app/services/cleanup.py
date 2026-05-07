@@ -6,6 +6,7 @@
 - 过期的 provider_payloads
 - 过期的反馈证据文件
 """
+
 from __future__ import annotations
 
 import logging
@@ -73,7 +74,10 @@ def run_data_cleanup(settings: Settings) -> dict[str, int]:
         if upload_dir.exists():
             deleted_files = 0
             for f in upload_dir.iterdir():
-                if f.is_file() and datetime.fromtimestamp(f.stat().st_mtime, tz=UTC) < cutoff:
+                if (
+                    f.is_file()
+                    and datetime.fromtimestamp(f.stat().st_mtime, tz=UTC) < cutoff
+                ):
                     try:
                         f.unlink()
                         deleted_files += 1
@@ -86,7 +90,10 @@ def run_data_cleanup(settings: Settings) -> dict[str, int]:
         if feedback_dir.exists():
             deleted_files = 0
             for f in feedback_dir.iterdir():
-                if f.is_file() and datetime.fromtimestamp(f.stat().st_mtime, tz=UTC) < cutoff:
+                if (
+                    f.is_file()
+                    and datetime.fromtimestamp(f.stat().st_mtime, tz=UTC) < cutoff
+                ):
                     try:
                         f.unlink()
                         deleted_files += 1

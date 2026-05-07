@@ -15,6 +15,7 @@
     data/training/human.jsonl
     data/training/ai.jsonl
 """
+
 from __future__ import annotations
 
 import json
@@ -50,13 +51,17 @@ def extract_segments(file_path: Path, settings: Settings) -> list[str]:
     return [seg.text for seg in segments if len(seg.text) >= 40]
 
 
-def process_directory(input_dir: Path, output_file: Path, label: str, settings: Settings) -> int:
+def process_directory(
+    input_dir: Path, output_file: Path, label: str, settings: Settings
+) -> int:
     """处理一个目录下所有文件，输出到 jsonl。"""
     if not input_dir.exists():
         print(f"目录不存在: {input_dir}，跳过")
         return 0
 
-    files = [f for f in input_dir.iterdir() if f.is_file() and f.suffix.lower() in SUPPORTED]
+    files = [
+        f for f in input_dir.iterdir() if f.is_file() and f.suffix.lower() in SUPPORTED
+    ]
     if not files:
         print(f"目录 {input_dir} 下没有找到支持的文件")
         return 0
@@ -69,7 +74,12 @@ def process_directory(input_dir: Path, output_file: Path, label: str, settings: 
             print(f"  处理 {file_path.name} ...", end=" ")
             segments = extract_segments(file_path, settings)
             for seg_text in segments:
-                fh.write(json.dumps({"text": seg_text, "source": file_path.name}, ensure_ascii=False) + "\n")
+                fh.write(
+                    json.dumps(
+                        {"text": seg_text, "source": file_path.name}, ensure_ascii=False
+                    )
+                    + "\n"
+                )
                 total += 1
             print(f"{len(segments)} 段")
 
@@ -101,7 +111,9 @@ def main() -> None:
         return
 
     print("[1/2] 处理人类论文...")
-    human_count = process_directory(raw_dir / "human", out_dir / "human.jsonl", "human", settings)
+    human_count = process_directory(
+        raw_dir / "human", out_dir / "human.jsonl", "human", settings
+    )
     print()
 
     print("[2/2] 处理 AI 生成论文...")

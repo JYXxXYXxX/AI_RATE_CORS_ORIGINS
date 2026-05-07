@@ -60,7 +60,9 @@ class AccountService:
         self.repository.revoke_all_user_sessions(user_id)
         return self.repository.delete_user(user_id)
 
-    def register(self, *, email: str, password: str, display_name: str | None) -> SessionIdentity:
+    def register(
+        self, *, email: str, password: str, display_name: str | None
+    ) -> SessionIdentity:
         normalized_email = _normalize_email(email)
         if self.repository.get_user_by_email(normalized_email) is not None:
             raise ValueError("email already registered")
@@ -76,7 +78,8 @@ class AccountService:
         user = self.repository.create_user(
             email=normalized_email,
             password_hash=hash_password(password),
-            display_name=(display_name or "").strip() or _default_display_name(normalized_email),
+            display_name=(display_name or "").strip()
+            or _default_display_name(normalized_email),
         )
         if self.settings.starter_credits > 0:
             self.repository.change_user_credits(
@@ -142,10 +145,15 @@ class AccountService:
                 for item in self.repository.list_user_analysis_tasks(user_id, limit=8)
             ],
             "packages": MOCK_PACKAGES,
-            "payment_channels": [_serialize_payment_channel(item) for item in self.payment_registry.list_channels()],
+            "payment_channels": [
+                _serialize_payment_channel(item)
+                for item in self.payment_registry.list_channels()
+            ],
         }
 
-    def create_checkout_order(self, *, user_id: str, package_code: str, provider: str) -> dict[str, Any]:
+    def create_checkout_order(
+        self, *, user_id: str, package_code: str, provider: str
+    ) -> dict[str, Any]:
         package = _get_package(package_code)
         if self.repository.get_user(user_id) is None:
             raise ValueError("user not found")
@@ -187,7 +195,9 @@ class AccountService:
             raise ValueError("order not found")
         return self._build_order_detail(order)
 
-    def pay_order(self, *, user_id: str, order_no: str, provider: str) -> dict[str, Any]:
+    def pay_order(
+        self, *, user_id: str, order_no: str, provider: str
+    ) -> dict[str, Any]:
         order = self.repository.get_user_billing_order(user_id, order_no)
         if order is None:
             raise ValueError("order not found")
@@ -218,7 +228,9 @@ class AccountService:
             "packages": MOCK_PACKAGES,
         }
 
-    def handle_mock_payment_callback(self, *, order_no: str, paid_amount_cents: int, signature: str) -> dict[str, Any]:
+    def handle_mock_payment_callback(
+        self, *, order_no: str, paid_amount_cents: int, signature: str
+    ) -> dict[str, Any]:
         order = self.repository.get_billing_order(order_no)
         if order is None:
             raise ValueError("order not found")
@@ -254,13 +266,19 @@ class AccountService:
         }
 
     def mock_checkout(self, *, user_id: str, package_code: str) -> dict[str, Any]:
-        created = self.create_checkout_order(user_id=user_id, package_code=package_code, provider="mock_qr")
-        return self.pay_order(user_id=user_id, order_no=created["order"]["order_no"], provider="mock_qr")
+        created = self.create_checkout_order(
+            user_id=user_id, package_code=package_code, provider="mock_qr"
+        )
+        return self.pay_order(
+            user_id=user_id, order_no=created["order"]["order_no"], provider="mock_qr"
+        )
 
     def _create_session(self, user: dict[str, Any]) -> SessionIdentity:
         token = token_urlsafe(32)
         token_hash = hash_token(token)
-        expires_at = datetime.now(UTC) + timedelta(hours=self.settings.auth_session_ttl_hours)
+        expires_at = datetime.now(UTC) + timedelta(
+            hours=self.settings.auth_session_ttl_hours
+        )
         self.repository.create_user_session(
             user_id=str(user["id"]),
             token_hash=token_hash,
@@ -284,8 +302,11 @@ class AccountService:
             "provider_ready": intent.provider_ready,
         }
 
-    def build_mock_callback_signature(self, *, order_no: str, paid_amount_cents: int) -> str:
+    def build_mock_callback_signature(
+        self, *, order_no: str, paid_amount_cents: int
+    ) -> str:
         import hmac as _hmac
+
         message = f"{order_no}:{paid_amount_cents}".encode("utf-8")
         key = self.settings.payment_callback_secret.encode("utf-8")
         return _hmac.new(key, message, "sha256").hexdigest()
@@ -343,7 +364,9 @@ def _default_display_name(email: str) -> str:
 
 
 def _get_package(package_code: str) -> dict[str, Any]:
-    package = next((item for item in MOCK_PACKAGES if item["code"] == package_code), None)
+    package = next(
+        (item for item in MOCK_PACKAGES if item["code"] == package_code), None
+    )
     if package is None:
         raise ValueError("package not found")
     return package

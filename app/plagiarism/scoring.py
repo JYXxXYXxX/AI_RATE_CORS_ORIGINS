@@ -58,6 +58,7 @@ def _is_garbled(text: str, threshold: float = 0.60) -> bool:
     ratio = legible / len(text)
     return ratio < threshold
 
+
 # ---------------------------------------------------------------------------
 # 语义 embedding 模型（进程单例）
 # ---------------------------------------------------------------------------
@@ -75,6 +76,7 @@ def _get_embedding_model() -> Any:
     try:
         from sentence_transformers import SentenceTransformer
         import os
+
         model_name = os.environ.get(
             "AI_RATE_EMBEDDING_MODEL",
             "shibing624/text2vec-base-chinese",
@@ -155,7 +157,9 @@ def build_embedding_vectors_batch(texts: list[str], dims: int = 768) -> list[str
 
     results = [empty_vector] * len(texts)
     if non_empty_texts:
-        vectors = model.encode(non_empty_texts, normalize_embeddings=True, batch_size=32)
+        vectors = model.encode(
+            non_empty_texts, normalize_embeddings=True, batch_size=32
+        )
         for idx, vec in zip(non_empty_indices, vectors):
             if len(vec) > dims:
                 vec = vec[:dims]
@@ -229,7 +233,12 @@ def score_duplication(
     normalized_texts = [_normalize(section["content"]) for section in sections]
     shingle_sets = [_char_shingles(text) for text in normalized_texts]
     sentences_by_section = [_extract_sentences(text) for text in normalized_texts]
-    duplicate_counter = Counter(sentence for sentences in sentences_by_section for sentence in sentences if len(sentence) >= 18)
+    duplicate_counter = Counter(
+        sentence
+        for sentences in sentences_by_section
+        for sentence in sentences
+        if len(sentence) >= 18
+    )
 
     section_scores: list[DuplicationSectionScore] = []
     matches: list[SimilarityEvidence] = []
@@ -237,8 +246,14 @@ def score_duplication(
     for index, section in enumerate(sections):
         current_text = normalized_texts[index]
         current_shingles = shingle_sets[index]
-        template_hits = [phrase for phrase in TEMPLATE_PHRASES if phrase in current_text]
-        duplicate_sentences = [sentence for sentence in sentences_by_section[index] if duplicate_counter[sentence] >= 2]
+        template_hits = [
+            phrase for phrase in TEMPLATE_PHRASES if phrase in current_text
+        ]
+        duplicate_sentences = [
+            sentence
+            for sentence in sentences_by_section[index]
+            if duplicate_counter[sentence] >= 2
+        ]
         quote_ratio = _quote_ratio(section["content"])
 
         best_similarity = 0.0
@@ -252,11 +267,20 @@ def score_duplication(
                 best_match_index = other_index
 
         template_score = min(1.0, len(template_hits) / 5)
-        duplicate_sentence_score = min(1.0, len(duplicate_sentences) / max(len(sentences_by_section[index]), 1))
-        raw_score = 0.58 * best_similarity + 0.24 * template_score + 0.24 * duplicate_sentence_score - 0.08 * quote_ratio
+        duplicate_sentence_score = min(
+            1.0, len(duplicate_sentences) / max(len(sentences_by_section[index]), 1)
+        )
+        raw_score = (
+            0.58 * best_similarity
+            + 0.24 * template_score
+            + 0.24 * duplicate_sentence_score
+            - 0.08 * quote_ratio
+        )
         raw_score = max(0.0, raw_score)
         normalized_score = max(0.0, min(1.0, raw_score))
-        reasons = _build_reasons(best_similarity, template_hits, duplicate_sentences, quote_ratio)
+        reasons = _build_reasons(
+            best_similarity, template_hits, duplicate_sentences, quote_ratio
+        )
         risk_level = _risk_level(normalized_score)
 
         section_scores.append(
@@ -281,10 +305,19 @@ def score_duplication(
                     SimilarityEvidence(
                         section_index=section["section_index"],
                         matched_source="local_corpus",
-                        matched_title=matched_section.get("section_title") or f"正文段落 {best_match_index + 1}",
+                        matched_title=matched_section.get("section_title")
+                        or f"正文段落 {best_match_index + 1}",
                         matched_snippet=snippet,
                         similarity_score=round(best_similarity, 4),
-                        overlap_chars=max(0, math.floor(min(section["char_count"], matched_section["char_count"]) * best_similarity)),
+                        overlap_chars=max(
+                            0,
+                            math.floor(
+                                min(
+                                    section["char_count"], matched_section["char_count"]
+                                )
+                                * best_similarity
+                            ),
+                        ),
                         match_type="exact" if best_similarity >= 0.58 else "semantic",
                     )
                 )
@@ -296,7 +329,9 @@ def score_duplication(
                     matched_source="template_phrase_bank",
                     matched_title="通用学术模板表达",
                     matched_snippet="；".join(template_hits[:3]),
-                    similarity_score=round(min(0.95, 0.34 + len(template_hits) * 0.11), 4),
+                    similarity_score=round(
+                        min(0.95, 0.34 + len(template_hits) * 0.11), 4
+                    ),
                     overlap_chars=sum(len(item) for item in template_hits[:3]),
                     match_type="paraphrase",
                 )
@@ -329,7 +364,9 @@ def score_duplication(
                 SimilarityEvidence(
                     section_index=section_idx,
                     matched_source="corpus_semantic",
-                    matched_title=hit.get("document_title") or hit.get("document_filename") or "语料库文档",
+                    matched_title=hit.get("document_title")
+                    or hit.get("document_filename")
+                    or "语料库文档",
                     matched_snippet=snippet,
                     similarity_score=round(similarity, 4),
                     overlap_chars=max(0, round(hit.get("char_count", 0) * similarity)),
@@ -359,12 +396,19 @@ def score_duplication(
                 )
 
     total_chars = sum(section["char_count"] for section in sections) or 1
-    overall_score = sum(
-        section_score.normalized_score * sections[index]["char_count"]
-        for index, section_score in enumerate(section_scores)
-    ) / total_chars
-    template_density = sum(len(score.template_hits) for score in section_scores) / max(len(section_scores), 1)
-    duplicate_sentence_ratio = sum(score.duplicate_sentence_count for score in section_scores) / max(
+    overall_score = (
+        sum(
+            section_score.normalized_score * sections[index]["char_count"]
+            for index, section_score in enumerate(section_scores)
+        )
+        / total_chars
+    )
+    template_density = sum(len(score.template_hits) for score in section_scores) / max(
+        len(section_scores), 1
+    )
+    duplicate_sentence_ratio = sum(
+        score.duplicate_sentence_count for score in section_scores
+    ) / max(
         sum(len(items) for items in sentences_by_section),
         1,
     )
@@ -393,7 +437,9 @@ def _char_shingles(text: str, size: int = 6) -> set[str]:
 
 
 def _extract_sentences(text: str) -> list[str]:
-    return [item.strip() for item in SENTENCE_RE.findall(text) if len(item.strip()) >= 18]
+    return [
+        item.strip() for item in SENTENCE_RE.findall(text) if len(item.strip()) >= 18
+    ]
 
 
 def _jaccard(first: set[str], second: set[str]) -> float:

@@ -1,11 +1,20 @@
 """文档上传、分析、任务、报告相关路由。"""
+
 from __future__ import annotations
 
 import asyncio
-from typing import Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Response,
+    UploadFile,
+)
 
 from app.config import Settings, get_settings
 from app.db import get_repository
@@ -54,7 +63,9 @@ async def upload_document(
 
     document = result.document
     if auth.user is not None:
-        pipeline.repository.grant_document_access(user_id=str(auth.user["id"]), document_id=str(document["id"]))
+        pipeline.repository.grant_document_access(
+            user_id=str(auth.user["id"]), document_id=str(document["id"])
+        )
     return DocumentUploadResponse(
         document_id=str(document["id"]),
         title=document.get("title"),
@@ -75,7 +86,9 @@ async def analyze_uploaded_document(
     pipeline: UnifiedPipeline = Depends(get_unified_pipeline),
     auth: AuthContext = Depends(get_auth_context),
 ) -> AnalyzeDocumentResponse:
-    ensure_document_access(document_id=document_id, auth=auth, repository=get_repository())
+    ensure_document_access(
+        document_id=document_id, auth=auth, repository=get_repository()
+    )
     try:
         result = await asyncio.to_thread(pipeline.analyze_document, document_id, force)
     except ValueError as exc:
@@ -93,7 +106,9 @@ async def analyze_uploaded_document(
     )
 
 
-@router.post("/documents/{document_id}/analyze-async", response_model=AnalysisTaskCreateResponse)
+@router.post(
+    "/documents/{document_id}/analyze-async", response_model=AnalysisTaskCreateResponse
+)
 def analyze_uploaded_document_async(
     document_id: str,
     background_tasks: BackgroundTasks,
@@ -115,7 +130,9 @@ def analyze_uploaded_document_async(
         )
     except Exception as exc:  # noqa: BLE001
         repository.mark_analysis_task_failed(str(task["id"]), error_message=str(exc))
-        raise HTTPException(status_code=500, detail="failed to dispatch async task") from exc
+        raise HTTPException(
+            status_code=500, detail="failed to dispatch async task"
+        ) from exc
     return AnalysisTaskCreateResponse(
         task_id=str(task["id"]),
         document_id=str(task["document_id"]),
@@ -134,7 +151,9 @@ def get_analysis_run(
     run = get_repository().get_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="run not found")
-    ensure_document_access(document_id=str(run["document_id"]), auth=auth, repository=get_repository())
+    ensure_document_access(
+        document_id=str(run["document_id"]), auth=auth, repository=get_repository()
+    )
     try:
         return pipeline.build_run_status(run_id)
     except ValueError as exc:
@@ -150,7 +169,9 @@ def get_unified_report(
     run = get_repository().get_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="run not found")
-    ensure_document_access(document_id=str(run["document_id"]), auth=auth, repository=get_repository())
+    ensure_document_access(
+        document_id=str(run["document_id"]), auth=auth, repository=get_repository()
+    )
     report = pipeline.get_report(run_id)
     if report is None:
         raise HTTPException(status_code=404, detail="report not found")
@@ -166,7 +187,9 @@ def get_unified_report_markdown(
     run = get_repository().get_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="run not found")
-    ensure_document_access(document_id=str(run["document_id"]), auth=auth, repository=get_repository())
+    ensure_document_access(
+        document_id=str(run["document_id"]), auth=auth, repository=get_repository()
+    )
     report = pipeline.get_report(run_id)
     if report is None:
         raise HTTPException(status_code=404, detail="report not found")
@@ -175,7 +198,9 @@ def get_unified_report_markdown(
     return Response(
         content=markdown,
         media_type="text/markdown; charset=utf-8",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"
+        },
     )
 
 
@@ -188,7 +213,9 @@ def get_analysis_task_status(
     task = repository.get_analysis_task(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="task not found")
-    ensure_document_access(document_id=str(task["document_id"]), auth=auth, repository=repository)
+    ensure_document_access(
+        document_id=str(task["document_id"]), auth=auth, repository=repository
+    )
     return AnalysisTaskStatusResponse(
         task_id=str(task["id"]),
         document_id=str(task["document_id"]),
@@ -206,11 +233,17 @@ def get_analysis_task_status(
 
 
 def _safe_download_name(value: str) -> str:
-    cleaned = "".join(char if char.isascii() and (char.isalnum() or char in {"-", "_"}) else "_" for char in value)
+    cleaned = "".join(
+        char if char.isascii() and (char.isalnum() or char in {"-", "_"}) else "_"
+        for char in value
+    )
     return cleaned.strip("_") or "report"
 
 
-@router.post("/runs/{run_id}/sections/{section_index}/rewrite-advice", response_model=RewriteAdviceResponse)
+@router.post(
+    "/runs/{run_id}/sections/{section_index}/rewrite-advice",
+    response_model=RewriteAdviceResponse,
+)
 async def get_section_rewrite_advice(
     run_id: str,
     section_index: int,
@@ -221,7 +254,9 @@ async def get_section_rewrite_advice(
     run = get_repository().get_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="run not found")
-    ensure_document_access(document_id=str(run["document_id"]), auth=auth, repository=get_repository())
+    ensure_document_access(
+        document_id=str(run["document_id"]), auth=auth, repository=get_repository()
+    )
 
     report = pipeline.get_report(run_id)
     if report is None:
@@ -267,7 +302,11 @@ async def get_section_rewrite_advice(
     reasons = section_info.get("reasons") if section_info else []
     subject = report.get("subject")
     degree_level = report.get("degree_level")
-    section_title = target_section.get("section_title") or section_info.get("title") if section_info else None
+    section_title = (
+        target_section.get("section_title") or section_info.get("title")
+        if section_info
+        else None
+    )
 
     # 获取最新知网实测数据，注入 prompt 让建议更精准
     latest_cnki_dup = None
@@ -280,7 +319,9 @@ async def get_section_rewrite_advice(
 
     # 获取该段落的本地分数，用于计算知网-本地差距
     local_aigc_score = float(section_info.get("aigc_score", 0)) if section_info else 0.0
-    local_dup_score = float(section_info.get("duplication_score", 0)) if section_info else 0.0
+    local_dup_score = (
+        float(section_info.get("duplication_score", 0)) if section_info else 0.0
+    )
 
     result = await llm_service.rewrite_paragraph(
         text=text,

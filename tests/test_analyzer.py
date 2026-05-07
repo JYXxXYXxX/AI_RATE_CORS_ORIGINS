@@ -19,7 +19,9 @@ def test_analyze_returns_segments_and_score() -> None:
 
     assert result.segment_count >= 1
     assert 0 <= result.ai_like_score <= 1
-    assert 0 <= result.predicted_cnki_range.lower <= result.predicted_cnki_range.upper <= 1
+    assert (
+        0 <= result.predicted_cnki_range.lower <= result.predicted_cnki_range.upper <= 1
+    )
     assert result.confidence > 0
     assert result.total_chars > 0
     assert result.segment_reports

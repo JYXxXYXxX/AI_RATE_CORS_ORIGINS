@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 from typing import Any
 
@@ -9,13 +8,42 @@ import httpx
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run a full closed-loop demo against the local API service.")
-    parser.add_argument("--base-url", default="http://127.0.0.1:8010", help="API base url, default: http://127.0.0.1:8010")
-    parser.add_argument("--paper", default="data/demo_paper.txt", help="Path to the demo paper text file.")
-    parser.add_argument("--output-dir", default=".dev/demo-output", help="Directory for exported markdown reports.")
-    parser.add_argument("--feedback-dup", type=float, default=None, help="Override CNKI duplication percent feedback.")
-    parser.add_argument("--feedback-aigc", type=float, default=None, help="Override CNKI AIGC percent feedback.")
-    parser.add_argument("--provider", default="wanfang", choices=["wanfang", "vip", "turnitin"], help="Primary provider to fetch.")
+    parser = argparse.ArgumentParser(
+        description="Run a full closed-loop demo against the local API service."
+    )
+    parser.add_argument(
+        "--base-url",
+        default="http://127.0.0.1:8010",
+        help="API base url, default: http://127.0.0.1:8010",
+    )
+    parser.add_argument(
+        "--paper",
+        default="data/demo_paper.txt",
+        help="Path to the demo paper text file.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=".dev/demo-output",
+        help="Directory for exported markdown reports.",
+    )
+    parser.add_argument(
+        "--feedback-dup",
+        type=float,
+        default=None,
+        help="Override CNKI duplication percent feedback.",
+    )
+    parser.add_argument(
+        "--feedback-aigc",
+        type=float,
+        default=None,
+        help="Override CNKI AIGC percent feedback.",
+    )
+    parser.add_argument(
+        "--provider",
+        default="wanfang",
+        choices=["wanfang", "vip", "turnitin"],
+        help="Primary provider to fetch.",
+    )
     args = parser.parse_args()
 
     base_url = args.base_url.rstrip("/")
@@ -29,14 +57,18 @@ def main() -> int:
     with httpx.Client(base_url=base_url, timeout=60.0) as client:
         _check_health(client)
         provider_catalog = client.get("/v1/providers/config").json()["providers"]
-        configured_providers = [item["provider"] for item in provider_catalog if item["configured"]]
+        configured_providers = [
+            item["provider"] for item in provider_catalog if item["configured"]
+        ]
         if args.provider not in configured_providers:
             raise SystemExit(
                 f"provider {args.provider} is not configured. configured providers: {', '.join(configured_providers) or 'none'}"
             )
 
         upload_payload = _upload_document(client, paper_path)
-        analyze_payload = client.post(f"/v1/documents/{upload_payload['document_id']}/analyze")
+        analyze_payload = client.post(
+            f"/v1/documents/{upload_payload['document_id']}/analyze"
+        )
         analyze_payload.raise_for_status()
         run_payload = analyze_payload.json()
         report = client.get(f"/v1/runs/{run_payload['run_id']}/report")
@@ -59,10 +91,19 @@ def main() -> int:
 
         feedback_dup = args.feedback_dup
         if feedback_dup is None:
-            feedback_dup = _clamp(report_payload["summary"]["predicted_cnki_dup"]["center_percent"] + 2.2, 0.0, 100.0)
+            feedback_dup = _clamp(
+                report_payload["summary"]["predicted_cnki_dup"]["center_percent"] + 2.2,
+                0.0,
+                100.0,
+            )
         feedback_aigc = args.feedback_aigc
         if feedback_aigc is None:
-            feedback_aigc = _clamp(report_payload["summary"]["predicted_cnki_aigc"]["center_percent"] + 1.4, 0.0, 100.0)
+            feedback_aigc = _clamp(
+                report_payload["summary"]["predicted_cnki_aigc"]["center_percent"]
+                + 1.4,
+                0.0,
+                100.0,
+            )
 
         feedback_response = client.post(
             "/v1/cnki-feedback",
@@ -85,7 +126,9 @@ def main() -> int:
         train_response.raise_for_status()
         train_payload = train_response.json()
 
-        markdown_response = client.get(f"/v1/runs/{run_payload['run_id']}/report/markdown")
+        markdown_response = client.get(
+            f"/v1/runs/{run_payload['run_id']}/report/markdown"
+        )
         markdown_response.raise_for_status()
         markdown_path = output_dir / f"{run_payload['run_id']}.md"
         markdown_path.write_text(markdown_response.text, encoding="utf-8")
@@ -109,11 +152,15 @@ def main() -> int:
     )
     print(f"Feedback:    dup {feedback_dup:.1f}% / aigc {feedback_aigc:.1f}%")
     print(f"Calibration: {feedback_payload['calibration_version']}")
-    print(f"Models:      {', '.join(item['version'] for item in train_payload['trained_models'])}")
+    print(
+        f"Models:      {', '.join(item['version'] for item in train_payload['trained_models'])}"
+    )
     print(f"Active:      {len(model_status_payload['active_models'])} active models")
     print(f"Markdown:    {markdown_path.resolve()}")
     print("")
-    print("Tip: Open the frontend at http://localhost:5174 to inspect the same run visually.")
+    print(
+        "Tip: Open the frontend at http://localhost:5174 to inspect the same run visually."
+    )
     return 0
 
 

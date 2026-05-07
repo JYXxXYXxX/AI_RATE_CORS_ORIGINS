@@ -36,10 +36,17 @@ def run_analysis_task_celery(
     user_id: str | None,
     credit_cost: int = 0,
 ) -> None:
-    run_analysis_task_record(task_id=task_id, document_id=document_id, user_id=user_id, credit_cost=credit_cost)
+    run_analysis_task_record(
+        task_id=task_id,
+        document_id=document_id,
+        user_id=user_id,
+        credit_cost=credit_cost,
+    )
 
 
-def enqueue_analysis_task(*, task_id: str, document_id: str, user_id: str | None, credit_cost: int = 0) -> None:
+def enqueue_analysis_task(
+    *, task_id: str, document_id: str, user_id: str | None, credit_cost: int = 0
+) -> None:
     run_analysis_task_celery.apply_async(
         args=[task_id, document_id, user_id, credit_cost],
         queue=settings.celery_queue_name,

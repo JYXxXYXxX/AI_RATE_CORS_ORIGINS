@@ -21,7 +21,13 @@ def train_proxy_model(
     if not rows:
         raise ValueError("no training rows")
 
-    x = np.array([[float(row["features"].get(name, 0.0)) for name in FEATURE_NAMES] for row in rows], dtype=float)
+    x = np.array(
+        [
+            [float(row["features"].get(name, 0.0)) for name in FEATURE_NAMES]
+            for row in rows
+        ],
+        dtype=float,
+    )
     y = np.array([float(row["label"]) for row in rows], dtype=float)
 
     means = x.mean(axis=0)
@@ -40,7 +46,9 @@ def train_proxy_model(
         x_train, x_val = x_norm, x_norm
         y_train, y_val = y, y
 
-    x_aug = np.concatenate([np.ones((x_train.shape[0], 1), dtype=float), x_train], axis=1)
+    x_aug = np.concatenate(
+        [np.ones((x_train.shape[0], 1), dtype=float), x_train], axis=1
+    )
     ridge = 0.06
     penalty = np.eye(x_aug.shape[1], dtype=float) * ridge
     penalty[0, 0] = 0.0
@@ -51,7 +59,9 @@ def train_proxy_model(
     train_mae = float(np.mean(np.abs(train_predictions - y_train)))
 
     # 验证集指标
-    x_val_aug = np.concatenate([np.ones((x_val.shape[0], 1), dtype=float), x_val], axis=1)
+    x_val_aug = np.concatenate(
+        [np.ones((x_val.shape[0], 1), dtype=float), x_val], axis=1
+    )
     val_predictions = np.clip(x_val_aug @ coeffs, 0.0, 1.0)
     val_mae = float(np.mean(np.abs(val_predictions - y_val)))
     val_rmse = float(np.sqrt(np.mean((val_predictions - y_val) ** 2)))
@@ -84,7 +94,9 @@ def train_proxy_model(
     artifact_path = Path(artifact_dir)
     artifact_path.mkdir(parents=True, exist_ok=True)
     file_path = artifact_path / f"{version}.json"
-    file_path.write_text(json.dumps(artifact, ensure_ascii=False, indent=2), encoding="utf-8")
+    file_path.write_text(
+        json.dumps(artifact, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
     return {
         "artifact": artifact,

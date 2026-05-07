@@ -62,15 +62,23 @@ class ConfiguredProviderFetchService:
             "degree_level": document.get("degree_level"),
             "extra_payload": extra_payload,
         }
-        self.repository.insert_provider_payload(run_id, provider, "request", request_payload)
+        self.repository.insert_provider_payload(
+            run_id, provider, "request", request_payload
+        )
         response_payload = self._fetch(config, request_payload)
-        self.repository.insert_provider_payload(run_id, provider, "response", response_payload)
+        self.repository.insert_provider_payload(
+            run_id, provider, "response", response_payload
+        )
 
         normalized = self._normalize(provider, config, response_payload)
-        payload_row = self.repository.insert_provider_payload_row(run_id, provider, "normalized", normalized)
+        payload_row = self.repository.insert_provider_payload_row(
+            run_id, provider, "normalized", normalized
+        )
         return {"payload": payload_row, "normalized": normalized}
 
-    def _fetch(self, config: dict[str, Any], request_payload: dict[str, Any]) -> dict[str, Any]:
+    def _fetch(
+        self, config: dict[str, Any], request_payload: dict[str, Any]
+    ) -> dict[str, Any]:
         mode = str(config.get("mode", "http")).lower()
         if mode == "file":
             path = config.get("path")
@@ -93,7 +101,11 @@ class ConfiguredProviderFetchService:
         if _is_private_url(str(url)):
             raise ValueError("provider url points to private/internal address")
         method = str(config.get("method", "POST")).upper()
-        timeout = float(config.get("timeout_seconds", self.settings.provider_request_timeout_seconds))
+        timeout = float(
+            config.get(
+                "timeout_seconds", self.settings.provider_request_timeout_seconds
+            )
+        )
         headers = dict(config.get("headers") or {})
         auth_type = str(config.get("auth_type", "")).lower().strip()
         token = _resolve_token(config)
@@ -101,20 +113,28 @@ class ConfiguredProviderFetchService:
             headers["Authorization"] = f"Bearer {token}"
 
         with httpx.Client(timeout=timeout) as client:
-            last_exc: Exception | None = None
             for attempt in range(MAX_RETRIES):
                 try:
                     if method == "GET":
-                        response = client.get(url, params=request_payload, headers=headers)
+                        response = client.get(
+                            url, params=request_payload, headers=headers
+                        )
                     else:
-                        response = client.request(method, url, json=request_payload, headers=headers)
+                        response = client.request(
+                            method, url, json=request_payload, headers=headers
+                        )
                     response.raise_for_status()
                     break
                 except (httpx.TransportError, httpx.HTTPStatusError) as exc:
-                    last_exc = exc
                     if attempt < MAX_RETRIES - 1:
                         wait = RETRY_BACKOFF[attempt]
-                        logger.warning("Provider %s attempt %d failed: %s, retrying in %.1fs", url, attempt + 1, exc, wait)
+                        logger.warning(
+                            "Provider %s attempt %d failed: %s, retrying in %.1fs",
+                            url,
+                            attempt + 1,
+                            exc,
+                            wait,
+                        )
                         time.sleep(wait)
                     else:
                         raise
@@ -123,34 +143,56 @@ class ConfiguredProviderFetchService:
             raise ValueError("provider response must be a json object")
         return data
 
-    def _normalize(self, provider: str, config: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    def _normalize(
+        self, provider: str, config: dict[str, Any], payload: dict[str, Any]
+    ) -> dict[str, Any]:
         field_map = config.get("field_map") or {}
         duplication_percent = _extract_number(
             payload,
             field_map.get("duplication_percent"),
-            ["duplication_percent", "dup_percent", "similarity_percent", "duplicate_percent", "plagiarism_percent"],
+            [
+                "duplication_percent",
+                "dup_percent",
+                "similarity_percent",
+                "duplicate_percent",
+                "plagiarism_percent",
+            ],
         )
         aigc_percent = _extract_number(
             payload,
             field_map.get("aigc_percent"),
-            ["aigc_percent", "ai_percent", "ai_rate_percent", "ai_writing_percent", "ai_generated_percent"],
+            [
+                "aigc_percent",
+                "ai_percent",
+                "ai_rate_percent",
+                "ai_writing_percent",
+                "ai_generated_percent",
+            ],
         )
         confidence = _extract_number(
             payload,
             field_map.get("confidence"),
             ["confidence", "score_confidence"],
         )
-        version = _extract_string(payload, field_map.get("version"), ["version", "provider_version"]) or config.get("version")
+        version = _extract_string(
+            payload, field_map.get("version"), ["version", "provider_version"]
+        ) or config.get("version")
         return {
             "provider": provider,
             "duplication_percent": duplication_percent,
-            "duplication_rate": round(duplication_percent / 100, 6) if duplication_percent is not None else None,
+            "duplication_rate": round(duplication_percent / 100, 6)
+            if duplication_percent is not None
+            else None,
             "aigc_percent": aigc_percent,
-            "aigc_rate": round(aigc_percent / 100, 6) if aigc_percent is not None else None,
+            "aigc_rate": round(aigc_percent / 100, 6)
+            if aigc_percent is not None
+            else None,
             "confidence": confidence,
             "version": version,
             "raw_payload": payload,
         }
+
+
 def _is_private_url(url: str) -> bool:
     """检测 URL 是否指向私有/内部地址，防止 SSRF。"""
     parsed = urlparse(url)
@@ -177,7 +219,9 @@ def _resolve_token(config: dict[str, Any]) -> str | None:
     return None
 
 
-def _extract_number(payload: dict[str, Any], mapped_path: str | None, fallback_keys: list[str]) -> float | None:
+def _extract_number(
+    payload: dict[str, Any], mapped_path: str | None, fallback_keys: list[str]
+) -> float | None:
     value = _extract_by_path(payload, mapped_path) if mapped_path else None
     if value is None:
         for key in fallback_keys:
@@ -189,7 +233,9 @@ def _extract_number(payload: dict[str, Any], mapped_path: str | None, fallback_k
     return float(value)
 
 
-def _extract_string(payload: dict[str, Any], mapped_path: str | None, fallback_keys: list[str]) -> str | None:
+def _extract_string(
+    payload: dict[str, Any], mapped_path: str | None, fallback_keys: list[str]
+) -> str | None:
     value = _extract_by_path(payload, mapped_path) if mapped_path else None
     if value is None:
         for key in fallback_keys:

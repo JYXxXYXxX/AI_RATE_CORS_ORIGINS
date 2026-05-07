@@ -1,11 +1,22 @@
 """认证相关路由。"""
+
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 
-from app.config import Settings, get_settings
-from app.routes.deps import AuthContext, get_account_service, get_auth_context, get_current_user
-from app.schemas_unified import AuthLoginRequest, AuthRegisterRequest, AuthSessionResponse, UserSummary
+from app.config import get_settings
+from app.routes.deps import (
+    AuthContext,
+    get_account_service,
+    get_auth_context,
+    get_current_user,
+)
+from app.schemas_unified import (
+    AuthLoginRequest,
+    AuthRegisterRequest,
+    AuthSessionResponse,
+    UserSummary,
+)
 from app.services.account import AccountService
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
@@ -27,7 +38,9 @@ def register_account(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     _set_session_cookie(response, session.token)
-    return AuthSessionResponse(token=session.token, user=UserSummary.model_validate(session.user))
+    return AuthSessionResponse(
+        token=session.token, user=UserSummary.model_validate(session.user)
+    )
 
 
 @router.post("/login", response_model=AuthSessionResponse)
@@ -41,11 +54,15 @@ def login_account(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     _set_session_cookie(response, session.token)
-    return AuthSessionResponse(token=session.token, user=UserSummary.model_validate(session.user))
+    return AuthSessionResponse(
+        token=session.token, user=UserSummary.model_validate(session.user)
+    )
 
 
 @router.get("/me", response_model=UserSummary)
-def get_current_account(user: dict[str, Any] = Depends(get_current_user)) -> UserSummary:
+def get_current_account(
+    user: dict[str, Any] = Depends(get_current_user),
+) -> UserSummary:
     return UserSummary.model_validate(user)
 
 

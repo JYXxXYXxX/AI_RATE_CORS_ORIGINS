@@ -18,6 +18,7 @@
     --min-length  最短字符数 (默认 80)
     --source      数据源: csl / all (默认 csl)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -76,12 +77,14 @@ def download_csl(count: int, min_length: int) -> list[dict[str, str]]:
             continue
 
         category = record.get("category") or record.get("discipline") or ""
-        samples.append({
-            "text": abstract,
-            "source": "CSL",
-            "category": str(category),
-            "title": (record.get("title") or "")[:100],
-        })
+        samples.append(
+            {
+                "text": abstract,
+                "source": "CSL",
+                "category": str(category),
+                "title": (record.get("title") or "")[:100],
+            }
+        )
 
     print(f"  从 CSL 提取了 {len(samples)} 条有效摘要")
     return samples
@@ -148,9 +151,13 @@ def download_clc_abstracts(count: int, min_length: int) -> list[dict[str, str]]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="下载公开学术数据集作为人类训练数据")
     parser.add_argument("--count", type=int, default=2000, help="需要的段落数量")
-    parser.add_argument("--output", default="data/training/human.jsonl", help="输出文件路径")
+    parser.add_argument(
+        "--output", default="data/training/human.jsonl", help="输出文件路径"
+    )
     parser.add_argument("--min-length", type=int, default=80, help="最短字符数")
-    parser.add_argument("--source", default="csl", choices=["csl", "all"], help="数据源")
+    parser.add_argument(
+        "--source", default="csl", choices=["csl", "all"], help="数据源"
+    )
     args = parser.parse_args()
 
     print("=" * 60)
@@ -185,7 +192,7 @@ def main() -> None:
 
     # 打乱并截取
     random.shuffle(all_samples)
-    all_samples = all_samples[:args.count]
+    all_samples = all_samples[: args.count]
 
     # 写入文件
     output_path = Path(args.output)

@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.payments.base import PaymentChannelSummary, PaymentIntent, PaymentOrderRequest, PaymentPackage
+from app.payments.base import (
+    PaymentChannelSummary,
+    PaymentIntent,
+    PaymentOrderRequest,
+    PaymentPackage,
+)
 
 
 class MockQrPaymentProvider:

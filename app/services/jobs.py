@@ -1,5 +1,4 @@
 import json
-import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -55,7 +54,9 @@ class AnalysisJob:
             title=data.get("title"),
             subject=data.get("subject"),
             degree_level=data.get("degree_level"),
-            report=AnalyzeResponse.model_validate(data["report"]) if data.get("report") else None,
+            report=AnalyzeResponse.model_validate(data["report"])
+            if data.get("report")
+            else None,
             error=data.get("error"),
         )
 
@@ -68,7 +69,9 @@ class JobStore:
         self._persist_path = Path(settings.upload_storage_dir).parent / "job_store.json"
         self._load()
 
-    def create(self, title: str | None, subject: str | None, degree_level: str | None) -> AnalysisJob:
+    def create(
+        self, title: str | None, subject: str | None, degree_level: str | None
+    ) -> AnalysisJob:
         now = datetime.now(UTC)
         job = AnalysisJob(
             job_id=str(uuid4()),
@@ -149,7 +152,9 @@ class JobStore:
     def _persist_locked(self) -> None:
         try:
             data = {jid: job.to_dict() for jid, job in self._jobs.items()}
-            self._persist_path.write_text(json.dumps(data, ensure_ascii=False, default=str), encoding="utf-8")
+            self._persist_path.write_text(
+                json.dumps(data, ensure_ascii=False, default=str), encoding="utf-8"
+            )
         except Exception:
             pass
 

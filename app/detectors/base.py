@@ -17,4 +17,3 @@ class Detector(ABC):
     @abstractmethod
     def score(self, segment: str, all_segments: list[str]) -> DetectorResult:
         """Return an AI-like score in [0, 1]."""
-

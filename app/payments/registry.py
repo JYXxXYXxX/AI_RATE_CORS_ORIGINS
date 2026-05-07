@@ -28,7 +28,10 @@ class PaymentProviderRegistry:
         return selected
 
     def list_channels(self) -> list[PaymentChannelSummary]:
-        return [self._providers[key].describe_channel() for key in ("mock_qr", "alipay", "wechat")]
+        return [
+            self._providers[key].describe_channel()
+            for key in ("mock_qr", "alipay", "wechat")
+        ]
 
     def hydrate_order(self, order: dict[str, object]) -> PaymentIntent:
         provider = str(order.get("provider") or "mock_qr")

@@ -6,7 +6,9 @@ from app.main_support import get_calibrator_runtime
 from app.pipeline import UnifiedPipeline
 
 
-def run_analysis_task_record(task_id: str, document_id: str, user_id: str | None, credit_cost: int = 0) -> None:
+def run_analysis_task_record(
+    task_id: str, document_id: str, user_id: str | None, credit_cost: int = 0
+) -> None:
     repository = get_repository()
     settings = get_settings()
     pipeline = UnifiedPipeline(settings, repository, get_calibrator_runtime())

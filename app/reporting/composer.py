@@ -12,13 +12,21 @@ def compose_report(
     duplication: Any,
     proxy_prediction: dict[str, Any],
 ) -> dict[str, Any]:
-    section_reports = _merge_section_reports(ai_report.segment_reports, duplication.section_scores)
+    section_reports = _merge_section_reports(
+        ai_report.segment_reports, duplication.section_scores
+    )
     chapter_heatmap = _build_chapter_heatmap(section_reports)
-    top_risk_sections = sorted(section_reports, key=lambda item: item["combined_score"], reverse=True)[:8]
-    top_similarity_matches = _serialize_matches(duplication.matches, section_reports)[:10]
+    top_risk_sections = sorted(
+        section_reports, key=lambda item: item["combined_score"], reverse=True
+    )[:8]
+    top_similarity_matches = _serialize_matches(duplication.matches, section_reports)[
+        :10
+    ]
     revision_plan = _build_revision_plan(top_risk_sections, top_similarity_matches)
     mentor_brief = _build_mentor_brief(document, proxy_prediction, top_risk_sections)
-    submission_checklist = _build_submission_checklist(top_risk_sections, top_similarity_matches)
+    submission_checklist = _build_submission_checklist(
+        top_risk_sections, top_similarity_matches
+    )
     first_fix_targets = [item["title"] for item in revision_plan[:3]]
     comfort_score = _comfort_score(proxy_prediction, top_risk_sections)
     overall_risk = _overall_risk(proxy_prediction, top_risk_sections)
@@ -68,17 +76,22 @@ def compose_report(
     }
 
 
-def _merge_section_reports(ai_segments: list[Any], duplication_sections: list[Any]) -> list[dict[str, Any]]:
+def _merge_section_reports(
+    ai_segments: list[Any], duplication_sections: list[Any]
+) -> list[dict[str, Any]]:
     duplication_by_index = {item.section_index: item for item in duplication_sections}
     merged: list[dict[str, Any]] = []
     for ai_segment in ai_segments:
         duplication = duplication_by_index.get(ai_segment.index)
         duplication_score = duplication.normalized_score if duplication else 0.0
-        combined_score = round(ai_segment.ai_like_score * 0.58 + duplication_score * 0.42, 4)
+        combined_score = round(
+            ai_segment.ai_like_score * 0.58 + duplication_score * 0.42, 4
+        )
         merged.append(
             {
                 "section_index": ai_segment.index,
-                "title": ai_segment.section_title or f"正文段落 {ai_segment.paragraph_index or ai_segment.index + 1}",
+                "title": ai_segment.section_title
+                or f"正文段落 {ai_segment.paragraph_index or ai_segment.index + 1}",
                 "section_title": ai_segment.section_title,
                 "paragraph_index": ai_segment.paragraph_index,
                 "text_preview": ai_segment.text_preview,
@@ -87,13 +100,18 @@ def _merge_section_reports(ai_segments: list[Any], duplication_sections: list[An
                 "duplication_score": round(duplication_score, 4),
                 "combined_score": combined_score,
                 "risk_level": _level_from_score(combined_score),
-                "reasons": (ai_segment.reasons[:2] + (duplication.reasons[:2] if duplication else []))[:4],
+                "reasons": (
+                    ai_segment.reasons[:2]
+                    + (duplication.reasons[:2] if duplication else [])
+                )[:4],
             }
         )
     return merged
 
 
-def _build_chapter_heatmap(section_reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _build_chapter_heatmap(
+    section_reports: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for item in section_reports:
         grouped[item["section_title"] or "正文主体"].append(item)
@@ -119,12 +137,16 @@ def _build_chapter_heatmap(section_reports: list[dict[str, Any]]) -> list[dict[s
     return heatmap
 
 
-def _serialize_matches(matches: list[Any], section_reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _serialize_matches(
+    matches: list[Any], section_reports: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     titles = {item["section_index"]: item["title"] for item in section_reports}
     return [
         {
             "section_index": item.section_index,
-            "section_title": titles.get(item.section_index, f"正文段落 {item.section_index + 1}"),
+            "section_title": titles.get(
+                item.section_index, f"正文段落 {item.section_index + 1}"
+            ),
             "matched_source": item.matched_source,
             "matched_title": item.matched_title,
             "matched_snippet": item.matched_snippet,
@@ -242,7 +264,9 @@ def _build_mentor_brief(
     proxy_prediction: dict[str, Any],
     top_risk_sections: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    top_titles = "、".join(item["title"] for item in top_risk_sections[:3]) or "正文主体"
+    top_titles = (
+        "、".join(item["title"] for item in top_risk_sections[:3]) or "正文主体"
+    )
     return {
         "headline": "这版论文已经可以作为定向修改底稿，但不建议直接正式送检。",
         "summary": (
@@ -268,13 +292,18 @@ def _build_submission_checklist(
         {"label": "先改 Top 3 高风险段，再决定是否全篇重写", "done": False},
         {"label": "复核所有直接引用、转述引用和参考文献格式", "done": False},
         {"label": "把模板化结论句替换成与你研究数据相关的表达", "done": False},
-        {"label": f"重点复查 {min(len(top_similarity_matches), 5)} 条最强相似证据对应段落", "done": False},
+        {
+            "label": f"重点复查 {min(len(top_similarity_matches), 5)} 条最强相似证据对应段落",
+            "done": False,
+        },
         {"label": "修改后至少做一次复检，对比区间是否明显下降", "done": False},
         {"label": "正式送检前保留修改说明，便于和导师沟通", "done": False},
     ]
 
 
-def _comfort_score(proxy_prediction: dict[str, Any], top_risk_sections: list[dict[str, Any]]) -> int:
+def _comfort_score(
+    proxy_prediction: dict[str, Any], top_risk_sections: list[dict[str, Any]]
+) -> int:
     dup_percent = proxy_prediction["predicted_cnki_dup_high"] * 100
     aigc_percent = proxy_prediction["predicted_cnki_aigc_high"] * 100
     high_count = sum(1 for item in top_risk_sections if item["risk_level"] == "high")
@@ -282,7 +311,9 @@ def _comfort_score(proxy_prediction: dict[str, Any], top_risk_sections: list[dic
     return max(18, min(96, round(score)))
 
 
-def _overall_risk(proxy_prediction: dict[str, Any], top_risk_sections: list[dict[str, Any]]) -> str:
+def _overall_risk(
+    proxy_prediction: dict[str, Any], top_risk_sections: list[dict[str, Any]]
+) -> str:
     if (
         proxy_prediction["predicted_cnki_dup_high"] >= 0.28
         or proxy_prediction["predicted_cnki_aigc_high"] >= 0.38

@@ -41,13 +41,19 @@ class ManualProviderImportService:
             "run_id": run_id,
             "provider": provider,
             "duplication_percent": duplication_percent,
-            "duplication_rate": round(duplication_percent / 100, 6) if duplication_percent is not None else None,
+            "duplication_rate": round(duplication_percent / 100, 6)
+            if duplication_percent is not None
+            else None,
             "aigc_percent": aigc_percent,
-            "aigc_rate": round(aigc_percent / 100, 6) if aigc_percent is not None else None,
+            "aigc_rate": round(aigc_percent / 100, 6)
+            if aigc_percent is not None
+            else None,
             "confidence": confidence,
             "version": version,
             "notes": notes,
             "raw_payload": raw_payload,
         }
-        payload = self.repository.insert_provider_payload_row(run_id, provider, "normalized", normalized)
+        payload = self.repository.insert_provider_payload_row(
+            run_id, provider, "normalized", normalized
+        )
         return {"payload": payload, "normalized": normalized}

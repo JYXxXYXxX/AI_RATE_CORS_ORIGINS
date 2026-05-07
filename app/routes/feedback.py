@@ -1,4 +1,5 @@
 """知网反馈与 OCR 预览路由。"""
+
 from __future__ import annotations
 
 import json
@@ -22,7 +23,9 @@ from app.training import ProxyTrainingService
 router = APIRouter(prefix="/v1", tags=["feedback"])
 
 
-@router.post("/cnki-feedback/ocr-preview", response_model=CnkiFeedbackOcrPreviewResponse)
+@router.post(
+    "/cnki-feedback/ocr-preview", response_model=CnkiFeedbackOcrPreviewResponse
+)
 async def preview_cnki_feedback_ocr(
     file: UploadFile = File(...),
 ) -> CnkiFeedbackOcrPreviewResponse:
@@ -54,18 +57,29 @@ async def add_cnki_feedback(
     auth: AuthContext = Depends(get_auth_context),
 ) -> CnkiFeedbackResponse:
     if cnki_dup_percent is None and cnki_aigc_percent is None:
-        raise HTTPException(status_code=400, detail="cnki_dup_percent or cnki_aigc_percent is required")
-    ensure_document_access(document_id=document_id, auth=auth, repository=get_repository())
+        raise HTTPException(
+            status_code=400, detail="cnki_dup_percent or cnki_aigc_percent is required"
+        )
+    ensure_document_access(
+        document_id=document_id, auth=auth, repository=get_repository()
+    )
 
     parsed_date: date | None = None
     if report_date:
         try:
             parsed_date = date.fromisoformat(report_date)
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail="report_date must be YYYY-MM-DD") from exc
+            raise HTTPException(
+                status_code=400, detail="report_date must be YYYY-MM-DD"
+            ) from exc
 
     details: dict | None = None
-    if remove_reference_dup_percent is not None or single_max_dup_percent is not None or suspected_plagiarism_json or fragments_json:
+    if (
+        remove_reference_dup_percent is not None
+        or single_max_dup_percent is not None
+        or suspected_plagiarism_json
+        or fragments_json
+    ):
         details = {}
         if remove_reference_dup_percent is not None:
             details["remove_reference_dup_percent"] = remove_reference_dup_percent
@@ -113,7 +127,9 @@ async def add_cnki_feedback(
     return CnkiFeedbackResponse(
         feedback_id=str(feedback["id"]),
         document_id=str(feedback["document_id"]),
-        predicted_run_id=str(feedback["predicted_run_id"]) if feedback.get("predicted_run_id") else None,
+        predicted_run_id=str(feedback["predicted_run_id"])
+        if feedback.get("predicted_run_id")
+        else None,
         calibration_updated=result["calibration_updated"],
         calibration_version=result["calibration_version"],
         auto_train_triggered=auto_train_triggered,

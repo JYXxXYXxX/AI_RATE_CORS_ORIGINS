@@ -3,13 +3,14 @@
 不依赖 slowapi/starlette.config，避免 .env 编码问题。
 生产环境可替换为 Redis 后端。
 """
+
 from __future__ import annotations
 
 import time
 from collections import defaultdict
 from typing import Callable
 
-from fastapi import HTTPException, Request
+from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
@@ -33,7 +34,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 del self._requests[ip]
         # 限制总 IP 数量（超过 10000 时清理最旧的）
         if len(self._requests) > 10000:
-            sorted_ips = sorted(self._requests.items(), key=lambda x: max(x[1]) if x[1] else 0)
+            sorted_ips = sorted(
+                self._requests.items(), key=lambda x: max(x[1]) if x[1] else 0
+            )
             for ip, _ in sorted_ips[: len(sorted_ips) - 10000]:
                 del self._requests[ip]
 
@@ -78,7 +81,9 @@ class StrictRateLimitMiddleware(BaseHTTPMiddleware):
             if not self._requests[key]:
                 del self._requests[key]
         if len(self._requests) > 10000:
-            sorted_keys = sorted(self._requests.items(), key=lambda x: max(x[1]) if x[1] else 0)
+            sorted_keys = sorted(
+                self._requests.items(), key=lambda x: max(x[1]) if x[1] else 0
+            )
             for key, _ in sorted_keys[: len(sorted_keys) - 10000]:
                 del self._requests[key]
 

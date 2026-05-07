@@ -3,7 +3,12 @@ from __future__ import annotations
 from typing import Any
 
 from app.config import Settings
-from app.payments.base import PaymentChannelSummary, PaymentIntent, PaymentOrderRequest, PaymentPackage
+from app.payments.base import (
+    PaymentChannelSummary,
+    PaymentIntent,
+    PaymentOrderRequest,
+    PaymentPackage,
+)
 
 
 class AlipayPaymentProvider:
@@ -51,7 +56,11 @@ class AlipayPaymentProvider:
         )
 
     def hydrate_order(self, order: dict[str, Any]) -> PaymentIntent:
-        payload = order.get("payment_payload") if isinstance(order.get("payment_payload"), dict) else {}
+        payload = (
+            order.get("payment_payload")
+            if isinstance(order.get("payment_payload"), dict)
+            else {}
+        )
         if payload:
             return PaymentIntent(
                 provider=self.code,

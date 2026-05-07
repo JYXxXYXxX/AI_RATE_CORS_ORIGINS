@@ -23,7 +23,11 @@ class ProxyTrainingService:
         min_samples: int | None,
     ) -> dict[str, Any]:
         required_samples = min_samples or self.settings.proxy_training_min_samples
-        model_types = ["cnki_dup_proxy", "cnki_aigc_proxy"] if model_type == "both" else [model_type]
+        model_types = (
+            ["cnki_dup_proxy", "cnki_aigc_proxy"]
+            if model_type == "both"
+            else [model_type]
+        )
         trained_models: list[dict[str, Any]] = []
         dataset_rows = 0
 
@@ -31,7 +35,9 @@ class ProxyTrainingService:
             rows = self.builder.build_rows(current_model_type, scene_key)
             dataset_rows = max(dataset_rows, len(rows))
             if len(rows) < required_samples:
-                raise ValueError(f"{current_model_type} training rows not enough: {len(rows)} < {required_samples}")
+                raise ValueError(
+                    f"{current_model_type} training rows not enough: {len(rows)} < {required_samples}"
+                )
             trained = train_proxy_model(
                 model_type=current_model_type,
                 rows=rows,
@@ -71,5 +77,10 @@ class ProxyTrainingService:
             return []
         if feedback_count % self.settings.auto_train_every_feedbacks != 0:
             return []
-        result = self.train(model_type="both", scene_key=None, activate=True, min_samples=self.settings.proxy_training_min_samples)
+        result = self.train(
+            model_type="both",
+            scene_key=None,
+            activate=True,
+            min_samples=self.settings.proxy_training_min_samples,
+        )
         return list(result["trained_models"])

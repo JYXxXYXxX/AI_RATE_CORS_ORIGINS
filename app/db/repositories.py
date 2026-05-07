@@ -93,9 +93,13 @@ class UnifiedRepository:
         return self._fetchone("SELECT * FROM documents WHERE id = %s", (document_id,))
 
     def get_document_by_hash(self, doc_hash: str) -> dict[str, Any] | None:
-        return self._fetchone("SELECT * FROM documents WHERE doc_hash = %s", (doc_hash,))
+        return self._fetchone(
+            "SELECT * FROM documents WHERE doc_hash = %s", (doc_hash,)
+        )
 
-    def create_user(self, *, email: str, password_hash: str, display_name: str) -> dict[str, Any]:
+    def create_user(
+        self, *, email: str, password_hash: str, display_name: str
+    ) -> dict[str, Any]:
         return self._fetchone(
             """
             INSERT INTO app_users (email, password_hash, display_name, status, credits_balance)
@@ -117,7 +121,9 @@ class UnifiedRepository:
             with conn.cursor() as cur:
                 # 外键约束会自动级联删除 billing_orders, credit_ledger,
                 # user_document_access, user_sessions 等
-                cur.execute("DELETE FROM app_users WHERE id = %s RETURNING id", (user_id,))
+                cur.execute(
+                    "DELETE FROM app_users WHERE id = %s RETURNING id", (user_id,)
+                )
                 row = cur.fetchone()
             conn.commit()
         return row is not None
@@ -126,23 +132,41 @@ class UnifiedRepository:
         """导出用户全部个人数据（GDPR/个人信息保护法查阅权）。"""
         with self.pool.connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT id, email, display_name, status, credits_balance, created_at, updated_at FROM app_users WHERE id = %s", (user_id,))
+                cur.execute(
+                    "SELECT id, email, display_name, status, credits_balance, created_at, updated_at FROM app_users WHERE id = %s",
+                    (user_id,),
+                )
                 user = cur.fetchone()
 
-                cur.execute("SELECT id, task_type, status, progress, created_at, finished_at FROM analysis_tasks WHERE user_id = %s ORDER BY created_at DESC", (user_id,))
+                cur.execute(
+                    "SELECT id, task_type, status, progress, created_at, finished_at FROM analysis_tasks WHERE user_id = %s ORDER BY created_at DESC",
+                    (user_id,),
+                )
                 tasks = cur.fetchall()
 
-                cur.execute("SELECT id, order_no, package_code, status, amount_cents, credits, created_at, paid_at FROM billing_orders WHERE user_id = %s ORDER BY created_at DESC", (user_id,))
+                cur.execute(
+                    "SELECT id, order_no, package_code, status, amount_cents, credits, created_at, paid_at FROM billing_orders WHERE user_id = %s ORDER BY created_at DESC",
+                    (user_id,),
+                )
                 orders = cur.fetchall()
 
-                cur.execute("SELECT id, change_amount, balance_after, source_type, note, created_at FROM credit_ledger WHERE user_id = %s ORDER BY created_at DESC", (user_id,))
+                cur.execute(
+                    "SELECT id, change_amount, balance_after, source_type, note, created_at FROM credit_ledger WHERE user_id = %s ORDER BY created_at DESC",
+                    (user_id,),
+                )
                 ledger = cur.fetchall()
 
-                cur.execute("SELECT document_id, created_at FROM user_document_access WHERE user_id = %s ORDER BY created_at DESC", (user_id,))
+                cur.execute(
+                    "SELECT document_id, created_at FROM user_document_access WHERE user_id = %s ORDER BY created_at DESC",
+                    (user_id,),
+                )
                 accesses = cur.fetchall()
 
                 try:
-                    cur.execute("SELECT id, action, resource_type, resource_id, created_at FROM audit_logs WHERE user_id = %s ORDER BY created_at DESC", (user_id,))
+                    cur.execute(
+                        "SELECT id, action, resource_type, resource_id, created_at FROM audit_logs WHERE user_id = %s ORDER BY created_at DESC",
+                        (user_id,),
+                    )
                     audits = cur.fetchall()
                 except Exception:
                     audits = []
@@ -157,7 +181,9 @@ class UnifiedRepository:
             "exported_at": datetime.now(UTC).isoformat(),
         }
 
-    def create_user_session(self, *, user_id: str, token_hash: str, expires_at: Any) -> dict[str, Any]:
+    def create_user_session(
+        self, *, user_id: str, token_hash: str, expires_at: Any
+    ) -> dict[str, Any]:
         return self._fetchone(
             """
             INSERT INTO user_sessions (user_id, token_hash, expires_at)
@@ -216,7 +242,9 @@ class UnifiedRepository:
     ) -> dict[str, Any]:
         with self.pool.connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT * FROM app_users WHERE id = %s FOR UPDATE", (user_id,))
+                cur.execute(
+                    "SELECT * FROM app_users WHERE id = %s FOR UPDATE", (user_id,)
+                )
                 user = cur.fetchone()
                 if user is None:
                     raise ValueError("user not found")
@@ -306,9 +334,13 @@ class UnifiedRepository:
         )
 
     def get_billing_order(self, order_no: str) -> dict[str, Any] | None:
-        return self._fetchone("SELECT * FROM billing_orders WHERE order_no = %s", (order_no,))
+        return self._fetchone(
+            "SELECT * FROM billing_orders WHERE order_no = %s", (order_no,)
+        )
 
-    def get_user_billing_order(self, user_id: str, order_no: str) -> dict[str, Any] | None:
+    def get_user_billing_order(
+        self, user_id: str, order_no: str
+    ) -> dict[str, Any] | None:
         return self._fetchone(
             "SELECT * FROM billing_orders WHERE user_id = %s AND order_no = %s",
             (user_id, order_no),
@@ -338,7 +370,10 @@ class UnifiedRepository:
     ) -> dict[str, Any]:
         with self.pool.connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT * FROM billing_orders WHERE order_no = %s FOR UPDATE", (order_no,))
+                cur.execute(
+                    "SELECT * FROM billing_orders WHERE order_no = %s FOR UPDATE",
+                    (order_no,),
+                )
                 order = cur.fetchone()
                 if order is None:
                     raise ValueError("order not found")
@@ -347,7 +382,10 @@ class UnifiedRepository:
                 user_id = str(order["user_id"])
 
                 if order_status == "paid":
-                    cur.execute("SELECT credits_balance FROM app_users WHERE id = %s", (user_id,))
+                    cur.execute(
+                        "SELECT credits_balance FROM app_users WHERE id = %s",
+                        (user_id,),
+                    )
                     user_row = cur.fetchone()
                     balance_after = int((user_row or {}).get("credits_balance", 0))
                     conn.commit()
@@ -360,7 +398,9 @@ class UnifiedRepository:
                 if order_status not in {"pending", "created"}:
                     raise ValueError(f"order status {order_status} cannot be paid")
 
-                merged_payload = _merge_json_payload(order.get("payment_payload"), payment_payload)
+                merged_payload = _merge_json_payload(
+                    order.get("payment_payload"), payment_payload
+                )
 
                 cur.execute(
                     """
@@ -384,7 +424,9 @@ class UnifiedRepository:
                 )
                 paid_order = cur.fetchone()
 
-                cur.execute("SELECT * FROM app_users WHERE id = %s FOR UPDATE", (user_id,))
+                cur.execute(
+                    "SELECT * FROM app_users WHERE id = %s FOR UPDATE", (user_id,)
+                )
                 user = cur.fetchone()
                 if user is None:
                     raise ValueError("user not found")
@@ -400,7 +442,14 @@ class UnifiedRepository:
                     INSERT INTO credit_ledger (user_id, change_amount, balance_after, source_type, source_id, note)
                     VALUES (%s, %s, %s, %s, %s, %s)
                     """,
-                    (user_id, int(order["credits"]), new_balance, "order_purchase", order["id"], note),
+                    (
+                        user_id,
+                        int(order["credits"]),
+                        new_balance,
+                        "order_purchase",
+                        order["id"],
+                        note,
+                    ),
                 )
             conn.commit()
 
@@ -420,7 +469,9 @@ class UnifiedRepository:
             (user_id, document_id),
         )
 
-    def can_user_access_document(self, *, user_id: str | None, document_id: str) -> bool:
+    def can_user_access_document(
+        self, *, user_id: str | None, document_id: str
+    ) -> bool:
         row = self._fetchone(
             """
             SELECT
@@ -452,11 +503,18 @@ class UnifiedRepository:
             VALUES (%s, %s, %s, %s, 'queued')
             RETURNING *
         """
-        return self._fetchone(query, (document_id, run_type, provider, provider_version))
+        return self._fetchone(
+            query, (document_id, run_type, provider, provider_version)
+        )
 
-    def mark_document_status(self, document_id: str, status: str, *, section_count: int | None = None) -> None:
+    def mark_document_status(
+        self, document_id: str, status: str, *, section_count: int | None = None
+    ) -> None:
         if section_count is None:
-            self._execute("UPDATE documents SET status = %s, updated_at = now() WHERE id = %s", (status, document_id))
+            self._execute(
+                "UPDATE documents SET status = %s, updated_at = now() WHERE id = %s",
+                (status, document_id),
+            )
             return
         self._execute(
             "UPDATE documents SET status = %s, section_count = %s, updated_at = now() WHERE id = %s",
@@ -470,7 +528,10 @@ class UnifiedRepository:
         )
 
     def mark_run_completed(self, run_id: str) -> None:
-        self._execute("UPDATE analysis_runs SET status = 'completed', finished_at = now() WHERE id = %s", (run_id,))
+        self._execute(
+            "UPDATE analysis_runs SET status = 'completed', finished_at = now() WHERE id = %s",
+            (run_id,),
+        )
 
     def mark_run_failed(self, run_id: str, error_message: str) -> None:
         self._execute(
@@ -493,7 +554,9 @@ class UnifiedRepository:
         """
         return self._fetchone(query, (run_id,))
 
-    def list_completed_runs(self, document_id: str, limit: int = 1) -> list[dict[str, Any]]:
+    def list_completed_runs(
+        self, document_id: str, limit: int = 1
+    ) -> list[dict[str, Any]]:
         """返回指定文档已完成的分析记录（最新在前）。"""
         query = """
             SELECT
@@ -511,7 +574,9 @@ class UnifiedRepository:
         """
         return self._fetchall(query, (document_id, limit))
 
-    def create_analysis_task(self, *, user_id: str | None, document_id: str, task_type: str = "analysis") -> dict[str, Any]:
+    def create_analysis_task(
+        self, *, user_id: str | None, document_id: str, task_type: str = "analysis"
+    ) -> dict[str, Any]:
         return self._fetchone(
             """
             INSERT INTO analysis_tasks (user_id, document_id, task_type, status, progress, result_json)
@@ -521,7 +586,9 @@ class UnifiedRepository:
             (user_id, document_id, task_type),
         )
 
-    def mark_analysis_task_processing(self, task_id: str, *, progress: int = 35) -> None:
+    def mark_analysis_task_processing(
+        self, task_id: str, *, progress: int = 35
+    ) -> None:
         self._execute(
             """
             UPDATE analysis_tasks
@@ -531,7 +598,9 @@ class UnifiedRepository:
             (progress, task_id),
         )
 
-    def mark_analysis_task_completed(self, task_id: str, *, run_id: str, result_json: dict[str, Any]) -> None:
+    def mark_analysis_task_completed(
+        self, task_id: str, *, run_id: str, result_json: dict[str, Any]
+    ) -> None:
         self._execute(
             """
             UPDATE analysis_tasks
@@ -587,7 +656,9 @@ class UnifiedRepository:
             conn.commit()
         return count
 
-    def list_user_analysis_tasks(self, user_id: str, limit: int = 10) -> list[dict[str, Any]]:
+    def list_user_analysis_tasks(
+        self, user_id: str, limit: int = 10
+    ) -> list[dict[str, Any]]:
         return self._fetchall(
             """
             SELECT tasks.*, documents.title, documents.filename
@@ -619,7 +690,9 @@ class UnifiedRepository:
         row = self._fetchone("SELECT COUNT(*) AS total FROM cnki_feedback", ())
         return int((row or {}).get("total", 0))
 
-    def list_cnki_feedback_for_document(self, document_id: str, limit: int = 20) -> list[dict[str, Any]]:
+    def list_cnki_feedback_for_document(
+        self, document_id: str, limit: int = 20
+    ) -> list[dict[str, Any]]:
         return self._fetchall(
             """
             SELECT *
@@ -642,7 +715,9 @@ class UnifiedRepository:
             (document_id,),
         )
 
-    def insert_document_sections(self, document_id: str, sections: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    def insert_document_sections(
+        self, document_id: str, sections: Sequence[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         if not sections:
             return []
         query = """
@@ -715,10 +790,19 @@ class UnifiedRepository:
         """
         return self._fetchall(
             query,
-            (embedding_str, exclude_document_id, embedding_str, distance_threshold, embedding_str, limit),
+            (
+                embedding_str,
+                exclude_document_id,
+                embedding_str,
+                distance_threshold,
+                embedding_str,
+                limit,
+            ),
         )
 
-    def insert_section_scores(self, run_id: str, scores: Sequence[dict[str, Any]]) -> None:
+    def insert_section_scores(
+        self, run_id: str, scores: Sequence[dict[str, Any]]
+    ) -> None:
         if not scores:
             return
         query = """
@@ -759,7 +843,9 @@ class UnifiedRepository:
                     )
             conn.commit()
 
-    def insert_similarity_matches(self, run_id: str, matches: Sequence[dict[str, Any]]) -> None:
+    def insert_similarity_matches(
+        self, run_id: str, matches: Sequence[dict[str, Any]]
+    ) -> None:
         if not matches:
             return
         query = """
@@ -795,7 +881,9 @@ class UnifiedRepository:
                     )
             conn.commit()
 
-    def insert_provider_payload(self, run_id: str, provider: str, payload_type: str, payload: dict[str, Any]) -> None:
+    def insert_provider_payload(
+        self, run_id: str, provider: str, payload_type: str, payload: dict[str, Any]
+    ) -> None:
         self._execute(
             """
             INSERT INTO provider_payloads (run_id, provider, payload_type, payload)
@@ -883,13 +971,17 @@ class UnifiedRepository:
             ),
         )
 
-    def save_report_snapshot(self, *, document_id: str, run_id: str, report_json: dict[str, Any]) -> dict[str, Any]:
+    def save_report_snapshot(
+        self, *, document_id: str, run_id: str, report_json: dict[str, Any]
+    ) -> dict[str, Any]:
         query = """
             INSERT INTO report_snapshots (document_id, run_id, report_json)
             VALUES (%s, %s, %s)
             RETURNING *
         """
-        return self._fetchone(query, (document_id, run_id, Jsonb(jsonable_encoder(report_json))))
+        return self._fetchone(
+            query, (document_id, run_id, Jsonb(jsonable_encoder(report_json)))
+        )
 
     def register_model(
         self,
@@ -942,7 +1034,9 @@ class UnifiedRepository:
             conn.commit()
         return _normalize_row(row)
 
-    def get_active_model(self, model_type: str, scene_key: str | None) -> dict[str, Any] | None:
+    def get_active_model(
+        self, model_type: str, scene_key: str | None
+    ) -> dict[str, Any] | None:
         exact = self._fetchone(
             """
             SELECT *
@@ -1046,6 +1140,7 @@ class UnifiedRepository:
             RETURNING *
         """
         import json
+
         return self._fetchone(
             query,
             (

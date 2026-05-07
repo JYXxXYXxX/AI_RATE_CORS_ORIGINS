@@ -15,7 +15,9 @@ class ProviderRegistryService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.registry_path = Path(settings.provider_registry_path)
-        self.base_configs = load_provider_configs(settings.provider_configs_json, source_name="provider_configs_json")
+        self.base_configs = load_provider_configs(
+            settings.provider_configs_json, source_name="provider_configs_json"
+        )
         self.override_configs = self._load_registry_file()
 
     def get_runtime_config(self, provider: str) -> dict[str, Any] | None:
@@ -34,8 +36,16 @@ class ProviderRegistryService:
         provider_key = _normalize_provider_name(provider)
         merged_config = self.get_runtime_config(provider_key) or {}
         validation_errors = _validate_provider_config(provider_key, merged_config)
-        mode = str(merged_config.get("mode")).lower() if merged_config.get("mode") is not None else None
-        method = str(merged_config.get("method", "POST")).upper() if mode == "http" or merged_config.get("method") else None
+        mode = (
+            str(merged_config.get("mode")).lower()
+            if merged_config.get("mode") is not None
+            else None
+        )
+        method = (
+            str(merged_config.get("method", "POST")).upper()
+            if mode == "http" or merged_config.get("method")
+            else None
+        )
         auth_type = str(merged_config.get("auth_type", "")).lower().strip() or None
         timeout = merged_config.get("timeout_seconds")
         timeout_seconds = float(timeout) if timeout is not None else None
@@ -43,8 +53,11 @@ class ProviderRegistryService:
         return {
             "provider": provider_key,
             "supports_auto_fetch": provider_key in AUTO_FETCH_PROVIDERS,
-            "configured": provider_key in AUTO_FETCH_PROVIDERS and not validation_errors,
-            "source": _provider_source(provider_key, self.base_configs, self.override_configs),
+            "configured": provider_key in AUTO_FETCH_PROVIDERS
+            and not validation_errors,
+            "source": _provider_source(
+                provider_key, self.base_configs, self.override_configs
+            ),
             "mode": mode,
             "method": method,
             "url": _to_optional_string(merged_config.get("url")),
@@ -60,10 +73,14 @@ class ProviderRegistryService:
             "updated_in_registry": provider_key in self.override_configs,
         }
 
-    def update_provider_config(self, provider: str, config: dict[str, Any]) -> dict[str, Any]:
+    def update_provider_config(
+        self, provider: str, config: dict[str, Any]
+    ) -> dict[str, Any]:
         provider_key = _normalize_provider_name(provider)
         if provider_key not in AUTO_FETCH_PROVIDERS:
-            raise ValueError(f"provider does not support runtime fetch config: {provider_key}")
+            raise ValueError(
+                f"provider does not support runtime fetch config: {provider_key}"
+            )
 
         normalized = _normalize_provider_config(config)
         errors = _validate_provider_config(provider_key, normalized)
@@ -94,7 +111,9 @@ class ProviderRegistryService:
             raise ValueError("provider registry file is not valid json") from exc
         if not isinstance(payload, dict):
             raise ValueError("provider registry file must be a json object")
-        return {str(key): value for key, value in payload.items() if isinstance(value, dict)}
+        return {
+            str(key): value for key, value in payload.items() if isinstance(value, dict)
+        }
 
     def _save_registry_file(self, payload: dict[str, dict[str, Any]]) -> None:
         self.registry_path.parent.mkdir(parents=True, exist_ok=True)
@@ -104,7 +123,9 @@ class ProviderRegistryService:
         )
 
 
-def load_provider_configs(raw_json: str, *, source_name: str = "provider_configs_json") -> dict[str, dict[str, Any]]:
+def load_provider_configs(
+    raw_json: str, *, source_name: str = "provider_configs_json"
+) -> dict[str, dict[str, Any]]:
     if not raw_json.strip():
         return {}
     try:
@@ -113,7 +134,9 @@ def load_provider_configs(raw_json: str, *, source_name: str = "provider_configs
         raise ValueError(f"{source_name} is not valid json") from exc
     if not isinstance(payload, dict):
         raise ValueError(f"{source_name} must be a json object")
-    return {str(key): value for key, value in payload.items() if isinstance(value, dict)}
+    return {
+        str(key): value for key, value in payload.items() if isinstance(value, dict)
+    }
 
 
 def _normalize_provider_name(provider: str) -> str:

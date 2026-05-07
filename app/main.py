@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -28,6 +28,7 @@ from app.routes import (
     models_router,
     providers_router,
 )
+
 
 # ---------------------------------------------------------------------------
 # 日志配置（生产环境支持 JSON 格式）
@@ -109,12 +110,17 @@ async def lifespan(_: FastAPI):
     logger.info("Starting %s v%s", settings.service_name, settings.service_version)
     # 启动安全校验
     if not settings.payment_callback_secret:
-        logger.error("PAYMENT_CALLBACK_SECRET is not set. Mock/Prod billing endpoints disabled.")
+        logger.error(
+            "PAYMENT_CALLBACK_SECRET is not set. Mock/Prod billing endpoints disabled."
+        )
     if settings.cors_origins == "*" and settings.service_env != "dev":
-        logger.warning("CORS_ORIGINS is wildcard in non-dev environment. This is insecure.")
+        logger.warning(
+            "CORS_ORIGINS is wildcard in non-dev environment. This is insecure."
+        )
     # 恢复因进程崩溃而卡在 processing 的任务
     try:
         from app.db import get_repository
+
         repo = get_repository()
         recovered = repo.recover_stale_tasks(max_age_minutes=30)
         if recovered:
@@ -142,12 +148,12 @@ app = FastAPI(
 @app.exception_handler(Exception)
 async def _generic_exception_handler(_request, exc):
     """全局兜底：生产环境绝不暴露内部异常详情给客户端。"""
-    import traceback
     logger.error("Unhandled exception: %s", exc, exc_info=True)
     return JSONResponse(
         status_code=500,
         content={"detail": "internal server error"},
     )
+
 
 # ---------------------------------------------------------------------------
 # 中间件（注册顺序：后注册先执行）
@@ -236,7 +242,9 @@ async def health_check() -> JSONResponse:
 
 @app.get("/metrics", include_in_schema=False)
 async def metrics() -> PlainTextResponse:
-    return PlainTextResponse(content=generate_latest().decode("utf-8"), media_type=CONTENT_TYPE_LATEST)
+    return PlainTextResponse(
+        content=generate_latest().decode("utf-8"), media_type=CONTENT_TYPE_LATEST
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -246,7 +254,11 @@ FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
 if FRONTEND_DIST.is_dir():
     # 静态资源（JS/CSS/图片等）
-    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="frontend-assets")
+    app.mount(
+        "/assets",
+        StaticFiles(directory=str(FRONTEND_DIST / "assets")),
+        name="frontend-assets",
+    )
 
     # SPA fallback: 所有非 API 路径返回 index.html
     @app.get("/{full_path:path}", include_in_schema=False)

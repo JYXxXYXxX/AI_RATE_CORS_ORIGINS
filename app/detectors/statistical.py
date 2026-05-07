@@ -3,7 +3,7 @@ import math
 from collections import Counter
 
 from app.detectors.base import Detector, DetectorResult
-from app.detectors.heuristics import cn_char_count, sentences, tokens
+from app.detectors.heuristics import cn_char_count, tokens
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,9 @@ class _PerplexityModel:
         """返回文本的困惑度（越低越可能是 AI 生成）。"""
         import torch
 
-        inputs = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=max_length)
+        inputs = self.tokenizer(
+            text, return_tensors="pt", truncation=True, max_length=max_length
+        )
         input_ids = inputs["input_ids"].to(self.device)
         if input_ids.size(1) < 2:
             return 100.0
@@ -54,7 +56,13 @@ def _get_ppl_model() -> "_PerplexityModel | None":
         return _ppl_model
     _ppl_load_attempted = True
     import os
-    if os.environ.get("AI_RATE_ENABLE_PPL", "true").lower() in ("false", "0", "no", "off"):
+
+    if os.environ.get("AI_RATE_ENABLE_PPL", "true").lower() in (
+        "false",
+        "0",
+        "no",
+        "off",
+    ):
         logger.info("PPL 检测已禁用 (AI_RATE_ENABLE_PPL=false)，使用轻量熵近似")
         _ppl_model = None
         return _ppl_model
@@ -82,10 +90,14 @@ class PerplexityDetector(Detector):
             return self._score_with_model(model, segment)
         return self._score_fallback(segment)
 
-    def _score_with_model(self, model: _PerplexityModel, segment: str) -> DetectorResult:
+    def _score_with_model(
+        self, model: _PerplexityModel, segment: str
+    ) -> DetectorResult:
         char_count = cn_char_count(segment)
         if char_count < 40:
-            return DetectorResult(self.name, 0.36, self.weight * 0.5, ["片段过短，困惑度判断置信度较低"])
+            return DetectorResult(
+                self.name, 0.36, self.weight * 0.5, ["片段过短，困惑度判断置信度较低"]
+            )
 
         ppl = model.compute_perplexity(segment)
 
@@ -95,7 +107,9 @@ class PerplexityDetector(Detector):
         score = max(0.0, min(1.0, 1.0 / (1.0 + math.exp((ppl - 55) / 25))))
         reasons: list[str] = []
         if score >= 0.65:
-            reasons.append(f"文本困惑度偏低 (PPL={ppl:.0f})，语言流畅度接近模型生成水平")
+            reasons.append(
+                f"文本困惑度偏低 (PPL={ppl:.0f})，语言流畅度接近模型生成水平"
+            )
         elif score <= 0.30:
             reasons.append(f"文本困惑度较高 (PPL={ppl:.0f})，用词组织更接近人类写作")
         return DetectorResult(self.name, round(score, 4), self.weight, reasons)
@@ -104,11 +118,16 @@ class PerplexityDetector(Detector):
         """无模型时的降级: unigram 熵。"""
         ts = tokens(segment)
         if len(ts) < 45:
-            return DetectorResult(self.name, 0.36, self.weight, ["文本片段较短，困惑度特征置信度较低"])
+            return DetectorResult(
+                self.name, 0.36, self.weight, ["文本片段较短，困惑度特征置信度较低"]
+            )
 
         counter = Counter(ts)
         total = len(ts)
-        entropy = -sum((count / total) * math.log(count / total + 1e-12) for count in counter.values())
+        entropy = -sum(
+            (count / total) * math.log(count / total + 1e-12)
+            for count in counter.values()
+        )
         normalized_entropy = entropy / math.log(max(len(counter), 2))
         score = max(0.0, min(1.0, (0.86 - normalized_entropy) / 0.42))
         reasons = []

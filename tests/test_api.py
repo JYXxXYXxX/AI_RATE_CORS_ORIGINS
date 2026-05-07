@@ -38,7 +38,10 @@ def test_job_lifecycle_for_text_file() -> None:
     assert report_response.status_code == 200
     report = report_response.json()
     assert report["ai_like_score"] >= 0
-    assert report["predicted_cnki_range"]["upper"] >= report["predicted_cnki_range"]["lower"]
+    assert (
+        report["predicted_cnki_range"]["upper"]
+        >= report["predicted_cnki_range"]["lower"]
+    )
 
     job = get_job_store().get(job_id)
     assert job is not None
@@ -102,6 +105,7 @@ def test_calibration_sample_accepts_job_report() -> None:
 
 def test_manual_provider_import_and_proxy_training() -> None:
     import os
+
     original_settings_override = app.dependency_overrides.get(get_settings)
     original_calibrator_override = app.dependency_overrides.get(get_calibrator)
     original_admin_token = os.environ.get("AI_RATE_ADMIN_TOKEN")
@@ -190,7 +194,10 @@ def test_manual_provider_import_and_proxy_training() -> None:
         provider_catalog = client.get("/v1/providers")
         assert provider_catalog.status_code == 200
         providers = provider_catalog.json()["providers"]
-        assert any(item["provider"] == "wanfang" and item["configured"] is True for item in providers)
+        assert any(
+            item["provider"] == "wanfang" and item["configured"] is True
+            for item in providers
+        )
 
         feedback = client.post(
             "/v1/cnki-feedback",
@@ -256,6 +263,7 @@ def test_manual_provider_import_and_proxy_training() -> None:
 
 def test_provider_registry_update_and_reset() -> None:
     import os
+
     original_settings_override = app.dependency_overrides.get(get_settings)
     original_admin_token = os.environ.get("AI_RATE_ADMIN_TOKEN")
     os.environ["AI_RATE_ADMIN_TOKEN"] = "test-admin-token"
@@ -327,7 +335,13 @@ def test_provider_registry_update_and_reset() -> None:
         upload = client.post(
             "/v1/documents/upload",
             data={"title": "provider registry demo"},
-            files={"file": ("provider.txt", "链路验证文本，用于测试 provider registry。".encode("utf-8"), "text/plain")},
+            files={
+                "file": (
+                    "provider.txt",
+                    "链路验证文本，用于测试 provider registry。".encode("utf-8"),
+                    "text/plain",
+                )
+            },
         )
         assert upload.status_code == 200
         document_id = upload.json()["document_id"]
@@ -370,6 +384,7 @@ def test_provider_registry_update_and_reset() -> None:
 
 def test_async_analysis_and_ocr_flow_runs_without_login_or_credit_deduction() -> None:
     import os
+
     original_settings_override = app.dependency_overrides.get(get_settings)
     original_calibrator_override = app.dependency_overrides.get(get_calibrator)
     original_admin_token = os.environ.get("AI_RATE_ADMIN_TOKEN")
@@ -399,7 +414,9 @@ def test_async_analysis_and_ocr_flow_runs_without_login_or_credit_deduction() ->
             files={
                 "file": (
                     "c_end.txt",
-                    "这是一个用于测试 C 端异步分析与匿名闭环的样本文本。它包含摘要、方法和结论描述。".encode("utf-8"),
+                    "这是一个用于测试 C 端异步分析与匿名闭环的样本文本。它包含摘要、方法和结论描述。".encode(
+                        "utf-8"
+                    ),
                     "text/plain",
                 )
             },
@@ -431,7 +448,9 @@ def test_async_analysis_and_ocr_flow_runs_without_login_or_credit_deduction() ->
             files={
                 "file": (
                     "cnki.txt",
-                    "总文字复制比 21.3% AIGC 25.8% 报告日期 2026年4月28日".encode("utf-8"),
+                    "总文字复制比 21.3% AIGC 25.8% 报告日期 2026年4月28日".encode(
+                        "utf-8"
+                    ),
                     "text/plain",
                 )
             },
@@ -466,7 +485,11 @@ def test_async_analysis_and_ocr_flow_runs_without_login_or_credit_deduction() ->
         email = f"user_{uuid4().hex[:8]}@example.com"
         register = client.post(
             "/v1/auth/register",
-            json={"email": email, "password": "Password123", "display_name": "Demo User"},
+            json={
+                "email": email,
+                "password": "Password123",
+                "display_name": "Demo User",
+            },
         )
         assert register.status_code == 200
         token = register.json()["token"]
@@ -479,23 +502,34 @@ def test_async_analysis_and_ocr_flow_runs_without_login_or_credit_deduction() ->
         user_upload = client.post(
             "/v1/documents/upload",
             headers=headers,
-            data={"title": "登录态闭环论文", "subject": "教育学", "degree_level": "本科"},
+            data={
+                "title": "登录态闭环论文",
+                "subject": "教育学",
+                "degree_level": "本科",
+            },
             files={
                 "file": (
                     "c_end_auth.txt",
-                    "这是一个用于确认登录态下也不会扣减额度的样本文本。".encode("utf-8"),
+                    "这是一个用于确认登录态下也不会扣减额度的样本文本。".encode(
+                        "utf-8"
+                    ),
                     "text/plain",
                 )
             },
         )
         assert user_upload.status_code == 200
 
-        user_task = client.post(f"/v1/documents/{user_upload.json()['document_id']}/analyze-async", headers=headers)
+        user_task = client.post(
+            f"/v1/documents/{user_upload.json()['document_id']}/analyze-async",
+            headers=headers,
+        )
         assert user_task.status_code == 200
 
         user_task_payload = None
         for _ in range(20):
-            task_response = client.get(f"/v1/tasks/{user_task.json()['task_id']}", headers=headers)
+            task_response = client.get(
+                f"/v1/tasks/{user_task.json()['task_id']}", headers=headers
+            )
             assert task_response.status_code == 200
             user_task_payload = task_response.json()
             if user_task_payload["status"] == "completed":
@@ -507,7 +541,10 @@ def test_async_analysis_and_ocr_flow_runs_without_login_or_credit_deduction() ->
         assert billing_after.status_code == 200
         assert billing_after.json()["user"]["credits_balance"] == 2
         assert len(billing_after.json()["recent_tasks"]) >= 1
-        assert billing_after.json()["recent_tasks"][0]["run_id"] == user_task_payload["run_id"]
+        assert (
+            billing_after.json()["recent_tasks"][0]["run_id"]
+            == user_task_payload["run_id"]
+        )
 
         me = client.get("/v1/auth/me", headers=headers)
         assert me.status_code == 200
@@ -516,6 +553,10 @@ def test_async_analysis_and_ocr_flow_runs_without_login_or_credit_deduction() ->
         logout = client.post("/v1/auth/logout", headers=headers)
         assert logout.status_code == 200
     finally:
+        if original_admin_token is None:
+            os.environ.pop("AI_RATE_ADMIN_TOKEN", None)
+        else:
+            os.environ["AI_RATE_ADMIN_TOKEN"] = original_admin_token
         if original_settings_override is None:
             app.dependency_overrides.pop(get_settings, None)
         else:
@@ -555,14 +596,22 @@ def test_private_document_access_is_restricted() -> None:
 
         owner = isolated_client.post(
             "/v1/auth/register",
-            json={"email": owner_email, "password": "Password123", "display_name": "Owner"},
+            json={
+                "email": owner_email,
+                "password": "Password123",
+                "display_name": "Owner",
+            },
         )
         assert owner.status_code == 200
         owner_headers = {"Authorization": f"Bearer {owner.json()['token']}"}
 
         other = isolated_client.post(
             "/v1/auth/register",
-            json={"email": other_email, "password": "Password123", "display_name": "Other"},
+            json={
+                "email": other_email,
+                "password": "Password123",
+                "display_name": "Other",
+            },
         )
         assert other.status_code == 200
         other_headers = {"Authorization": f"Bearer {other.json()['token']}"}
@@ -570,11 +619,17 @@ def test_private_document_access_is_restricted() -> None:
         upload = isolated_client.post(
             "/v1/documents/upload",
             headers=owner_headers,
-            data={"title": "private paper", "subject": "教育学", "degree_level": "本科"},
+            data={
+                "title": "private paper",
+                "subject": "教育学",
+                "degree_level": "本科",
+            },
             files={
                 "file": (
                     "private.txt",
-                    "这是一篇带有私有访问控制的测试论文，用来验证登录用户之外无法查看分析结果。".encode("utf-8"),
+                    "这是一篇带有私有访问控制的测试论文，用来验证登录用户之外无法查看分析结果。".encode(
+                        "utf-8"
+                    ),
                     "text/plain",
                 )
             },
@@ -584,23 +639,33 @@ def test_private_document_access_is_restricted() -> None:
 
         # 匿名请求：不携带任何认证信息（也不携带 cookie）
         anonymous_client = TestClient(app)
-        anonymous_analyze = anonymous_client.post(f"/v1/documents/{document_id}/analyze")
+        anonymous_analyze = anonymous_client.post(
+            f"/v1/documents/{document_id}/analyze"
+        )
         assert anonymous_analyze.status_code == 403
 
-        foreign_analyze = isolated_client.post(f"/v1/documents/{document_id}/analyze", headers=other_headers)
+        foreign_analyze = isolated_client.post(
+            f"/v1/documents/{document_id}/analyze", headers=other_headers
+        )
         assert foreign_analyze.status_code == 403
 
-        owner_analyze = isolated_client.post(f"/v1/documents/{document_id}/analyze", headers=owner_headers)
+        owner_analyze = isolated_client.post(
+            f"/v1/documents/{document_id}/analyze", headers=owner_headers
+        )
         assert owner_analyze.status_code == 200
         run_id = owner_analyze.json()["run_id"]
 
-        foreign_report = isolated_client.get(f"/v1/runs/{run_id}/report", headers=other_headers)
+        foreign_report = isolated_client.get(
+            f"/v1/runs/{run_id}/report", headers=other_headers
+        )
         assert foreign_report.status_code == 403
 
         anonymous_report = anonymous_client.get(f"/v1/runs/{run_id}/report")
         assert anonymous_report.status_code == 403
 
-        owner_report = isolated_client.get(f"/v1/runs/{run_id}/report", headers=owner_headers)
+        owner_report = isolated_client.get(
+            f"/v1/runs/{run_id}/report", headers=owner_headers
+        )
         assert owner_report.status_code == 200
         assert owner_report.json()["title"] == "private paper"
     finally:
@@ -643,14 +708,22 @@ def test_billing_order_lifecycle_is_idempotent() -> None:
 
         owner = client.post(
             "/v1/auth/register",
-            json={"email": owner_email, "password": "Password123", "display_name": "Bill Owner"},
+            json={
+                "email": owner_email,
+                "password": "Password123",
+                "display_name": "Bill Owner",
+            },
         )
         assert owner.status_code == 200
         owner_headers = {"Authorization": f"Bearer {owner.json()['token']}"}
 
         other = client.post(
             "/v1/auth/register",
-            json={"email": other_email, "password": "Password123", "display_name": "Bill Other"},
+            json={
+                "email": other_email,
+                "password": "Password123",
+                "display_name": "Bill Other",
+            },
         )
         assert other.status_code == 200
         other_headers = {"Authorization": f"Bearer {other.json()['token']}"}
@@ -672,7 +745,9 @@ def test_billing_order_lifecycle_is_idempotent() -> None:
         assert detail.status_code == 200
         assert detail.json()["order"]["order_no"] == order_no
 
-        foreign_detail = client.get(f"/v1/billing/orders/{order_no}", headers=other_headers)
+        foreign_detail = client.get(
+            f"/v1/billing/orders/{order_no}", headers=other_headers
+        )
         assert foreign_detail.status_code == 404
 
         billing_before = client.get("/v1/billing/summary", headers=owner_headers)
@@ -704,16 +779,22 @@ def test_billing_order_lifecycle_is_idempotent() -> None:
         assert wechat_order.json()["provider_label"] == "微信支付"
         assert wechat_order.json()["provider_ready"] is False
 
-        wrong_channel_pay = client.post(f"/v1/billing/orders/{alipay_order_no}/mock-pay", headers=owner_headers)
+        wrong_channel_pay = client.post(
+            f"/v1/billing/orders/{alipay_order_no}/mock-pay", headers=owner_headers
+        )
         assert wrong_channel_pay.status_code == 400
 
-        pay_once = client.post(f"/v1/billing/orders/{order_no}/mock-pay", headers=owner_headers)
+        pay_once = client.post(
+            f"/v1/billing/orders/{order_no}/mock-pay", headers=owner_headers
+        )
         assert pay_once.status_code == 200
         assert pay_once.json()["credited"] is True
         assert pay_once.json()["balance_after"] == 5
         assert pay_once.json()["order"]["status"] == "paid"
 
-        pay_twice = client.post(f"/v1/billing/orders/{order_no}/mock-pay", headers=owner_headers)
+        pay_twice = client.post(
+            f"/v1/billing/orders/{order_no}/mock-pay", headers=owner_headers
+        )
         assert pay_twice.status_code == 200
         assert pay_twice.json()["credited"] is False
         assert pay_twice.json()["balance_after"] == 5

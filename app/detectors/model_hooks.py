@@ -32,7 +32,9 @@ class _TransformerModel:
         self.model = AutoModelForSequenceClassification.from_pretrained(model_dir)
         self.model.to(self.device)
         self.model.eval()
-        logger.info("Transformer AIGC 检测模型已加载: %s (device=%s)", model_dir, self.device)
+        logger.info(
+            "Transformer AIGC 检测模型已加载: %s (device=%s)", model_dir, self.device
+        )
 
     def predict(self, text: str) -> float:
         """返回 AI 生成概率 [0, 1]。"""
@@ -61,9 +63,12 @@ def _get_model() -> _TransformerModel | None:
     _model_load_attempted = True
 
     import os
+
     model_dir = os.environ.get("AI_RATE_TRANSFORMER_MODEL_DIR", _DEFAULT_MODEL_DIR)
     if not Path(model_dir).exists():
-        logger.warning("模型目录不存在: %s，LocalTransformerDetector 将使用占位模式", model_dir)
+        logger.warning(
+            "模型目录不存在: %s，LocalTransformerDetector 将使用占位模式", model_dir
+        )
         return None
     try:
         _model_singleton = _TransformerModel(model_dir)
@@ -89,7 +94,9 @@ class LocalTransformerDetector(Detector):
             return self._score_with_model(model, segment)
         return self._score_fallback(segment)
 
-    def _score_with_model(self, model: _TransformerModel, segment: str) -> DetectorResult:
+    def _score_with_model(
+        self, model: _TransformerModel, segment: str
+    ) -> DetectorResult:
         char_count = cn_char_count(segment)
         if char_count < 40:
             return DetectorResult(
@@ -102,9 +109,13 @@ class LocalTransformerDetector(Detector):
         probability = model.predict(segment)
         reasons: list[str] = []
         if probability >= 0.80:
-            reasons.append(f"Transformer 分类器判定 AI 生成概率较高 ({probability:.0%})")
+            reasons.append(
+                f"Transformer 分类器判定 AI 生成概率较高 ({probability:.0%})"
+            )
         elif probability >= 0.55:
-            reasons.append(f"Transformer 分类器判定存在 AI 生成嫌疑 ({probability:.0%})")
+            reasons.append(
+                f"Transformer 分类器判定存在 AI 生成嫌疑 ({probability:.0%})"
+            )
         elif probability <= 0.25:
             reasons.append("Transformer 分类器判定该段更接近人类写作风格")
 
@@ -127,8 +138,14 @@ class LocalTransformerDetector(Detector):
             )
 
         generic_markers = (
-            "本文", "研究表明", "具有重要意义", "优化路径",
-            "相关研究", "理论基础", "应用策略", "综上所述",
+            "本文",
+            "研究表明",
+            "具有重要意义",
+            "优化路径",
+            "相关研究",
+            "理论基础",
+            "应用策略",
+            "综上所述",
         )
         hits = sum(1 for marker in generic_markers if marker in segment)
         fallback_score = max(0.0, min(1.0, 0.32 + hits * 0.08))

@@ -54,7 +54,11 @@ def _decode_text(content: bytes) -> str:
 
 def _extract_docx(content: bytes) -> str:
     document = Document(BytesIO(content))
-    paragraphs = [paragraph.text.strip() for paragraph in document.paragraphs if paragraph.text.strip()]
+    paragraphs = [
+        paragraph.text.strip()
+        for paragraph in document.paragraphs
+        if paragraph.text.strip()
+    ]
     return "\n\n".join(paragraphs)
 
 
@@ -68,6 +72,7 @@ def _extract_doc(content: bytes) -> str:
     try:
         import subprocess
         import tempfile
+
         with tempfile.NamedTemporaryFile(suffix=".doc", delete=False) as tmp:
             tmp.write(content)
             tmp_path = tmp.name
@@ -77,6 +82,7 @@ def _extract_doc(content: bytes) -> str:
             timeout=30,
         )
         import os
+
         os.unlink(tmp_path)
         if result.returncode == 0:
             text = result.stdout.decode("utf-8", errors="ignore")
@@ -95,20 +101,20 @@ def _extract_doc(content: bytes) -> str:
             return text
 
     raise ValueError(
-        ".doc 格式解析失败：无法提取有效文本。"
-        "建议将文件另存为 .docx 格式后重新上传。"
+        ".doc 格式解析失败：无法提取有效文本。建议将文件另存为 .docx 格式后重新上传。"
     )
 
 
 def _extract_text_from_binary(content: bytes) -> str:
     """从二进制文件中尽力提取可读文本（降级方案）。"""
     import re
+
     try:
         raw = content.decode("utf-8", errors="ignore")
     except Exception:
         raw = content.decode("gb18030", errors="ignore")
     # 提取连续的中文或英文文本片段
-    chunks = re.findall(r"[\u4e00-\u9fff\w\s。，！？、；：""''（）\[\]【】]{10,}", raw)
+    chunks = re.findall(r"[\u4e00-\u9fff\w\s。，！？、；：" "''（）\[\]【】]{10,}", raw)
     return "\n".join(chunks)
 
 

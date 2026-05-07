@@ -18,7 +18,9 @@ def dispatch_analysis_task(
     if settings.async_queue_backend == "local":
         if background_tasks is None:
             raise ValueError("background_tasks is required for local queue backend")
-        background_tasks.add_task(run_analysis_task_record, task_id, document_id, user_id, credit_cost)
+        background_tasks.add_task(
+            run_analysis_task_record, task_id, document_id, user_id, credit_cost
+        )
         return "local"
 
     if settings.async_queue_backend == "celery":

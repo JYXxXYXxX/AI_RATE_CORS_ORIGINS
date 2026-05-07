@@ -27,6 +27,7 @@ AI 学术段落批量生成脚本
     --subjects      指定学科列表，逗号分隔
     --delay         请求间隔秒数 (默认 0.5)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -42,10 +43,25 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 SUBJECTS = [
-    "教育学", "心理学", "计算机科学", "经济学", "管理学",
-    "法学", "文学", "历史学", "社会学", "新闻传播学",
-    "马克思主义理论", "公共管理", "工商管理", "环境科学",
-    "机械工程", "土木工程", "电子信息", "护理学", "药学",
+    "教育学",
+    "心理学",
+    "计算机科学",
+    "经济学",
+    "管理学",
+    "法学",
+    "文学",
+    "历史学",
+    "社会学",
+    "新闻传播学",
+    "马克思主义理论",
+    "公共管理",
+    "工商管理",
+    "环境科学",
+    "机械工程",
+    "土木工程",
+    "电子信息",
+    "护理学",
+    "药学",
 ]
 
 SECTION_TYPES = [
@@ -99,6 +115,7 @@ def build_prompt() -> str:
 # API 调用
 # ---------------------------------------------------------------------------
 
+
 def call_api(
     prompt: str,
     *,
@@ -121,7 +138,10 @@ def call_api(
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": "你是一个学术写作助手，只输出论文段落正文，不要输出任何标题、编号或额外说明。"},
+            {
+                "role": "system",
+                "content": "你是一个学术写作助手，只输出论文段落正文，不要输出任何标题、编号或额外说明。",
+            },
             {"role": "user", "content": prompt},
         ],
         "temperature": random.uniform(0.7, 1.0),
@@ -157,10 +177,13 @@ def call_api(
 # 主流程
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="批量生成 AI 学术段落训练数据")
     parser.add_argument("--count", type=int, default=500, help="生成段落数量")
-    parser.add_argument("--output", default="data/training/ai.jsonl", help="输出文件路径")
+    parser.add_argument(
+        "--output", default="data/training/ai.jsonl", help="输出文件路径"
+    )
     parser.add_argument("--model", default=None, help="模型名称")
     parser.add_argument("--base-url", default=None, help="API 地址")
     parser.add_argument("--api-key", default=None, help="API 密钥")
@@ -169,7 +192,10 @@ def main() -> None:
     args = parser.parse_args()
 
     api_key = (args.api_key or os.environ.get("AI_GEN_API_KEY", "")).strip()
-    base_url = (args.base_url or os.environ.get("AI_GEN_BASE_URL", "https://api.deepseek.com/v1")).strip()
+    base_url = (
+        args.base_url
+        or os.environ.get("AI_GEN_BASE_URL", "https://api.deepseek.com/v1")
+    ).strip()
     model = (args.model or os.environ.get("AI_GEN_MODEL", "deepseek-chat")).strip()
 
     # 本地 Ollama 不需要 API key
@@ -195,7 +221,11 @@ def main() -> None:
     # 如果文件已存在，追加模式（可以分多次跑）
     existing_count = 0
     if output_path.exists():
-        existing_count = sum(1 for line in output_path.read_text(encoding="utf-8").splitlines() if line.strip())
+        existing_count = sum(
+            1
+            for line in output_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        )
         print(f"已有数据: {existing_count} 条，本次追加生成")
 
     print("=" * 60)
@@ -224,7 +254,11 @@ def main() -> None:
                 # 清理：去掉可能的标题行、编号等
                 lines = content.strip().splitlines()
                 # 去掉第一行如果看起来像标题
-                if lines and len(lines[0]) < 30 and not lines[0].endswith(("。", "！", "？", "；")):
+                if (
+                    lines
+                    and len(lines[0]) < 30
+                    and not lines[0].endswith(("。", "！", "？", "；"))
+                ):
                     lines = lines[1:]
                 clean_text = "\n".join(lines).strip()
 
@@ -252,7 +286,7 @@ def main() -> None:
             if consecutive_failures >= 10:
                 print()
                 print(f"  连续失败 {consecutive_failures} 次，自动停止。")
-                print(f"  请检查: 1)API服务是否正常  2)密钥是否正确  3)模型名是否存在")
+                print("  请检查: 1)API服务是否正常  2)密钥是否正确  3)模型名是否存在")
                 break
 
             if args.delay > 0:

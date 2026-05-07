@@ -25,7 +25,9 @@ def extract_cnki_feedback_preview(filename: str, content: bytes) -> dict[str, An
         text = _extract_image_text(content, suffix)
         engine = "tesseract"
     else:
-        raise ValueError("only pdf, docx, txt, md, png, jpg, jpeg, bmp, tif, tiff, webp are supported")
+        raise ValueError(
+            "only pdf, docx, txt, md, png, jpg, jpeg, bmp, tif, tiff, webp are supported"
+        )
 
     normalized_text = _normalize_text(text)
 
@@ -136,7 +138,9 @@ def match_fragments_to_sections(
                 if ratio < min_ratio and len(source_text) >= 15:
                     ratio = difflib.SequenceMatcher(
                         None, source_text, sec_text
-                    ).find_longest_match(0, len(source_text), 0, len(sec_text)).size / max(len(source_text), 1)
+                    ).find_longest_match(
+                        0, len(source_text), 0, len(sec_text)
+                    ).size / max(len(source_text), 1)
             if ratio > best_ratio:
                 best_ratio = ratio
                 best_match = sec
@@ -145,8 +149,13 @@ def match_fragments_to_sections(
                 {
                     **frag,
                     "matched_section_index": best_match.get("section_index"),
-                    "matched_section_title": best_match.get("section_title") or best_match.get("title"),
-                    "matched_text_preview": (best_match.get("content") or best_match.get("text_preview") or "")[:200],
+                    "matched_section_title": best_match.get("section_title")
+                    or best_match.get("title"),
+                    "matched_text_preview": (
+                        best_match.get("content")
+                        or best_match.get("text_preview")
+                        or ""
+                    )[:200],
                     "match_ratio": round(best_ratio, 3),
                 }
             )
@@ -158,7 +167,9 @@ def match_fragments_to_sections(
 def _extract_image_text(content: bytes, suffix: str) -> str:
     tesseract = shutil.which("tesseract") or shutil.which("tesseract.exe")
     if not tesseract:
-        raise ValueError("image OCR requires tesseract.exe installed, or upload a PDF/text file instead")
+        raise ValueError(
+            "image OCR requires tesseract.exe installed, or upload a PDF/text file instead"
+        )
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(content)
         tmp.flush()
@@ -301,9 +312,18 @@ def _clean_fragment(text: str) -> str:
 def _is_likely_metadata(text: str) -> bool:
     """判断文本是否可能是元数据而非论文片段。"""
     metadata_keywords = [
-        "复制比", "重复率", "查重率", "AIGC率", "AI率",
-        "文字复制比", "去除引用", "单篇最大", "疑似剽窃",
-        "报告编号", "检测时间", "检测系统",
+        "复制比",
+        "重复率",
+        "查重率",
+        "AIGC率",
+        "AI率",
+        "文字复制比",
+        "去除引用",
+        "单篇最大",
+        "疑似剽窃",
+        "报告编号",
+        "检测时间",
+        "检测系统",
     ]
     for kw in metadata_keywords:
         if kw in text:

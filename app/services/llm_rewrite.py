@@ -1,4 +1,5 @@
 """LLM 驱动的段落改写建议服务。兼容 Kimi / Yunwu / OpenAI 格式。"""
+
 from __future__ import annotations
 
 import json
@@ -153,8 +154,14 @@ def _system_prompt(risk_type: str) -> str:
 
 # Prompt 注入常见关键词（中英文）
 _PROMPT_INJECTION_PATTERNS: list[re.Pattern[str]] = [
-    re.compile(r"忽略(?:以上|之前|上述|前面|所有|一切).*?(?:内容|指令|要求|规则|限制)", re.IGNORECASE),
-    re.compile(r"ignore\s+(?:all|previous|above|the\s+above).*?(?:instruction|command|rule|constraint)", re.IGNORECASE),
+    re.compile(
+        r"忽略(?:以上|之前|上述|前面|所有|一切).*?(?:内容|指令|要求|规则|限制)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"ignore\s+(?:all|previous|above|the\s+above).*?(?:instruction|command|rule|constraint)",
+        re.IGNORECASE,
+    ),
     re.compile(r"you\s+are\s+now\s+(?:a|an)", re.IGNORECASE),
     re.compile(r"(?:新的|新)的?指令", re.IGNORECASE),
     re.compile(r"new\s+instruction", re.IGNORECASE),
@@ -211,17 +218,29 @@ def _user_prompt(
         if local_aigc_score is not None and cnki_aigc_percent is not None:
             gap = cnki_aigc_percent - local_aigc_score * 100
             if gap > 15:
-                parts.append(f"【关键差距】知网实测 AIGC 率({cnki_aigc_percent:.1f}%) 比本系统本地预测({local_aigc_score*100:.1f}%) 高出 {gap:.1f} 个百分点。")
-                parts.append("这意味着知网的检测标准比本系统严格得多，本系统漏检了大量 AI 痕迹。你必须按知网最严格的标准来改写，不能只做表面替换。")
+                parts.append(
+                    f"【关键差距】知网实测 AIGC 率({cnki_aigc_percent:.1f}%) 比本系统本地预测({local_aigc_score * 100:.1f}%) 高出 {gap:.1f} 个百分点。"
+                )
+                parts.append(
+                    "这意味着知网的检测标准比本系统严格得多，本系统漏检了大量 AI 痕迹。你必须按知网最严格的标准来改写，不能只做表面替换。"
+                )
         if local_dup_score is not None and cnki_dup_percent is not None:
             gap = cnki_dup_percent - local_dup_score * 100
             if gap > 15:
-                parts.append(f"【关键差距】知网实测查重率({cnki_dup_percent:.1f}%) 比本系统本地预测({local_dup_score*100:.1f}%) 高出 {gap:.1f} 个百分点。")
-                parts.append("知网查重比本系统严格，可能存在大量本系统未识别的重复片段。改写时必须彻底重构句子骨骼。")
+                parts.append(
+                    f"【关键差距】知网实测查重率({cnki_dup_percent:.1f}%) 比本系统本地预测({local_dup_score * 100:.1f}%) 高出 {gap:.1f} 个百分点。"
+                )
+                parts.append(
+                    "知网查重比本系统严格，可能存在大量本系统未识别的重复片段。改写时必须彻底重构句子骨骼。"
+                )
         if cnki_aigc_percent is not None and cnki_aigc_percent >= 30:
-            parts.append("注意：知网 AIGC 率偏高（≥30%），改写时需要最激进地加入个人研究细节、具体数据和主观判断，不能只做表面替换。")
+            parts.append(
+                "注意：知网 AIGC 率偏高（≥30%），改写时需要最激进地加入个人研究细节、具体数据和主观判断，不能只做表面替换。"
+            )
         if cnki_dup_percent is not None and cnki_dup_percent >= 20:
-            parts.append("注意：知网查重率偏高（≥20%），改写时必须彻底重构句子骨骼（换主语、换视角、加限定），不能保留原文句式结构。")
+            parts.append(
+                "注意：知网查重率偏高（≥20%），改写时必须彻底重构句子骨骼（换主语、换视角、加限定），不能保留原文句式结构。"
+            )
         parts.append("-" * 40)
     parts.append("=" * 40)
     parts.append("需要改写的段落：")
@@ -229,14 +248,20 @@ def _user_prompt(
     parts.append(text)
     parts.append("<<<USER_CONTENT_END>>>")
     parts.append("=" * 40)
-    parts.append("请严格按照 system 要求的 JSON 格式输出。不要输出 markdown 代码块标记。")
+    parts.append(
+        "请严格按照 system 要求的 JSON 格式输出。不要输出 markdown 代码块标记。"
+    )
     return "\n".join(parts)
 
 
 class LLMRewriteService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.enabled = settings.llm_rewrite_enabled and settings.llm_provider != "none" and settings.llm_api_key
+        self.enabled = (
+            settings.llm_rewrite_enabled
+            and settings.llm_provider != "none"
+            and settings.llm_api_key
+        )
 
     async def rewrite_paragraph(
         self,
@@ -256,7 +281,12 @@ class LLMRewriteService:
 
         system_prompt = _system_prompt(risk_type)
         user_prompt = _user_prompt(
-            text, risk_type, reasons, subject, section_title, degree_level,
+            text,
+            risk_type,
+            reasons,
+            subject,
+            section_title,
+            degree_level,
             cnki_dup_percent=cnki_dup_percent,
             cnki_aigc_percent=cnki_aigc_percent,
             local_aigc_score=local_aigc_score,
@@ -281,7 +311,9 @@ class LLMRewriteService:
         max_retries = 6
         for attempt in range(max_retries):
             try:
-                async with httpx.AsyncClient(timeout=self.settings.llm_timeout_seconds) as client:
+                async with httpx.AsyncClient(
+                    timeout=self.settings.llm_timeout_seconds
+                ) as client:
                     response = await client.post(url, headers=headers, json=payload)
                     response.raise_for_status()
                     data = response.json()
@@ -292,13 +324,28 @@ class LLMRewriteService:
                 result.setdefault("rewritten_paragraph", "")
                 result.setdefault("overall_advice", "")
                 return result
-            except (httpx.HTTPStatusError, httpx.ConnectError, httpx.TimeoutException) as exc:
-                status_code = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else 0
-                is_retryable = status_code == 429 or status_code >= 500 or isinstance(exc, (httpx.ConnectError, httpx.TimeoutException))
+            except (
+                httpx.HTTPStatusError,
+                httpx.ConnectError,
+                httpx.TimeoutException,
+            ) as exc:
+                status_code = (
+                    exc.response.status_code
+                    if isinstance(exc, httpx.HTTPStatusError)
+                    else 0
+                )
+                is_retryable = (
+                    status_code == 429
+                    or status_code >= 500
+                    or isinstance(exc, (httpx.ConnectError, httpx.TimeoutException))
+                )
                 if is_retryable and attempt < max_retries - 1:
                     # 优先读取 API 返回的 Retry-After 头（Kimi/OpenAI 等标准限流提示）
                     retry_after = None
-                    if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+                    if (
+                        isinstance(exc, httpx.HTTPStatusError)
+                        and exc.response is not None
+                    ):
                         raw = exc.response.headers.get("retry-after")
                         if raw:
                             try:
@@ -311,15 +358,39 @@ class LLMRewriteService:
                         # 指数退避 + 抖动：适配 Kimi 3 RPM 限流（Free 等级）
                         # 基础间隔 15s，指数增长，最大 120s，加 0-5s 随机抖动避免惊群
                         import random
-                        wait = min(15 * (2 ** attempt), 120) + random.uniform(0, 5)
-                    logger.warning("LLM rewrite attempt %s failed (%s), retrying in %.1fs", attempt + 1, status_code, wait)
+
+                        wait = min(15 * (2**attempt), 120) + random.uniform(0, 5)
+                    logger.warning(
+                        "LLM rewrite attempt %s failed (%s), retrying in %.1fs",
+                        attempt + 1,
+                        status_code,
+                        wait,
+                    )
                     await asyncio.sleep(wait)
                     continue
-                logger.error("LLM rewrite failed after %s attempts (%s), falling back to rule-based engine", attempt + 1, status_code)
-                return _fallback_rewrite(text, risk_type, reasons, cnki_dup_percent=cnki_dup_percent, cnki_aigc_percent=cnki_aigc_percent)
-            except Exception as exc:
-                logger.exception("LLM rewrite failed, falling back to rule-based engine")
-                return _fallback_rewrite(text, risk_type, reasons, cnki_dup_percent=cnki_dup_percent, cnki_aigc_percent=cnki_aigc_percent)
+                logger.error(
+                    "LLM rewrite failed after %s attempts (%s), falling back to rule-based engine",
+                    attempt + 1,
+                    status_code,
+                )
+                return _fallback_rewrite(
+                    text,
+                    risk_type,
+                    reasons,
+                    cnki_dup_percent=cnki_dup_percent,
+                    cnki_aigc_percent=cnki_aigc_percent,
+                )
+            except Exception:
+                logger.exception(
+                    "LLM rewrite failed, falling back to rule-based engine"
+                )
+                return _fallback_rewrite(
+                    text,
+                    risk_type,
+                    reasons,
+                    cnki_dup_percent=cnki_dup_percent,
+                    cnki_aigc_percent=cnki_aigc_percent,
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -353,7 +424,9 @@ _AIGC_PATTERNS: list[tuple[re.Pattern[str], str, str]] = [
         "medium",
     ),
     (
-        re.compile(r"(?:有利于|有助于|促进了|提高了|增强了)[^，。；]*(?:有利于|有助于|促进了|提高了|增强了)"),
+        re.compile(
+            r"(?:有利于|有助于|促进了|提高了|增强了)[^，。；]*(?:有利于|有助于|促进了|提高了|增强了)"
+        ),
         "排比句是典型AI痕迹，拆成两句并插入转折或具体数据",
         "high",
     ),
@@ -364,7 +437,9 @@ _AIGC_PATTERNS: list[tuple[re.Pattern[str], str, str]] = [
     ),
     # ---- 新增：被动语态检测 ----
     (
-        re.compile(r"(?:被|由)[^，。；]{3,30}(?:完成|实现|发现|分析|处理|验证|证明|提出|采用|运用)"),
+        re.compile(
+            r"(?:被|由)[^，。；]{3,30}(?:完成|实现|发现|分析|处理|验证|证明|提出|采用|运用)"
+        ),
         "被动语态是典型AI痕迹，改为主动表达并明确动作发出者",
         "high",
     ),
@@ -376,7 +451,9 @@ _AIGC_PATTERNS: list[tuple[re.Pattern[str], str, str]] = [
     ),
     # ---- 新增：逻辑断层/模板结构 ----
     (
-        re.compile(r"(?:首先[^，。；]*其次[^，。；]*最后|第一[^，。；]*第二[^，。；]*第三)"),
+        re.compile(
+            r"(?:首先[^，。；]*其次[^，。；]*最后|第一[^，。；]*第二[^，。；]*第三)"
+        ),
         "机械枚举结构是AI模板，改用因果/递进关系串联，或加入个人判断",
         "medium",
     ),
@@ -388,7 +465,9 @@ _AIGC_PATTERNS: list[tuple[re.Pattern[str], str, str]] = [
     ),
     # ---- 新增：术语堆砌 ----
     (
-        re.compile(r"(?:机制|模式|框架|范式|体系|路径|逻辑|维度|视角).{0,20}(?:机制|模式|框架|范式|体系|路径|逻辑|维度|视角)"),
+        re.compile(
+            r"(?:机制|模式|框架|范式|体系|路径|逻辑|维度|视角).{0,20}(?:机制|模式|框架|范式|体系|路径|逻辑|维度|视角)"
+        ),
         "术语高频重复，用同义词替换或改为具体操作描述",
         "medium",
     ),
@@ -448,7 +527,11 @@ def _simple_rewrite_sentence(sentence: str, risk_type: str) -> str:
             rewritten,
         )
         # 无主语句 → 加主语
-        if rewritten.startswith(("通过", "基于", "根据")) and "笔者" not in rewritten and "本研究" not in rewritten:
+        if (
+            rewritten.startswith(("通过", "基于", "根据"))
+            and "笔者" not in rewritten
+            and "本研究" not in rewritten
+        ):
             rewritten = "笔者" + rewritten
         # 综上所述 → 具体发现
         rewritten = re.sub(
@@ -467,7 +550,9 @@ def _simple_rewrite_sentence(sentence: str, risk_type: str) -> str:
         if re.search(r"[\u201c\"'].{10,80}[\u201d\"']", rewritten):
             rewritten = re.sub(
                 r"[\u201c\"'](.{10,80})[\u201d\"']",
-                lambda m: f"{m.group(1)}（请用自己的话转述该定义/观点，并补充你对它的具体理解）",
+                lambda m: (
+                    f"{m.group(1)}（请用自己的话转述该定义/观点，并补充你对它的具体理解）"
+                ),
                 rewritten,
             )
     return rewritten
@@ -500,7 +585,9 @@ def _fallback_rewrite(
                     {
                         "original": sent,
                         "risk": level,
-                        "rewritten": rewritten if rewritten != sent else f"【请手动改写】{sent}",
+                        "rewritten": rewritten
+                        if rewritten != sent
+                        else f"【请手动改写】{sent}",
                         "explanation": explanation,
                     }
                 )
@@ -536,9 +623,13 @@ def _fallback_rewrite(
 
     # 知网数据注入
     if cnki_aigc_percent is not None and cnki_aigc_percent >= 30:
-        diagnosis += f" 知网 AIGC 实测率为 {cnki_aigc_percent:.1f}%，建议全面加入个人研究细节。"
+        diagnosis += (
+            f" 知网 AIGC 实测率为 {cnki_aigc_percent:.1f}%，建议全面加入个人研究细节。"
+        )
     if cnki_dup_percent is not None and cnki_dup_percent >= 20:
-        diagnosis += f" 知网查重实测率为 {cnki_dup_percent:.1f}%，建议彻底重构句子骨骼。"
+        diagnosis += (
+            f" 知网查重实测率为 {cnki_dup_percent:.1f}%，建议彻底重构句子骨骼。"
+        )
 
     # 整体建议
     if risk_type == "aigc":

@@ -17,7 +17,9 @@ class Settings(BaseSettings):
     max_jobs: int = Field(default=200, ge=10)
     calibration_store_path: str = "data/calibration_samples.jsonl"
     calibration_min_samples: int = Field(default=12, ge=1)
-    database_url: str = "postgresql://postgres:postgres@localhost:5432/paper_risk_platform"
+    database_url: str = (
+        "postgresql://postgres:postgres@localhost:5432/paper_risk_platform"
+    )
     database_pool_min: int = Field(default=1, ge=1)
     database_pool_max: int = Field(default=10, ge=1)
     upload_storage_dir: str = "data/uploads"

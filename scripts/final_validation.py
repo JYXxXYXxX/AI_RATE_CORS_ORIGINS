@@ -1,4 +1,5 @@
 """最终闭环验证脚本。"""
+
 import io
 import uuid
 
@@ -56,7 +57,13 @@ client.post(
 r = client.post(
     "/v1/documents/upload",
     data={"title": "闭环验证", "subject": "教育学"},
-    files={"file": ("test.txt", io.BytesIO("本文首先分析人工智能赋能教育评价的理论基础。".encode("utf-8")), "text/plain")},
+    files={
+        "file": (
+            "test.txt",
+            io.BytesIO("本文首先分析人工智能赋能教育评价的理论基础。".encode("utf-8")),
+            "text/plain",
+        )
+    },
 )
 print(f"  upload: {r.status_code}")
 doc_id = r.json()["document_id"]

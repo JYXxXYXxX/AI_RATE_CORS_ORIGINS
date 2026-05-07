@@ -4,9 +4,15 @@ from dataclasses import dataclass
 from app.config import Settings
 
 
-REFERENCE_HEADING_RE = re.compile(r"^\s*(参考文献|References|Bibliography)\s*[:：]?\s*$", re.IGNORECASE | re.MULTILINE)
-ACK_HEADING_RE = re.compile(r"^\s*(致谢|鸣谢|Acknowledgements?)\s*[:：]?\s*$", re.IGNORECASE | re.MULTILINE)
-TOC_HEADING_RE = re.compile(r"^\s*(目录|目\s*录|Contents)\s*$", re.IGNORECASE | re.MULTILINE)
+REFERENCE_HEADING_RE = re.compile(
+    r"^\s*(参考文献|References|Bibliography)\s*[:：]?\s*$", re.IGNORECASE | re.MULTILINE
+)
+ACK_HEADING_RE = re.compile(
+    r"^\s*(致谢|鸣谢|Acknowledgements?)\s*[:：]?\s*$", re.IGNORECASE | re.MULTILINE
+)
+TOC_HEADING_RE = re.compile(
+    r"^\s*(目录|目\s*录|Contents)\s*$", re.IGNORECASE | re.MULTILINE
+)
 SECTION_HEADING_RE = re.compile(
     r"^\s*((第[一二三四五六七八九十百\d]+[章节部分篇])|([0-9一二三四五六七八九十]+[.、][0-9.、]*\s*[\u4e00-\u9fffA-Za-z])|(摘要|引言|绪论|结论|总结|Abstract|Conclusion|Introduction))"
 )
@@ -42,7 +48,13 @@ def strip_references(text: str) -> str:
                 cut_positions.append(match.start())
                 continue
             suffix = text[match.end() :]
-            markers = len(re.findall(r"(\[\d+\]|\(\d{4}\)|\bdoi\b|出版社|期刊|学报)", suffix, re.IGNORECASE))
+            markers = len(
+                re.findall(
+                    r"(\[\d+\]|\(\d{4}\)|\bdoi\b|出版社|期刊|学报)",
+                    suffix,
+                    re.IGNORECASE,
+                )
+            )
             if len(text[: match.start()]) > 40 and (markers > 0 or len(suffix) > 80):
                 cut_positions.append(match.start())
 
@@ -66,7 +78,10 @@ def strip_toc(text: str) -> str:
 
         if in_toc:
             skipped += 1
-            looks_like_toc = bool(re.search(r"\.{2,}\s*\d+$", stripped) or re.search(r"\s+\d{1,3}$", stripped))
+            looks_like_toc = bool(
+                re.search(r"\.{2,}\s*\d+$", stripped)
+                or re.search(r"\s+\d{1,3}$", stripped)
+            )
             if skipped <= 80 and (looks_like_toc or not stripped):
                 continue
             in_toc = False
@@ -123,7 +138,9 @@ def segment_document(text: str, settings: Settings) -> list[TextSegment]:
         paragraph_index += 1
         if len(paragraph) <= settings.target_segment_chars * 1.35:
             if _is_valid_body_segment(paragraph, settings):
-                segments.append(_make_segment(segments, paragraph, current_section, paragraph_index))
+                segments.append(
+                    _make_segment(segments, paragraph, current_section, paragraph_index)
+                )
             continue
 
         buffer = ""
@@ -131,16 +148,29 @@ def segment_document(text: str, settings: Settings) -> list[TextSegment]:
             sentence = sentence.strip()
             if not sentence:
                 continue
-            if len(buffer) + len(sentence) > settings.target_segment_chars and len(buffer) >= settings.min_segment_chars:
-                segments.append(_make_segment(segments, buffer.strip(), current_section, paragraph_index))
+            if (
+                len(buffer) + len(sentence) > settings.target_segment_chars
+                and len(buffer) >= settings.min_segment_chars
+            ):
+                segments.append(
+                    _make_segment(
+                        segments, buffer.strip(), current_section, paragraph_index
+                    )
+                )
                 buffer = sentence
             else:
                 buffer = f"{buffer}{sentence}" if buffer else sentence
         if _is_valid_body_segment(buffer, settings):
-            segments.append(_make_segment(segments, buffer.strip(), current_section, paragraph_index))
+            segments.append(
+                _make_segment(
+                    segments, buffer.strip(), current_section, paragraph_index
+                )
+            )
 
     if not segments and text:
-        segments = [_make_segment(segments, text[: settings.target_segment_chars], None, 1)]
+        segments = [
+            _make_segment(segments, text[: settings.target_segment_chars], None, 1)
+        ]
 
     return segments
 
@@ -152,7 +182,12 @@ def preview_text(text: str, limit: int = 96) -> str:
     return f"{compact[:limit]}..."
 
 
-def _make_segment(segments: list[TextSegment], text: str, section_title: str | None, paragraph_index: int) -> TextSegment:
+def _make_segment(
+    segments: list[TextSegment],
+    text: str,
+    section_title: str | None,
+    paragraph_index: int,
+) -> TextSegment:
     return TextSegment(
         index=len(segments),
         text=text,
@@ -167,4 +202,6 @@ def _is_valid_body_segment(text: str, settings: Settings) -> bool:
         return True
     if len(stripped) < 45:
         return False
-    return len(re.findall(r"[\u4e00-\u9fff]", stripped)) >= 35 and bool(re.search(r"[。！？!?；;]", stripped))
+    return len(re.findall(r"[\u4e00-\u9fff]", stripped)) >= 35 and bool(
+        re.search(r"[。！？!?；;]", stripped)
+    )

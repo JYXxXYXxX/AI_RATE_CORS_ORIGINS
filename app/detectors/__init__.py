@@ -12,4 +12,9 @@ def build_production_detectors() -> list[Detector]:
     ]
 
 
-__all__ = ["Detector", "DetectorResult", "build_default_detectors", "build_production_detectors"]
+__all__ = [
+    "Detector",
+    "DetectorResult",
+    "build_default_detectors",
+    "build_production_detectors",
+]

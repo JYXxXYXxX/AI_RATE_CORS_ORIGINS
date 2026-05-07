@@ -1,7 +1,16 @@
 """旧版兼容路由（health, analyze-text, analyze-file, jobs, calibration-samples）。"""
+
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+)
 
 from app.config import Settings, get_settings
 from app.routes.deps import get_analyzer, get_calibrator, get_job_store
@@ -29,6 +38,7 @@ def health(
     db_ok = True
     try:
         from app.db import get_repository
+
         get_repository().health_check()
     except Exception:
         db_ok = False
@@ -43,8 +53,12 @@ def health(
 
 
 @router.post("/v1/analyze-text", response_model=AnalyzeResponse)
-def analyze_text(payload: AnalyzeTextRequest, analyzer: PaperAnalyzer = Depends(get_analyzer)) -> AnalyzeResponse:
-    return analyzer.analyze(payload.text, payload.title, payload.subject, payload.degree_level)
+def analyze_text(
+    payload: AnalyzeTextRequest, analyzer: PaperAnalyzer = Depends(get_analyzer)
+) -> AnalyzeResponse:
+    return analyzer.analyze(
+        payload.text, payload.title, payload.subject, payload.degree_level
+    )
 
 
 @router.post("/v1/analyze-file", response_model=AnalyzeResponse)
@@ -91,7 +105,9 @@ async def create_job(
         subject,
         degree_level,
     )
-    return JobCreateResponse(job_id=job.job_id, status="queued", progress=0, stage="queued")
+    return JobCreateResponse(
+        job_id=job.job_id, status="queued", progress=0, stage="queued"
+    )
 
 
 @router.get("/v1/jobs/{job_id}", response_model=JobStatusResponse)
@@ -103,7 +119,9 @@ def get_job(job_id: str, jobs: JobStore = Depends(get_job_store)) -> JobStatusRe
 
 
 @router.get("/v1/jobs/{job_id}/report", response_model=AnalyzeResponse)
-def get_job_report(job_id: str, jobs: JobStore = Depends(get_job_store)) -> AnalyzeResponse:
+def get_job_report(
+    job_id: str, jobs: JobStore = Depends(get_job_store)
+) -> AnalyzeResponse:
     job = jobs.get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="任务不存在")
@@ -172,9 +190,13 @@ def _run_analysis_job(
         text = _extract_upload_text_by_name(filename, content, settings)
         jobs.update(job_id, progress=38, stage="segmenting_and_scoring")
         report = analyzer.analyze(text, title or filename, subject, degree_level)
-        jobs.update(job_id, status="completed", progress=100, stage="completed", report=report)
+        jobs.update(
+            job_id, status="completed", progress=100, stage="completed", report=report
+        )
     except Exception as exc:  # noqa: BLE001
-        jobs.update(job_id, status="failed", progress=100, stage="failed", error=str(exc))
+        jobs.update(
+            job_id, status="failed", progress=100, stage="failed", error=str(exc)
+        )
     finally:
         content = b""
         _ = content
@@ -193,7 +215,9 @@ def _extract_upload_text(file: UploadFile, content: bytes, settings: Settings) -
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-def _extract_upload_text_by_name(filename: str, content: bytes, settings: Settings) -> str:
+def _extract_upload_text_by_name(
+    filename: str, content: bytes, settings: Settings
+) -> str:
     if len(content) > settings.max_upload_bytes:
         raise ValueError("文件过大")
     text = extract_text(filename, content)

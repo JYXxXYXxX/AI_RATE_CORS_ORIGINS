@@ -1,4 +1,5 @@
 """模型状态与训练路由。"""
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.config import Settings, get_settings
@@ -36,7 +37,11 @@ def get_model_status(
     )
 
 
-@router.post("/models/train-proxy", response_model=ProxyModelTrainResponse, dependencies=[Depends(require_admin)])
+@router.post(
+    "/models/train-proxy",
+    response_model=ProxyModelTrainResponse,
+    dependencies=[Depends(require_admin)],
+)
 def train_proxy_models(
     payload: ProxyModelTrainRequest,
     trainer: ProxyTrainingService = Depends(get_proxy_training_service),
@@ -52,6 +57,8 @@ def train_proxy_models(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return ProxyModelTrainResponse(
-        trained_models=[TrainedModelSummary(**item) for item in result["trained_models"]],
+        trained_models=[
+            TrainedModelSummary(**item) for item in result["trained_models"]
+        ],
         dataset_rows=result["dataset_rows"],
     )

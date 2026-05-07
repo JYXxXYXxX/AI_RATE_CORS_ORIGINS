@@ -1,4 +1,5 @@
 """计费相关路由。"""
+
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -42,7 +43,9 @@ def create_mock_checkout(
     if not settings.mock_payment_enabled:
         raise HTTPException(status_code=404, detail="not found")
     try:
-        result = account_service.mock_checkout(user_id=str(user["id"]), package_code=payload.package_code)
+        result = account_service.mock_checkout(
+            user_id=str(user["id"]), package_code=payload.package_code
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return MockCheckoutResponse.model_validate(result)
@@ -72,7 +75,9 @@ def get_billing_order_detail(
     account_service: AccountService = Depends(get_account_service),
 ) -> BillingOrderDetailResponse:
     try:
-        result = account_service.get_order_detail(user_id=str(user["id"]), order_no=order_no)
+        result = account_service.get_order_detail(
+            user_id=str(user["id"]), order_no=order_no
+        )
     except ValueError as exc:
         message = str(exc)
         status_code = 404 if "not found" in message else 400
