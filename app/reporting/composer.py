@@ -331,10 +331,10 @@ def _overall_risk(
 
 def _one_line_judgement(overall_risk: str, comfort_score: int) -> str:
     if overall_risk == "high":
-        return f"这版还不适合直接正式送检，但并不是推倒重来，先抓关键段改会更划算。当前安心指数 {comfort_score}/100。"
+        return f"这版还不适合直接正式送检，但并不是推倒重来，先抓关键段改会更划算。当前风险指数 {comfort_score}/100。"
     if overall_risk == "medium":
-        return f"整体已经有基础，但还存在几处会拖高结果的不稳定因素。当前安心指数 {comfort_score}/100。"
-    return f"整体风险相对可控，建议做一次定向复查后再进入正式送检。当前安心指数 {comfort_score}/100。"
+        return f"整体已经有基础，但还存在几处会拖高结果的不稳定因素。当前风险指数 {comfort_score}/100。"
+    return f"整体风险相对可控，建议做一次定向复查后再进入正式送检。当前风险指数 {comfort_score}/100。"
 
 
 def _score_band(center: float, low: float, high: float, label: str) -> dict[str, Any]:

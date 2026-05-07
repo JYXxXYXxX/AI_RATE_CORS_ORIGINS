@@ -6,21 +6,16 @@ import {
   getAnalysisTask,
   getRun,
   getUnifiedReport,
-  submitCnkiFeedback
+  submitCnkiFeedback,
+  getBillingSummary
 } from '../api'
 import type {
   DocumentUploadResponse,
   AnalysisTaskStatusResponse,
   AnalysisRunStatusResponse,
-  UnifiedReportResponse
+  UnifiedReportResponse,
+  RecentAnalysisTaskSummary
 } from '../types'
-
-export interface HistoryItem {
-  runId: string
-  documentId: string
-  title: string
-  time: string
-}
 
 export interface CnkiReportPayload {
   file: File
@@ -34,9 +29,6 @@ export interface CnkiReportPayload {
   fragments?: any[] | null
 }
 
-const HISTORY_KEY = 'ai-rate-task-history'
-const MAX_HISTORY = 20
-
 export const useAnalysisStore = defineStore('analysis', () => {
   const submitting = ref(false)
   const uploadProgress = ref(0)
@@ -44,22 +36,15 @@ export const useAnalysisStore = defineStore('analysis', () => {
   const runStatus = ref<AnalysisRunStatusResponse | null>(null)
   const report = ref<UnifiedReportResponse | null>(null)
   const error = ref('')
-  const history = ref<HistoryItem[]>(loadHistory())
+  const history = ref<RecentAnalysisTaskSummary[]>([])
 
-  function loadHistory(): HistoryItem[] {
+  async function refreshHistory() {
     try {
-      return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]')
+      const billing = await getBillingSummary()
+      history.value = billing.recent_tasks || []
     } catch {
-      return []
+      // silently ignore if billing API fails
     }
-  }
-
-  function pushHistory(item: HistoryItem) {
-    const list = history.value.filter((h) => h.runId !== item.runId)
-    list.unshift(item)
-    if (list.length > MAX_HISTORY) list.length = MAX_HISTORY
-    history.value = list
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(list))
   }
 
   async function startAnalysis(payload: {
@@ -112,12 +97,7 @@ export const useAnalysisStore = defineStore('analysis', () => {
       runStatus.value = await getRun(finished.run_id)
       report.value = await getUnifiedReport(finished.run_id)
 
-      pushHistory({
-        runId: finished.run_id,
-        documentId: uploadResult.document_id,
-        title: payload.title || uploadResult.title || uploadResult.filename,
-        time: new Date().toISOString()
-      })
+      await refreshHistory()
 
       return finished.run_id
     } catch (err) {
@@ -158,5 +138,5 @@ export const useAnalysisStore = defineStore('analysis', () => {
     error.value = ''
   }
 
-  return { submitting, uploadProgress, taskStatus, runStatus, report, error, history, startAnalysis, loadReport, clearCurrent, pushHistory }
+  return { submitting, uploadProgress, taskStatus, runStatus, report, error, history, startAnalysis, loadReport, clearCurrent, refreshHistory }
 })

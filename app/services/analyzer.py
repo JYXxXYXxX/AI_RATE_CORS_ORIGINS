@@ -1,3 +1,4 @@
+import re
 from datetime import UTC, datetime
 from statistics import pstdev
 from uuid import uuid4
@@ -17,6 +18,18 @@ DISCLAIMER = (
 RETAINED_CONTENT_POLICY = (
     "检测完成后不持久化保存论文原文，仅保留匿名特征、分数、模型版本与报告摘要。"
 )
+
+_SKIP_SECTION_PATTERNS = [
+    re.compile(r"参考文献|references", re.IGNORECASE),
+    re.compile(r"目录|contents|table\s+of\s+contents", re.IGNORECASE),
+    re.compile(r"致谢|acknowledg", re.IGNORECASE),
+]
+
+
+def _should_skip_section(section_title: str | None) -> bool:
+    if not section_title:
+        return False
+    return any(p.search(section_title) for p in _SKIP_SECTION_PATTERNS)
 
 
 class PaperAnalyzer:
@@ -42,26 +55,56 @@ class PaperAnalyzer:
             text = text[: self.settings.max_text_chars]
 
         segments = segment_document(text, self.settings)
-        segment_reports = [
-            self._score_segment(segment, segments) for segment in segments
+
+        scored_segments: list[TextSegment] = []
+        skipped_segments: list[TextSegment] = []
+        for seg in segments:
+            if _should_skip_section(seg.section_title):
+                skipped_segments.append(seg)
+            else:
+                scored_segments.append(seg)
+
+        scored_reports = [
+            self._score_segment(segment, scored_segments) for segment in scored_segments
         ]
+        skipped_reports = [
+            SegmentReport(
+                index=segment.index,
+                section_title=segment.section_title,
+                paragraph_index=segment.paragraph_index,
+                text_preview=preview_text(segment.text),
+                char_count=len(segment.text),
+                raw_ai_score=0.0,
+                ai_probability=0.0,
+                ai_like_score=0.0,
+                risk_level="low",
+                reasons=["该片段属于参考文献/目录/致谢部分，不参与 AIGC 评分"],
+                signals=[],
+            )
+            for segment in skipped_segments
+        ]
+
+        segment_reports = scored_reports + skipped_reports
+        segment_reports.sort(key=lambda r: r.index)
+
         total_chars = sum(report.char_count for report in segment_reports)
 
-        if total_chars == 0:
+        scored_chars = sum(report.char_count for report in scored_reports)
+        if scored_chars == 0:
             ai_like_score = 0.0
         else:
             weighted = sum(
-                report.ai_like_score * report.char_count for report in segment_reports
+                report.ai_like_score * report.char_count for report in scored_reports
             )
-            ai_like_score = weighted / total_chars
+            ai_like_score = weighted / scored_chars
 
-        dispersion = self._segment_dispersion(segment_reports)
+        dispersion = self._segment_dispersion(scored_reports)
         predicted_range = self.calibrator.predict_range(
             ai_like_score, dispersion, subject
         )
-        confidence = self.calibrator.confidence(len(segment_reports), dispersion)
+        confidence = self.calibrator.confidence(len(scored_reports), dispersion)
         high_risk_segments = [
-            report.index for report in segment_reports if report.ai_like_score >= 0.70
+            report.index for report in scored_reports if report.ai_like_score >= 0.70
         ]
 
         return AnalyzeResponse(

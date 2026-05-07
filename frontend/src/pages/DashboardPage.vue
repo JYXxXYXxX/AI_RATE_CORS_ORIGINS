@@ -33,16 +33,18 @@
       <div class="history-list">
         <article
           v-for="item in analysis.history"
-          :key="item.runId"
+          :key="item.task_id"
           class="history-row"
-          @click="router.push(`/app/report/${item.runId}`)"
+          :class="{ clickable: !!item.run_id }"
+          @click="item.run_id && router.push(`/app/report/${item.run_id}`)"
         >
           <div class="history-info">
-            <strong>{{ item.title || '未命名文档' }}</strong>
-            <span class="history-id">{{ item.runId.slice(0, 8) }}...</span>
+            <strong>{{ item.title || item.filename || '未命名文档' }}</strong>
+            <span class="history-id">{{ item.task_id.slice(0, 8) }}...</span>
           </div>
-          <span class="history-time">{{ formatTime(item.time) }}</span>
-          <svg class="history-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+          <span class="history-time">{{ formatTime(item.created_at) }}</span>
+          <span v-if="!item.run_id" class="history-status">{{ statusLabel(item.status, item.progress) }}</span>
+          <svg v-else class="history-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
         </article>
       </div>
     </section>
@@ -60,6 +62,7 @@
 </template>
 
 <script setup lang="ts">
+import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useAnalysisStore } from '../stores/analysis'
@@ -67,6 +70,10 @@ import { useAnalysisStore } from '../stores/analysis'
 const router = useRouter()
 const auth = useAuthStore()
 const analysis = useAnalysisStore()
+
+onMounted(() => {
+  analysis.refreshHistory()
+})
 
 function formatTime(iso: string) {
   if (!iso) return ''
@@ -78,6 +85,18 @@ function formatTime(iso: string) {
   if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`
   if (diff < 604800000) return `${Math.floor(diff / 86400000)} 天前`
   return d.toLocaleDateString('zh-CN')
+}
+
+function statusLabel(status: string, progress: number) {
+  const labels: Record<string, string> = {
+    queued: '排队中',
+    processing: '处理中',
+    completed: '已完成',
+    failed: '失败'
+  }
+  const label = labels[status] || status
+  if (status === 'processing') return `${label} ${progress}%`
+  return label
 }
 </script>
 
@@ -180,11 +199,14 @@ function formatTime(iso: string) {
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.88);
   border: 1px solid rgba(31, 54, 73, 0.06);
-  cursor: pointer;
   transition: all 0.15s ease;
 }
 
-.history-row:hover {
+.history-row.clickable {
+  cursor: pointer;
+}
+
+.history-row.clickable:hover {
   border-color: rgba(47, 125, 103, 0.2);
   box-shadow: 0 4px 16px rgba(47, 125, 103, 0.06);
 }
@@ -211,6 +233,12 @@ function formatTime(iso: string) {
 
 .history-time {
   font-size: 13px;
+  color: #8b95a2;
+  white-space: nowrap;
+}
+
+.history-status {
+  font-size: 12px;
   color: #8b95a2;
   white-space: nowrap;
 }

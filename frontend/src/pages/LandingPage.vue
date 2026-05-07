@@ -23,7 +23,7 @@
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
           </div>
           <h3>详细分析报告</h3>
-          <p>安心指数、章节热力图、逐段 AIGC 评分与重复检测，一次上传全部拿到。</p>
+          <p>风险指数、章节热力图、逐段 AIGC 评分与重复检测，一次上传全部拿到。</p>
         </article>
         <article class="feature-card">
           <div class="feature-icon">
@@ -67,7 +67,7 @@
         <div class="step">
           <span class="step-num">3</span>
           <h3>查看报告</h3>
-          <p>安心指数 + 修改建议 + 导师沟通摘要</p>
+          <p>风险指数 + 修改建议 + 导师沟通摘要</p>
         </div>
       </div>
     </section>

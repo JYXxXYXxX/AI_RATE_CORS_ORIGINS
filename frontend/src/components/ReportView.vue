@@ -2,7 +2,7 @@
   <section class="summary-hero">
     <div class="hero-main">
       <p class="eyebrow">
-        {{ latestFeedback ? '基于知网实测的安心指数' : '安心指数' }}
+        {{ latestFeedback ? '基于知网实测的风险指数' : '风险指数' }}
       </p>
       <div class="comfort-line">
         <strong>{{ cnkiBasedComfortScore }}</strong>
@@ -768,7 +768,7 @@ const cnkiGapWarning = computed(() => {
   return parts.join('')
 })
 
-// 基于知网实测数据重新计算风险等级和安心指数
+// 基于知网实测数据重新计算风险等级和风险指数
 const cnkiBasedRisk = computed(() => {
   const latest = latestFeedback.value
   if (!latest) return props.report.summary.overall_risk
