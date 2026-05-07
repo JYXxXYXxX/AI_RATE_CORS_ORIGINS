@@ -1,0 +1,12 @@
+{
+  "report": {
+    "similarity": {
+      "overall": 12.6
+    },
+    "ai": {
+      "overall": 18.3
+    },
+    "confidence": 0.79
+  },
+  "provider_version": "turnitin-mock-2026q2"
+}

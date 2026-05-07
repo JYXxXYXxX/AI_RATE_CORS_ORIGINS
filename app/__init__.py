@@ -1,0 +1,2 @@
+"""AI rate detector service."""
+

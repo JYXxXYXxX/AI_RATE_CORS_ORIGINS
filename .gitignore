@@ -1,0 +1,44 @@
+# Python
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# IDE
+.dev/
+.vscode/
+.idea/
+tempCodeRunnerFile.py
+
+# Environment
+.env
+
+# Build artifacts
+.build/
+
+# Data - user uploads and generated artifacts
+data/uploads/
+data/cleaned/
+data/feedback/
+data/models/
+data/training/
+data/test_*runtime*/
+data/test_provider_registry/
+data/test_billing_orders_runtime/
+data/*.jsonl
+
+# Keep provider_configs.json and provider_results (demo data)
+!data/provider_configs.json
+!data/provider_results/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# OS
+.DS_Store
+Thumbs.db

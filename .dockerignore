@@ -1,0 +1,33 @@
+.venv/
+.git/
+.github/
+.dev/
+.build/
+.pytest_cache/
+__pycache__/
+*.pyc
+
+# 前端源码（dist 已打包）
+frontend/node_modules/
+frontend/src/
+frontend/*.ts
+frontend/*.json
+
+# 测试数据
+data/test_*
+data/uploads/
+data/cleaned/
+data/feedback/
+
+# CSL 语料库（太大）
+CSL/
+
+# IDE
+.vscode/
+.idea/
+
+# 系统文件
+Thumbs.db
+.DS_Store
+*.md
+!README.md

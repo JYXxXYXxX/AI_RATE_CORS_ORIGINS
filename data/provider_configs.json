@@ -1,0 +1,35 @@
+{
+  "turnitin": {
+    "field_map": {
+      "aigc_percent": "report.ai.overall",
+      "confidence": "report.confidence",
+      "duplication_percent": "report.similarity.overall",
+      "version": "provider_version"
+    },
+    "mode": "file",
+    "path": "data/provider_results/turnitin_demo.json",
+    "version": "turnitin-mock-2026q2"
+  },
+  "vip": {
+    "field_map": {
+      "aigc_percent": "payload.aigc",
+      "confidence": "meta.confidence",
+      "duplication_percent": "payload.duplication",
+      "version": "meta.version"
+    },
+    "mode": "file",
+    "path": "data/provider_results/vip_demo.json",
+    "version": "vip-mock-2026q2"
+  },
+  "wanfang": {
+    "field_map": {
+      "aigc_percent": "result.aigc_percent",
+      "confidence": "result.confidence",
+      "duplication_percent": "result.duplication_percent",
+      "version": "version"
+    },
+    "mode": "file",
+    "path": "data/provider_results/wanfang_demo.json",
+    "version": "wanfang-mock-2026q2"
+  }
+}

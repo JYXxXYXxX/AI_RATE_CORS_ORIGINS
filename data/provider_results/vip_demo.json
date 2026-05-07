@@ -1,0 +1,10 @@
+{
+  "payload": {
+    "duplication": 14.2,
+    "aigc": 19.7
+  },
+  "meta": {
+    "confidence": 0.81,
+    "version": "vip-mock-2026q2"
+  }
+}
