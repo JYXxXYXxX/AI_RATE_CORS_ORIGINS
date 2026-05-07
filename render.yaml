@@ -1,0 +1,30 @@
+# Render Blueprint（基础设施即代码）
+# 使用方式：
+# 1. 先将代码推送到 GitHub
+# 2. 在 Render Dashboard 点击 "New +" → "Blueprint"
+# 3. 选择你的 GitHub 仓库，Render 会自动读取此文件并创建服务
+# 4. 创建完成后，在环境变量里手动填入 AI_RATE_DATABASE_URL（来自 Supabase）
+
+services:
+  - type: web
+    name: ai-rate-detector
+    runtime: docker
+    repo: https://github.com/USERNAME/REPO.git  # ← 改成你的 GitHub 仓库地址
+    branch: main
+    plan: free
+    envVars:
+      - key: AI_RATE_SERVICE_ENV
+        value: prod
+      - key: AI_RATE_CORS_ORIGINS
+        value: https://ai-rate-detector.onrender.com  # ← 如果你改了服务名，这里也要改
+      - key: AI_RATE_PAYMENT_PUBLIC_BASE_URL
+        value: https://ai-rate-detector.onrender.com
+      - key: AI_RATE_COOKIE_SECURE
+        value: "true"
+      - key: AI_RATE_DATABASE_URL
+        sync: false  # 在 Supabase 创建后，到 Render Dashboard 手动填入
+      - key: AI_RATE_PAYMENT_CALLBACK_SECRET
+        generateValue: true
+      - key: AI_RATE_LLM_PROVIDER
+        value: none
+    healthCheckPath: /health
