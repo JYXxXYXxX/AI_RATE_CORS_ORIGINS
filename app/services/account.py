@@ -66,14 +66,8 @@ class AccountService:
         normalized_email = _normalize_email(email)
         if self.repository.get_user_by_email(normalized_email) is not None:
             raise ValueError("email already registered")
-        if len(password) < 8:
-            raise ValueError("password must be at least 8 characters")
-        if not re.search(r"[A-Z]", password):
-            raise ValueError("password must contain at least one uppercase letter")
-        if not re.search(r"[a-z]", password):
-            raise ValueError("password must contain at least one lowercase letter")
-        if not re.search(r"\d", password):
-            raise ValueError("password must contain at least one digit")
+        if len(password) < 6:
+            raise ValueError("password must be at least 6 characters")
 
         user = self.repository.create_user(
             email=normalized_email,

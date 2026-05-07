@@ -27,7 +27,7 @@ class UserSummary(BaseModel):
 
 class AuthRegisterRequest(BaseModel):
     email: str
-    password: str = Field(..., min_length=8)
+    password: str = Field(..., min_length=6)
     display_name: str | None = None
 
 
