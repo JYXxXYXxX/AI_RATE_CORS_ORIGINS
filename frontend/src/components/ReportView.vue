@@ -522,7 +522,7 @@
         />
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         <p>点击选择知网报告截图或 PDF</p>
-        <span>支持 .pdf、.png、.jpg，最大 10MB</span>
+        <span>支持 .pdf、.png、.jpg，最大 20MB</span>
       </div>
 
       <div v-else class="cnki-upload-preview">
@@ -837,7 +837,7 @@ function handleCnkiUploadSelect(e: Event) {
 
 async function processCnkiUploadFile(file: File) {
   if (file.size > 20 * 1024 * 1024) {
-    ElMessage.warning('文件大小不能超过 10MB')
+    ElMessage.warning('文件大小不能超过 20MB')
     return
   }
   cnkiUploadFile.value = file

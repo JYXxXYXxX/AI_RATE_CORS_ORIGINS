@@ -55,7 +55,7 @@
         <div class="step">
           <span class="step-num">1</span>
           <h3>上传论文</h3>
-          <p>支持 .docx、.pdf、.txt 等格式，最大 10MB</p>
+          <p>支持 .docx、.pdf、.txt 等格式，最大 20MB</p>
         </div>
         <div class="step-arrow">→</div>
         <div class="step">
