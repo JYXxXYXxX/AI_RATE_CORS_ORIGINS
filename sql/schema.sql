@@ -2,6 +2,9 @@
 -- PostgreSQL database dump
 --
 
+-- 确保 pgvector 扩展已启用（Supabase 兼容）
+CREATE EXTENSION IF NOT EXISTS vector;
+
 -- Dumped from database version 17.9
 -- Dumped by pg_dump version 17.9
 
@@ -196,7 +199,7 @@ CREATE TABLE public.document_sections (
     text_preview character varying(500),
     content text NOT NULL,
     char_count integer DEFAULT 0 NOT NULL,
-    embedding public.vector(768),
+    embedding vector(768),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT document_sections_char_count_check CHECK ((char_count >= 0)),
     CONSTRAINT document_sections_paragraph_index_check CHECK (((paragraph_index IS NULL) OR (paragraph_index >= 0))),
