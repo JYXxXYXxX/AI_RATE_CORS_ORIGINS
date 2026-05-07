@@ -11,8 +11,8 @@
       <h2>{{ riskText(cnkiBasedRisk) }}</h2>
       <p class="hero-copy">{{ cnkiBasedJudgement }}</p>
       <div class="hero-actions report-action-row">
-        <el-button type="success" plain :loading="exportingMarkdown" @click="downloadMarkdownReport">
-          导出 Markdown 报告
+        <el-button type="success" plain @click="openPrintReport">
+          导出 PDF 报告
         </el-button>
         <el-button plain @click="copyMentorBrief">复制导师沟通摘要</el-button>
         <el-button plain @click="copyRevisionPlan">复制修改行动计划</el-button>
@@ -670,9 +670,10 @@
 
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { EditPen, Bottom, DocumentCopy, Warning, Upload } from '@element-plus/icons-vue'
-import { getRewriteAdvice, getUnifiedReportMarkdown, previewCnkiFeedbackOcr, submitCnkiFeedback } from '../api'
+import { getRewriteAdvice, previewCnkiFeedbackOcr, submitCnkiFeedback } from '../api'
 import type {
   AnalysisRunStatusResponse,
   ChecklistItem,
@@ -681,6 +682,8 @@ import type {
   ScoreBand,
   UnifiedReportResponse
 } from '../types'
+
+const router = useRouter()
 
 const props = defineProps<{
   report: UnifiedReportResponse
@@ -693,7 +696,7 @@ const emit = defineEmits<{
 }>()
 
 const checklist = ref<ChecklistItem[]>([])
-const exportingMarkdown = ref(false)
+
 const rewriteDialogVisible = ref(false)
 const rewriteDialogLoading = ref(false)
 const currentRewriteAdvice = ref<RewriteAdviceResponse | null>(null)
@@ -963,26 +966,12 @@ async function retryRewriteAdvice() {
   }
 }
 
-async function downloadMarkdownReport() {
-  exportingMarkdown.value = true
-  try {
-    const markdown = await getUnifiedReportMarkdown(props.report.run_id)
-    const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    const safeTitle = (props.report.title || 'report').replace(/[^\w\u4e00-\u9fff-]+/g, '_')
-    link.href = url
-    link.download = `${safeTitle || 'report'}-analysis-report.md`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
-    ElMessage.success('详细报告已导出')
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '导出 Markdown 报告失败')
-  } finally {
-    exportingMarkdown.value = false
-  }
+function openPrintReport() {
+  const url = router.resolve({
+    name: 'report-print',
+    params: { runId: props.report.run_id }
+  }).href
+  window.open(url, '_blank')
 }
 
 async function copyMentorBrief() {

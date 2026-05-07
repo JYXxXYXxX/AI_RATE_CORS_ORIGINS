@@ -39,6 +39,12 @@ const routes: RouteRecordRaw[] = [
         props: true
       },
       {
+        path: 'report/:runId/print',
+        name: 'report-print',
+        component: () => import('./pages/PrintReportPage.vue'),
+        props: true
+      },
+      {
         path: 'account',
         name: 'account',
         component: () => import('./pages/AccountPage.vue')
