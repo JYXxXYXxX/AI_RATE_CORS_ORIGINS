@@ -9,7 +9,7 @@ services:
   - type: web
     name: ai-rate-detector
     runtime: docker
-    repo: https://github.com/USERNAME/REPO.git  # ← 改成你的 GitHub 仓库地址
+    repo: https://github.com/JYXxXYXxX/AI_RATE_CORS_ORIGINS.git
     branch: main
     plan: free
     envVars:
