@@ -2,8 +2,6 @@
 -- PostgreSQL database dump
 --
 
-\restrict YMZbvVXdLHq6CVzjDHCo0UiIdJoIsZgencO6FFGFrnkoPaYvNs1iCOJRtCDVFS2
-
 -- Dumped from database version 17.9
 -- Dumped by pg_dump version 17.9
 
@@ -1024,4 +1022,4 @@ ALTER TABLE ONLY public.user_sessions
 -- PostgreSQL database dump complete
 --
 
-\unrestrict YMZbvVXdLHq6CVzjDHCo0UiIdJoIsZgencO6FFGFrnkoPaYvNs1iCOJRtCDVFS2
+
