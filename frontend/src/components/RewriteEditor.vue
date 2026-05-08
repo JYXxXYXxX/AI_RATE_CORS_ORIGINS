@@ -89,47 +89,67 @@
         />
       </div>
 
-      <!-- 中间论文正文 -->
+      <!-- 中间论文正文 —— 按章节分组，连续文本流 -->
       <div ref="docRef" class="document-view">
-        <div
-          v-for="sec in sections"
-          :key="sec.section_index"
-          :id="'sec-' + sec.section_index"
-          class="doc-section"
-          :class="[
-            'doc-' + aigcColorClass(sec),
-            { 'is-rewritten': rewrittenMap.has(sec.section_index), 'has-advice': batchAdviceMap.has(sec.section_index) }
-          ]"
-          @click="selectSection(sec)"
-        >
-          <div v-if="sec.section_title" class="doc-section-title">
-            {{ sec.section_title }}
-          </div>
-          <div class="doc-section-content">{{ displayContent(sec) }}</div>
-          <div class="doc-section-meta">
-            <span
-              v-if="sec.section_type === 'references' || sec.section_type === 'acknowledgement'"
-              class="doc-tag doc-tag-gray"
-            >灰色 · 不参与检测</span>
-            <span v-else-if="effectiveAigc(sec) >= 0.70" class="doc-tag doc-tag-red">
-              红色 · AIGC {{ (effectiveAigc(sec) * 100).toFixed(1) }}%
-            </span>
-            <span v-else-if="effectiveAigc(sec) >= 0.60" class="doc-tag doc-tag-orange">
-              橙色 · AIGC {{ (effectiveAigc(sec) * 100).toFixed(1) }}%
-            </span>
-            <span v-else-if="effectiveAigc(sec) >= 0.50" class="doc-tag doc-tag-purple">
-              紫色 · AIGC {{ (effectiveAigc(sec) * 100).toFixed(1) }}%
-            </span>
-            <span v-else class="doc-tag doc-tag-normal">
-              正常 · AIGC {{ (effectiveAigc(sec) * 100).toFixed(1) }}%
-            </span>
-            <span v-if="effectiveDup(sec) > 0" class="doc-tag doc-tag-dup">
-              查重 {{ (effectiveDup(sec) * 100).toFixed(1) }}%
-            </span>
-            <span v-if="rewrittenMap.has(sec.section_index)" class="doc-tag doc-tag-rewritten">已改写</span>
-            <span v-else-if="batchAdviceMap.has(sec.section_index)" class="doc-tag doc-tag-advice">建议就绪</span>
-          </div>
+        <div v-if="loading" class="doc-loading">
+          <el-skeleton :rows="8" animated />
         </div>
+        <template v-else>
+          <div
+            v-for="(group, gIdx) in groupedSections"
+            :key="gIdx"
+            class="chapter-block"
+          >
+            <!-- 章节标题 -->
+            <h3 v-if="group.title" class="chapter-title">{{ group.title }}</h3>
+
+            <!-- 章节内容：连续子段 -->
+            <div class="chapter-body">
+              <div
+                v-for="sec in group.sections"
+                :key="sec.section_index"
+                :id="'sec-' + sec.section_index"
+                class="doc-paragraph"
+                :class="[
+                  'para-' + aigcColorClass(sec),
+                  { 'is-rewritten': rewrittenMap.has(sec.section_index), 'has-advice': batchAdviceMap.has(sec.section_index) }
+                ]"
+                @click="selectSection(sec)"
+              >
+                <div class="doc-paragraph-content">{{ displayContent(sec) }}</div>
+              </div>
+            </div>
+
+            <!-- 章节底部风险摘要 -->
+            <div class="chapter-meta">
+              <span
+                v-if="group.type === 'references' || group.type === 'acknowledgement'"
+                class="doc-tag doc-tag-gray"
+              >灰色 · 不参与检测</span>
+              <span v-else-if="group.maxAigc >= 0.70" class="doc-tag doc-tag-red">
+                红色 · 最高 AIGC {{ (group.maxAigc * 100).toFixed(1) }}%
+              </span>
+              <span v-else-if="group.maxAigc >= 0.60" class="doc-tag doc-tag-orange">
+                橙色 · 最高 AIGC {{ (group.maxAigc * 100).toFixed(1) }}%
+              </span>
+              <span v-else-if="group.maxAigc >= 0.50" class="doc-tag doc-tag-purple">
+                紫色 · 最高 AIGC {{ (group.maxAigc * 100).toFixed(1) }}%
+              </span>
+              <span v-else class="doc-tag doc-tag-normal">
+                正常 · 最高 AIGC {{ (group.maxAigc * 100).toFixed(1) }}%
+              </span>
+              <span v-if="group.maxDup > 0" class="doc-tag doc-tag-dup">
+                查重 {{ (group.maxDup * 100).toFixed(1) }}%
+              </span>
+              <span v-if="group.rewrittenCount > 0" class="doc-tag doc-tag-rewritten">
+                已改写 {{ group.rewrittenCount }} 段
+              </span>
+              <span v-else-if="group.adviceCount > 0" class="doc-tag doc-tag-advice">
+                建议就绪 {{ group.adviceCount }} 段
+              </span>
+            </div>
+          </div>
+        </template>
       </div>
 
       <!-- 右侧边栏 -->
@@ -283,6 +303,44 @@ const animatedDup = ref(props.initialDup * 100)
 
 onMounted(() => {
   loadSections()
+})
+
+interface ChapterGroup {
+  title: string | null
+  type: string | null
+  sections: RunSectionItem[]
+  totalChars: number
+  maxAigc: number
+  maxDup: number
+  rewrittenCount: number
+  adviceCount: number
+}
+
+const groupedSections = computed(() => {
+  const groups: ChapterGroup[] = []
+  let current: ChapterGroup | null = null
+  for (const sec of sections.value) {
+    if (!current || current.title !== sec.section_title) {
+      current = {
+        title: sec.section_title,
+        type: sec.section_type,
+        sections: [],
+        totalChars: 0,
+        maxAigc: 0,
+        maxDup: 0,
+        rewrittenCount: 0,
+        adviceCount: 0
+      }
+      groups.push(current)
+    }
+    current.sections.push(sec)
+    current.totalChars += sec.char_count
+    current.maxAigc = Math.max(current.maxAigc, effectiveAigc(sec))
+    current.maxDup = Math.max(current.maxDup, effectiveDup(sec))
+    if (rewrittenMap.value.has(sec.section_index)) current.rewrittenCount++
+    if (batchAdviceMap.value.has(sec.section_index)) current.adviceCount++
+  }
+  return groups
 })
 
 const totalChars = computed(() =>
@@ -685,7 +743,7 @@ function redo() {
 .minimap-normal { background: #424242; }
 .minimap-gray { background: #bdbdbd; }
 
-/* ===== 中间论文正文 ===== */
+/* ===== 中间论文正文 —— 按章节分组 ===== */
 .document-view {
   flex: 1;
   overflow-y: auto;
@@ -696,85 +754,105 @@ function redo() {
   color: #333;
 }
 
-.doc-section {
-  padding: 12px 16px;
-  margin-bottom: 2px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background 0.15s ease;
-  border-left: 3px solid transparent;
+.doc-loading {
+  padding: 40px;
 }
 
-.doc-section:hover {
-  background: #f5f5f5;
+/* 章节块 */
+.chapter-block {
+  margin-bottom: 32px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.chapter-block:last-child {
+  border-bottom: none;
+}
+
+.chapter-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin: 0 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #1a1a1a;
+}
+
+/* 章节正文：连续文本流 */
+.chapter-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* 单个段落（子段） */
+.doc-paragraph {
+  padding: 8px 12px;
+  margin: 0;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  border-left: 3px solid transparent;
+  text-indent: 2em;
+}
+
+.doc-paragraph:hover {
+  filter: brightness(0.97);
 }
 
 /* 风险着色 */
-.doc-red {
+.para-red {
   background: #ffebee;
   border-left-color: #e53935;
 }
-.doc-red:hover {
-  background: #ffcdd2;
-}
 
-.doc-orange {
+.para-orange {
   background: #fff3e0;
   border-left-color: #fb8c00;
 }
-.doc-orange:hover {
-  background: #ffe0b2;
-}
 
-.doc-purple {
+.para-purple {
   background: #f3e5f5;
   border-left-color: #8e24aa;
 }
-.doc-purple:hover {
-  background: #e1bee7;
+
+.para-normal {
+  border-left-color: transparent;
 }
 
-.doc-normal {
-  border-left-color: #9e9e9e;
-}
-
-.doc-gray {
+.para-gray {
   color: #9e9e9e;
   border-left-color: #bdbdbd;
 }
 
-.doc-section.is-rewritten {
-  border-left-width: 4px;
+.doc-paragraph.is-rewritten {
   border-left-color: #2f7d67 !important;
+  border-left-width: 4px;
 }
 
-.doc-section.has-advice {
-  outline: 1px dashed #fb8c00;
-  outline-offset: -1px;
+.doc-paragraph.has-advice {
+  outline: 1px dashed rgba(251, 140, 0, 0.4);
+  outline-offset: -2px;
 }
 
-.doc-section-title {
-  font-weight: 600;
-  font-size: 16px;
-  color: #1a1a1a;
-  margin-bottom: 6px;
-}
-
-.doc-section-content {
+.doc-paragraph-content {
   white-space: pre-wrap;
   word-break: break-word;
+  line-height: 1.9;
 }
 
-.doc-section-meta {
+/* 章节底部风险摘要 */
+.chapter-meta {
   display: flex;
   gap: 8px;
-  margin-top: 6px;
+  margin-top: 12px;
+  padding-top: 8px;
   flex-wrap: wrap;
+  border-top: 1px dashed #e0e0e0;
 }
 
 .doc-tag {
   font-size: 11px;
-  padding: 1px 6px;
+  padding: 2px 8px;
   border-radius: 3px;
   font-weight: 500;
 }
