@@ -939,6 +939,14 @@ watch(
   { immediate: true, deep: true }
 )
 
+watch(rewriteEditorVisible, (visible) => {
+  if (visible) {
+    document.body.style.overflow = 'hidden'
+  } else {
+    document.body.style.overflow = ''
+  }
+})
+
 async function openRewriteAdvice(sectionIndex: number) {
   const section = props.report.top_risk_sections.find((s) => s.section_index === sectionIndex)
   currentRewriteSectionTitle.value = section?.title || `段落 ${sectionIndex + 1}`
