@@ -277,6 +277,7 @@ def get_run_sections(
         result.append(
             {
                 "section_index": idx,
+                "paragraph_index": sec.get("paragraph_index"),
                 "section_title": sec.get("section_title"),
                 "section_type": sec.get("section_type"),
                 "content": sec.get("content") or sec.get("text_preview") or "",

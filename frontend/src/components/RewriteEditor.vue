@@ -89,7 +89,7 @@
         />
       </div>
 
-      <!-- 中间论文正文 —— A4 纸风格可编辑区域 -->
+      <!-- 中间论文正文 —— A4 纸风格，按原始段落合并展示 -->
       <div ref="docRef" class="document-view">
         <div v-if="loading" class="doc-loading">
           <el-skeleton :rows="8" animated />
@@ -108,23 +108,21 @@
               <!-- 章节标题 -->
               <h3 v-if="group.title" class="chapter-title">{{ group.title }}</h3>
 
-              <!-- 章节内容：可编辑段落 -->
+              <!-- 章节内容：按原始段落合并 -->
               <div class="chapter-body">
                 <div
-                  v-for="sec in group.sections"
-                  :key="sec.section_index"
-                  :id="'sec-' + sec.section_index"
+                  v-for="para in group.paragraphs"
+                  :key="para.paragraphIndex ?? -1"
+                  :id="'para-' + para.paragraphIndex"
                   class="doc-paragraph"
                   :class="[
-                    'para-' + aigcColorClass(sec),
-                    { 'is-rewritten': rewrittenMap.has(sec.section_index), 'has-advice': batchAdviceMap.has(sec.section_index) }
+                    'para-' + paraRiskColor(para),
+                    { 'is-rewritten': para.rewritten, 'has-advice': para.hasAdvice }
                   ]"
-                  contenteditable="true"
-                  spellcheck="false"
-                  @blur="onParagraphBlur(sec.section_index, $event)"
-                  @click="handleParagraphClick(sec, $event)"
-                  v-text="displayContent(sec)"
-                />
+                  @click="selectParagraph(para)"
+                >
+                  <div class="doc-paragraph-content">{{ para.content }}</div>
+                </div>
               </div>
 
               <!-- 章节底部风险摘要 -->
@@ -314,10 +312,23 @@ onMounted(() => {
   loadSections()
 })
 
+interface ParagraphBlock {
+  paragraphIndex: number | null
+  content: string
+  sectionIndices: number[]
+  aigcScore: number
+  dupScore: number
+  riskLevel: 'low' | 'medium' | 'high'
+  sectionTitle: string | null
+  sectionType: string | null
+  rewritten: boolean
+  hasAdvice: boolean
+}
+
 interface ChapterGroup {
   title: string | null
   type: string | null
-  sections: RunSectionItem[]
+  paragraphs: ParagraphBlock[]
   totalChars: number
   maxAigc: number
   maxDup: number
@@ -328,12 +339,15 @@ interface ChapterGroup {
 const groupedSections = computed(() => {
   const groups: ChapterGroup[] = []
   let current: ChapterGroup | null = null
+  let currentPara: ParagraphBlock | null = null
+
   for (const sec of sections.value) {
+    // 章节变化时创建新章节
     if (!current || current.title !== sec.section_title) {
       current = {
         title: sec.section_title,
         type: sec.section_type,
-        sections: [],
+        paragraphs: [],
         totalChars: 0,
         maxAigc: 0,
         maxDup: 0,
@@ -341,8 +355,37 @@ const groupedSections = computed(() => {
         adviceCount: 0
       }
       groups.push(current)
+      currentPara = null
     }
-    current.sections.push(sec)
+
+    // 同一原始段落合并
+    const paraIdx = sec.paragraph_index ?? sec.section_index
+    if (!currentPara || currentPara.paragraphIndex !== paraIdx) {
+      currentPara = {
+        paragraphIndex: paraIdx,
+        content: '',
+        sectionIndices: [],
+        aigcScore: 0,
+        dupScore: 0,
+        riskLevel: 'low',
+        sectionTitle: sec.section_title,
+        sectionType: sec.section_type,
+        rewritten: false,
+        hasAdvice: false
+      }
+      current.paragraphs.push(currentPara)
+    }
+
+    // 拼接内容（优先用改写后的）
+    const text = rewrittenMap.value.get(sec.section_index) || sec.content
+    currentPara.content += (currentPara.content ? '\n' : '') + text
+    currentPara.sectionIndices.push(sec.section_index)
+    currentPara.aigcScore = Math.max(currentPara.aigcScore, effectiveAigc(sec))
+    currentPara.dupScore = Math.max(currentPara.dupScore, effectiveDup(sec))
+    currentPara.riskLevel = currentPara.aigcScore >= 0.70 ? 'high' : currentPara.aigcScore >= 0.50 ? 'medium' : 'low'
+    if (rewrittenMap.value.has(sec.section_index)) currentPara.rewritten = true
+    if (batchAdviceMap.value.has(sec.section_index)) currentPara.hasAdvice = true
+
     current.totalChars += sec.char_count
     current.maxAigc = Math.max(current.maxAigc, effectiveAigc(sec))
     current.maxDup = Math.max(current.maxDup, effectiveDup(sec))
@@ -432,32 +475,20 @@ async function loadSections() {
   }
 }
 
-function onParagraphBlur(sectionIndex: number, event: FocusEvent) {
-  const el = event.target as HTMLElement
-  const newText = el.innerText.trim()
-  const sec = sections.value.find(s => s.section_index === sectionIndex)
-  if (!sec) return
-  const originalText = sec.content
-  if (newText !== originalText && newText !== rewrittenMap.value.get(sectionIndex)) {
-    applyRewrite(sectionIndex, newText)
-  }
-}
-
-function handleParagraphClick(sec: RunSectionItem, event: MouseEvent) {
-  // 如果点击的是已编辑区域，不触发选择（让用户继续编辑）
-  const target = event.target as HTMLElement
-  if (target.isContentEditable && document.activeElement === target) {
-    return
-  }
-  selectSection(sec)
-}
-
 function aigcColorClass(sec: RunSectionItem): string {
   if (sec.section_type === 'references' || sec.section_type === 'acknowledgement') return 'gray'
   const score = effectiveAigc(sec)
   if (score >= 0.70) return 'red'
   if (score >= 0.60) return 'orange'
   if (score >= 0.50) return 'purple'
+  return 'normal'
+}
+
+function paraRiskColor(para: ParagraphBlock): string {
+  if (para.sectionType === 'references' || para.sectionType === 'acknowledgement') return 'gray'
+  if (para.aigcScore >= 0.70) return 'red'
+  if (para.aigcScore >= 0.60) return 'orange'
+  if (para.aigcScore >= 0.50) return 'purple'
   return 'normal'
 }
 
@@ -494,10 +525,9 @@ function riskText(level: string) {
 }
 
 function scrollToSection(index: number) {
-  const el = document.getElementById('sec-' + index)
+  const el = document.getElementById('para-' + index)
   if (el && docRef.value) {
     el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    activeSectionIndex.value = index
   }
 }
 
@@ -521,6 +551,22 @@ async function selectSection(sec: RunSectionItem) {
     panelError.value = err instanceof Error ? err.message : '获取改写建议失败'
   } finally {
     panelLoading.value = false
+  }
+}
+
+// 点击合并段落：选择该段落中风险最高的子段
+async function selectParagraph(para: ParagraphBlock) {
+  if (!para.sectionIndices.length) return
+  // 找风险最高的子段
+  let targetSec = sections.value.find(s => s.section_index === para.sectionIndices[0])
+  for (const idx of para.sectionIndices) {
+    const sec = sections.value.find(s => s.section_index === idx)
+    if (sec && effectiveAigc(sec) > (targetSec ? effectiveAigc(targetSec) : 0)) {
+      targetSec = sec
+    }
+  }
+  if (targetSec) {
+    await selectSection(targetSec)
   }
 }
 

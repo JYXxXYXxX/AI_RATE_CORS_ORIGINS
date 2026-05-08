@@ -342,6 +342,7 @@ export interface CnkiFeedbackOcrPreviewResponse {
 
 export interface RunSectionItem {
   section_index: number
+  paragraph_index: number | null
   section_title: string | null
   section_type: string | null
   content: string
