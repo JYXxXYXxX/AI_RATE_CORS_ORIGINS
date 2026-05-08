@@ -89,64 +89,72 @@
         />
       </div>
 
-      <!-- 中间论文正文 —— 按章节分组，连续文本流 -->
+      <!-- 中间论文正文 —— A4 纸风格可编辑区域 -->
       <div ref="docRef" class="document-view">
         <div v-if="loading" class="doc-loading">
           <el-skeleton :rows="8" animated />
         </div>
         <template v-else>
-          <div
-            v-for="(group, gIdx) in groupedSections"
-            :key="gIdx"
-            class="chapter-block"
-          >
-            <!-- 章节标题 -->
-            <h3 v-if="group.title" class="chapter-title">{{ group.title }}</h3>
+          <!-- A4 页面容器 -->
+          <div class="a4-page">
+            <!-- 论文标题 -->
+            <div v-if="paperTitle" class="paper-title">{{ paperTitle }}</div>
 
-            <!-- 章节内容：连续子段 -->
-            <div class="chapter-body">
-              <div
-                v-for="sec in group.sections"
-                :key="sec.section_index"
-                :id="'sec-' + sec.section_index"
-                class="doc-paragraph"
-                :class="[
-                  'para-' + aigcColorClass(sec),
-                  { 'is-rewritten': rewrittenMap.has(sec.section_index), 'has-advice': batchAdviceMap.has(sec.section_index) }
-                ]"
-                @click="selectSection(sec)"
-              >
-                <div class="doc-paragraph-content">{{ displayContent(sec) }}</div>
+            <div
+              v-for="(group, gIdx) in groupedSections"
+              :key="gIdx"
+              class="chapter-block"
+            >
+              <!-- 章节标题 -->
+              <h3 v-if="group.title" class="chapter-title">{{ group.title }}</h3>
+
+              <!-- 章节内容：可编辑段落 -->
+              <div class="chapter-body">
+                <div
+                  v-for="sec in group.sections"
+                  :key="sec.section_index"
+                  :id="'sec-' + sec.section_index"
+                  class="doc-paragraph"
+                  :class="[
+                    'para-' + aigcColorClass(sec),
+                    { 'is-rewritten': rewrittenMap.has(sec.section_index), 'has-advice': batchAdviceMap.has(sec.section_index) }
+                  ]"
+                  contenteditable="true"
+                  spellcheck="false"
+                  @blur="onParagraphBlur(sec.section_index, $event)"
+                  @click="handleParagraphClick(sec, $event)"
+                  v-text="displayContent(sec)"
+                />
               </div>
-            </div>
 
-            <!-- 章节底部风险摘要 -->
-            <div class="chapter-meta">
-              <span
-                v-if="group.type === 'references' || group.type === 'acknowledgement'"
-                class="doc-tag doc-tag-gray"
-              >灰色 · 不参与检测</span>
-              <span v-else-if="group.maxAigc >= 0.70" class="doc-tag doc-tag-red">
-                红色 · 最高 AIGC {{ (group.maxAigc * 100).toFixed(1) }}%
-              </span>
-              <span v-else-if="group.maxAigc >= 0.60" class="doc-tag doc-tag-orange">
-                橙色 · 最高 AIGC {{ (group.maxAigc * 100).toFixed(1) }}%
-              </span>
-              <span v-else-if="group.maxAigc >= 0.50" class="doc-tag doc-tag-purple">
-                紫色 · 最高 AIGC {{ (group.maxAigc * 100).toFixed(1) }}%
-              </span>
-              <span v-else class="doc-tag doc-tag-normal">
-                正常 · 最高 AIGC {{ (group.maxAigc * 100).toFixed(1) }}%
-              </span>
-              <span v-if="group.maxDup > 0" class="doc-tag doc-tag-dup">
-                查重 {{ (group.maxDup * 100).toFixed(1) }}%
-              </span>
-              <span v-if="group.rewrittenCount > 0" class="doc-tag doc-tag-rewritten">
-                已改写 {{ group.rewrittenCount }} 段
-              </span>
-              <span v-else-if="group.adviceCount > 0" class="doc-tag doc-tag-advice">
-                建议就绪 {{ group.adviceCount }} 段
-              </span>
+              <!-- 章节底部风险摘要 -->
+              <div class="chapter-meta">
+                <span
+                  v-if="group.type === 'references' || group.type === 'acknowledgement'"
+                  class="doc-tag doc-tag-gray"
+                >灰色 · 不参与检测</span>
+                <span v-else-if="group.maxAigc >= 0.70" class="doc-tag doc-tag-red">
+                  红色 · 最高 AIGC {{ (group.maxAigc * 100).toFixed(1) }}%
+                </span>
+                <span v-else-if="group.maxAigc >= 0.60" class="doc-tag doc-tag-orange">
+                  橙色 · 最高 AIGC {{ (group.maxAigc * 100).toFixed(1) }}%
+                </span>
+                <span v-else-if="group.maxAigc >= 0.50" class="doc-tag doc-tag-purple">
+                  紫色 · 最高 AIGC {{ (group.maxAigc * 100).toFixed(1) }}%
+                </span>
+                <span v-else class="doc-tag doc-tag-normal">
+                  正常 · 最高 AIGC {{ (group.maxAigc * 100).toFixed(1) }}%
+                </span>
+                <span v-if="group.maxDup > 0" class="doc-tag doc-tag-dup">
+                  查重 {{ (group.maxDup * 100).toFixed(1) }}%
+                </span>
+                <span v-if="group.rewrittenCount > 0" class="doc-tag doc-tag-rewritten">
+                  已改写 {{ group.rewrittenCount }} 段
+                </span>
+                <span v-else-if="group.adviceCount > 0" class="doc-tag doc-tag-advice">
+                  建议就绪 {{ group.adviceCount }} 段
+                </span>
+              </div>
             </div>
           </div>
         </template>
@@ -269,6 +277,7 @@ const emit = defineEmits<{
 const sections = ref<RunSectionItem[]>([])
 const loading = ref(false)
 const docRef = ref<HTMLDivElement | null>(null)
+const paperTitle = ref('')
 
 // 改写状态
 const rewrittenMap = ref<Map<number, string>>(new Map())
@@ -411,11 +420,36 @@ async function loadSections() {
   loading.value = true
   try {
     sections.value = await getRunSections(props.runId)
+    // 尝试从第一段提取论文标题
+    const first = sections.value[0]
+    if (first?.section_title && first.section_type === 'abstract') {
+      paperTitle.value = first.section_title
+    }
   } catch (err) {
     ElMessage.error(err instanceof Error ? err.message : '加载段落失败')
   } finally {
     loading.value = false
   }
+}
+
+function onParagraphBlur(sectionIndex: number, event: FocusEvent) {
+  const el = event.target as HTMLElement
+  const newText = el.innerText.trim()
+  const sec = sections.value.find(s => s.section_index === sectionIndex)
+  if (!sec) return
+  const originalText = sec.content
+  if (newText !== originalText && newText !== rewrittenMap.value.get(sectionIndex)) {
+    applyRewrite(sectionIndex, newText)
+  }
+}
+
+function handleParagraphClick(sec: RunSectionItem, event: MouseEvent) {
+  // 如果点击的是已编辑区域，不触发选择（让用户继续编辑）
+  const target = event.target as HTMLElement
+  if (target.isContentEditable && document.activeElement === target) {
+    return
+  }
+  selectSection(sec)
 }
 
 function aigcColorClass(sec: RunSectionItem): string {
@@ -743,12 +777,12 @@ function redo() {
 .minimap-normal { background: #424242; }
 .minimap-gray { background: #bdbdbd; }
 
-/* ===== 中间论文正文 —— 按章节分组 ===== */
+/* ===== 中间论文正文 —— A4 纸风格可编辑区域 ===== */
 .document-view {
   flex: 1;
   overflow-y: auto;
-  padding: 24px 40px;
-  background: #fff;
+  padding: 24px 16px;
+  background: #e8e8e8;
   line-height: 1.8;
   font-size: 15px;
   color: #333;
@@ -758,41 +792,72 @@ function redo() {
   padding: 40px;
 }
 
+/* A4 页面 */
+.a4-page {
+  max-width: 210mm;
+  min-height: 297mm;
+  margin: 0 auto;
+  padding: 25mm 30mm;
+  background: #fff;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  font-family: 'SimSun', '宋体', serif;
+  font-size: 12pt;
+  line-height: 1.8;
+  color: #000;
+}
+
+/* 论文标题 */
+.paper-title {
+  font-size: 22pt;
+  font-weight: bold;
+  text-align: center;
+  margin-bottom: 24pt;
+  line-height: 1.4;
+  font-family: 'SimHei', '黑体', sans-serif;
+}
+
 /* 章节块 */
 .chapter-block {
-  margin-bottom: 32px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #f0f0f0;
+  margin-bottom: 18pt;
 }
 
 .chapter-block:last-child {
-  border-bottom: none;
+  margin-bottom: 0;
 }
 
 .chapter-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: #1a1a1a;
-  margin: 0 0 12px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid #1a1a1a;
+  font-size: 16pt;
+  font-weight: bold;
+  color: #000;
+  margin: 18pt 0 12pt;
+  text-align: center;
+  font-family: 'SimHei', '黑体', sans-serif;
 }
 
-/* 章节正文：连续文本流 */
+/* 章节正文 */
 .chapter-body {
   display: flex;
   flex-direction: column;
-  gap: 0;
 }
 
-/* 单个段落（子段） */
+/* 单个段落 —— 可编辑 */
 .doc-paragraph {
-  padding: 8px 12px;
+  padding: 4px 8px;
   margin: 0;
-  cursor: pointer;
+  cursor: text;
   transition: background 0.12s ease;
   border-left: 3px solid transparent;
   text-indent: 2em;
+  outline: none;
+  min-height: 1.8em;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.8;
+}
+
+.doc-paragraph:focus {
+  background: #fffde7;
+  border-left-color: #fbc02d;
 }
 
 .doc-paragraph:hover {
@@ -801,17 +866,17 @@ function redo() {
 
 /* 风险着色 */
 .para-red {
-  background: #ffebee;
+  background: rgba(229, 57, 53, 0.08);
   border-left-color: #e53935;
 }
 
 .para-orange {
-  background: #fff3e0;
+  background: rgba(251, 140, 0, 0.08);
   border-left-color: #fb8c00;
 }
 
 .para-purple {
-  background: #f3e5f5;
+  background: rgba(142, 36, 170, 0.08);
   border-left-color: #8e24aa;
 }
 
@@ -830,14 +895,8 @@ function redo() {
 }
 
 .doc-paragraph.has-advice {
-  outline: 1px dashed rgba(251, 140, 0, 0.4);
+  outline: 1px dashed rgba(251, 140, 0, 0.35);
   outline-offset: -2px;
-}
-
-.doc-paragraph-content {
-  white-space: pre-wrap;
-  word-break: break-word;
-  line-height: 1.9;
 }
 
 /* 章节底部风险摘要 */
