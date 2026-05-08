@@ -19,6 +19,7 @@ import type {
   ProviderResultImportResponse,
   ProxyModelTrainResponse,
   RewriteAdviceResponse,
+  RunSectionItem,
   UnifiedReportResponse,
   UserSummary
 } from './types'
@@ -444,6 +445,14 @@ export async function getRewriteAdvice(runId: string, sectionIndex: number): Pro
     credentials: 'include'
   })
   return parseResponse<RewriteAdviceResponse>(response)
+}
+
+export async function getRunSections(runId: string): Promise<RunSectionItem[]> {
+  const response = await fetchWithRetry(`${baseUrl}/v1/runs/${runId}/sections`, {
+    headers: authHeaders(),
+    credentials: 'include'
+  })
+  return parseResponse<RunSectionItem[]>(response)
 }
 
 function authHeaders() {

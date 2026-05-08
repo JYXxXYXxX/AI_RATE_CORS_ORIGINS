@@ -28,6 +28,7 @@ declare module 'vue' {
     ProviderConfigPanel: typeof import('./components/ProviderConfigPanel.vue')['default']
     ReportView: typeof import('./components/ReportView.vue')['default']
     ReportWorkflowSidebar: typeof import('./components/ReportWorkflowSidebar.vue')['default']
+    RewriteEditor: typeof import('./components/RewriteEditor.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
   }

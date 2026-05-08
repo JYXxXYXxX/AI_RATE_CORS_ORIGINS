@@ -16,6 +16,9 @@
         </el-button>
         <el-button plain @click="copyMentorBrief">复制导师沟通摘要</el-button>
         <el-button plain @click="copyRevisionPlan">复制修改行动计划</el-button>
+        <el-button type="warning" plain @click="openRewriteEditor">
+          在线改写
+        </el-button>
       </div>
     </div>
 
@@ -666,6 +669,22 @@
       </div>
     </div>
   </el-dialog>
+
+  <!-- 在线改写编辑器 -->
+  <div v-if="rewriteEditorVisible" class="rewrite-editor-overlay">
+    <div class="rewrite-editor-header">
+      <h2>在线改写编辑器</h2>
+      <el-button type="primary" plain @click="rewriteEditorVisible = false">
+        返回报告
+      </el-button>
+    </div>
+    <RewriteEditor
+      :run-id="props.report.run_id"
+      :initial-aigc="props.report.local_metrics.ai_like_score"
+      :initial-dup="props.report.local_metrics.duplication_score"
+      @close="rewriteEditorVisible = false"
+    />
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -674,6 +693,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { EditPen, Bottom, DocumentCopy, Warning, Upload } from '@element-plus/icons-vue'
 import { getRewriteAdvice, previewCnkiFeedbackOcr, submitCnkiFeedback } from '../api'
+import RewriteEditor from './RewriteEditor.vue'
 import type {
   AnalysisRunStatusResponse,
   ChecklistItem,
@@ -698,6 +718,7 @@ const emit = defineEmits<{
 const checklist = ref<ChecklistItem[]>([])
 
 const rewriteDialogVisible = ref(false)
+const rewriteEditorVisible = ref(false)
 const rewriteDialogLoading = ref(false)
 const currentRewriteAdvice = ref<RewriteAdviceResponse | null>(null)
 const currentRewriteSectionTitle = ref('')
@@ -972,6 +993,10 @@ function openPrintReport() {
     params: { runId: props.report.run_id }
   }).href
   window.open(url, '_blank')
+}
+
+function openRewriteEditor() {
+  rewriteEditorVisible.value = true
 }
 
 async function copyMentorBrief() {
@@ -1482,5 +1507,37 @@ function deltaText(value: number | null | undefined) {
   margin-top: 12px;
   display: flex;
   justify-content: flex-end;
+}
+
+.rewrite-editor-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2000;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+}
+
+.rewrite-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  border-bottom: 1px solid #e8e8e8;
+  background: #fafbfc;
+}
+
+.rewrite-editor-header h2 {
+  margin: 0;
+  font-size: 18px;
+  color: #172033;
+}
+
+.rewrite-editor-overlay .rewrite-editor {
+  flex: 1;
+  overflow: hidden;
 }
 </style>

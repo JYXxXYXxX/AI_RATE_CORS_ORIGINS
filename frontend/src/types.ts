@@ -340,6 +340,18 @@ export interface CnkiFeedbackOcrPreviewResponse {
   warnings: string[]
 }
 
+export interface RunSectionItem {
+  section_index: number
+  section_title: string | null
+  section_type: string | null
+  content: string
+  char_count: number
+  aigc_score: number
+  dup_score: number
+  risk_level: 'low' | 'medium' | 'high'
+  reasons: string[]
+}
+
 export interface ProviderResultImportResponse {
   payload_id: string
   document_id: string

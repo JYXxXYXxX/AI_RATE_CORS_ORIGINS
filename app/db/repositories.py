@@ -843,6 +843,24 @@ class UnifiedRepository:
                     )
             conn.commit()
 
+    def list_section_scores(self, run_id: str) -> list[dict[str, Any]]:
+        return self._fetchall(
+            """
+            SELECT
+                ss.run_id,
+                ss.score_type,
+                ss.raw_score,
+                ss.normalized_score,
+                ss.risk_level,
+                ss.reasons,
+                ds.section_index
+            FROM section_scores ss
+            JOIN document_sections ds ON ds.id = ss.document_section_id
+            WHERE ss.run_id = %s
+            """,
+            (run_id,),
+        )
+
     def insert_similarity_matches(
         self, run_id: str, matches: Sequence[dict[str, Any]]
     ) -> None:

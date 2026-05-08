@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 from urllib.parse import quote
 
 from fastapi import (
@@ -230,6 +231,57 @@ def get_analysis_task_status(
         finished_at=task.get("finished_at"),
         error_message=task.get("error_message"),
     )
+
+
+@router.get("/runs/{run_id}/sections")
+def get_run_sections(
+    run_id: str,
+    auth: AuthContext = Depends(get_auth_context),
+) -> list[dict[str, Any]]:
+    """获取论文全文段落（排除参考文献、目录、致谢），附带分数信息。"""
+    repository = get_repository()
+    run = repository.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    ensure_document_access(
+        document_id=str(run["document_id"]), auth=auth, repository=repository
+    )
+
+    # 获取所有段落
+    sections = repository.list_document_sections(str(run["document_id"]))
+
+    # 获取分数
+    scores = repository.list_section_scores(run_id)
+    score_map: dict[int, dict[str, Any]] = {}
+    for sc in scores:
+        idx = sc.get("section_index")
+        if idx is not None:
+            score_map.setdefault(idx, {})[sc.get("score_type", "")] = sc
+
+    # 组装结果，排除 references / acknowledgement
+    skip_types = {"references", "acknowledgement"}
+    result: list[dict[str, Any]] = []
+    for sec in sections:
+        if sec.get("section_type") in skip_types:
+            continue
+        idx = sec.get("section_index")
+        aigc = score_map.get(idx, {}).get("aigc", {})
+        dup = score_map.get(idx, {}).get("duplication", {})
+        result.append(
+            {
+                "section_index": idx,
+                "section_title": sec.get("section_title"),
+                "section_type": sec.get("section_type"),
+                "content": sec.get("content") or sec.get("text_preview") or "",
+                "char_count": sec.get("char_count", 0),
+                "aigc_score": float(aigc.get("normalized_score", 0)) if aigc else 0.0,
+                "dup_score": float(dup.get("normalized_score", 0)) if dup else 0.0,
+                "risk_level": aigc.get("risk_level", "low") if aigc else "low",
+                "reasons": aigc.get("reasons", []) if aigc else [],
+            }
+        )
+
+    return result
 
 
 def _safe_download_name(value: str) -> str:
