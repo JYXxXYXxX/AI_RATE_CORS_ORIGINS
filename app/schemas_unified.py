@@ -526,3 +526,39 @@ class RewriteAdviceResponse(BaseModel):
     rewritten_paragraph: str
     overall_advice: str
     error: str | None = None
+
+
+class ReanalyzeSectionItem(BaseModel):
+    section_index: int
+    content: str
+
+
+class ReanalyzeRequest(BaseModel):
+    sections: list[ReanalyzeSectionItem]
+
+
+class ReanalyzeSectionResult(BaseModel):
+    section_index: int
+    section_title: str | None = None
+    aigc_score: float
+    duplication_score: float
+    risk_level: Literal["high", "medium", "low"]
+
+
+class ReanalyzeResponse(BaseModel):
+    ai_like_score: float
+    ai_like_percent: float
+    duplication_score: float
+    duplication_percent: float
+    risk_level: Literal["high", "medium", "low"]
+    predicted_cnki_range: str
+    confidence: str
+    segment_count: int
+    total_chars: int
+    sections: list[ReanalyzeSectionResult]
+    disclaimer: str
+
+
+class ExportRequest(BaseModel):
+    sections: list[ReanalyzeSectionItem]
+    format: Literal["docx", "txt"] = "docx"

@@ -2,31 +2,77 @@
   <div class="rewrite-editor">
     <!-- 顶部分数栏 -->
     <div class="score-bar">
-      <div class="score-item">
-        <span class="score-label">本地 AIGC</span>
-        <span class="score-value" :class="aigcColor">
-          {{ animatedAigc.toFixed(1) }}%
-        </span>
-        <span v-if="aigcDelta !== 0" class="score-delta" :class="aigcDelta < 0 ? 'down' : 'up'">
-          {{ aigcDelta > 0 ? '+' : '' }}{{ aigcDelta.toFixed(1) }}%
-        </span>
+      <div class="score-group">
+        <div class="score-item">
+          <span class="score-label">本地 AIGC</span>
+          <span class="score-value" :class="aigcColor">
+            {{ animatedAigc.toFixed(1) }}%
+          </span>
+          <span v-if="aigcDelta !== 0" class="score-delta" :class="aigcDelta < 0 ? 'down' : 'up'">
+            {{ aigcDelta > 0 ? '+' : '' }}{{ aigcDelta.toFixed(1) }}%
+          </span>
+        </div>
+        <div class="score-item">
+          <span class="score-label">查重率</span>
+          <span class="score-value" :class="dupColor">
+            {{ animatedDup.toFixed(1) }}%
+          </span>
+          <span v-if="dupDelta !== 0" class="score-delta" :class="dupDelta < 0 ? 'down' : 'up'">
+            {{ dupDelta > 0 ? '+' : '' }}{{ dupDelta.toFixed(1) }}%
+          </span>
+        </div>
+        <div class="score-item">
+          <span class="score-label">已改写</span>
+          <span class="score-value accent">{{ rewrittenCount }} / {{ sections.length }}</span>
+        </div>
       </div>
-      <div class="score-item">
-        <span class="score-label">查重率</span>
-        <span class="score-value" :class="dupColor">
-          {{ animatedDup.toFixed(1) }}%
-        </span>
-        <span v-if="dupDelta !== 0" class="score-delta" :class="dupDelta < 0 ? 'down' : 'up'">
-          {{ dupDelta > 0 ? '+' : '' }}{{ dupDelta.toFixed(1) }}%
-        </span>
+
+      <div class="score-actions">
+        <el-button
+          type="warning"
+          size="small"
+          :loading="batchLoading"
+          :disabled="!highRiskSections.length"
+          @click="fetchBatchAdvice"
+        >
+          {{ batchLoading ? `批量建议 ${batchProgress}/${highRiskSections.length}` : '批量获取建议' }}
+        </el-button>
+        <el-button
+          type="success"
+          size="small"
+          :disabled="!batchAdviceMap.size"
+          @click="applyAllBatch"
+        >
+          一键应用 ({{ batchAdviceReadyCount }})
+        </el-button>
+        <el-button
+          type="primary"
+          size="small"
+          :loading="isReanalyzing"
+          :disabled="!rewrittenCount"
+          @click="doReanalyze"
+        >
+          {{ isReanalyzing ? '重算中...' : '真实重算分数' }}
+        </el-button>
+        <el-dropdown size="small" trigger="click" :disabled="!rewrittenCount">
+          <el-button size="small" :disabled="!rewrittenCount">
+            导出改写稿 <el-icon class="el-icon--right"><arrow-down /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item @click="doExport('docx')">导出 .docx</el-dropdown-item>
+              <el-dropdown-item @click="doExport('txt')">导出 .txt</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <el-button size="small" plain :disabled="!canUndo" @click="undo">
+          <el-icon><arrow-left /></el-icon> 撤销
+        </el-button>
+        <el-button size="small" plain :disabled="!canRedo" @click="redo">
+          <el-icon><arrow-right /></el-icon> 重做
+        </el-button>
+        <el-button size="small" plain @click="emit('close')">关闭</el-button>
       </div>
-      <div class="score-item">
-        <span class="score-label">已改写</span>
-        <span class="score-value accent">{{ rewrittenCount }} / {{ sections.length }}</span>
-      </div>
-      <el-button type="primary" size="small" :disabled="!rewrittenCount" @click="applyAll">
-        全文应用
-      </el-button>
     </div>
 
     <!-- 正文区域 -->
@@ -37,9 +83,11 @@
           :key="sec.section_index"
           class="para-block"
           :class="{
-            'risk-high': sec.risk_level === 'high',
-            'risk-medium': sec.risk_level === 'medium',
-            'rewritten': rewrittenMap.has(sec.section_index)
+            'risk-high': effectiveRisk(sec) === 'high',
+            'risk-medium': effectiveRisk(sec) === 'medium',
+            'risk-low': effectiveRisk(sec) === 'low',
+            'rewritten': rewrittenMap.has(sec.section_index),
+            'has-batch-advice': batchAdviceMap.has(sec.section_index)
           }"
           @click="selectSection(sec)"
         >
@@ -50,14 +98,17 @@
             {{ displayContent(sec) }}
           </div>
           <div class="para-meta">
-            <span class="risk-tag" :class="'tag-' + sec.risk_level">
-              {{ riskText(sec.risk_level) }}
+            <span class="risk-tag" :class="'tag-' + effectiveRisk(sec)">
+              {{ riskText(effectiveRisk(sec)) }}
             </span>
-            <span v-if="sec.aigc_score > 0" class="score-tag">
-              AIGC {{ (sec.aigc_score * 100).toFixed(1) }}%
+            <span v-if="effectiveAigc(sec) > 0" class="score-tag">
+              AIGC {{ (effectiveAigc(sec) * 100).toFixed(1) }}%
             </span>
-            <span v-if="sec.dup_score > 0" class="score-tag">
-              查重 {{ (sec.dup_score * 100).toFixed(1) }}%
+            <span v-if="effectiveDup(sec) > 0" class="score-tag">
+              查重 {{ (effectiveDup(sec) * 100).toFixed(1) }}%
+            </span>
+            <span v-if="batchAdviceMap.has(sec.section_index)" class="advice-tag">
+              建议已就绪
             </span>
           </div>
         </div>
@@ -108,7 +159,7 @@
                 size="small"
                 type="success"
                 plain
-                @click="applySentenceRewrite(idx)"
+                @click.stop="applySentenceRewrite(idx)"
               >
                 应用此句
               </el-button>
@@ -119,7 +170,7 @@
           <div v-if="rewriteAdvice.rewritten_paragraph" class="full-rewrite">
             <strong>全文改写</strong>
             <div class="rewrite-text">{{ rewriteAdvice.rewritten_paragraph }}</div>
-            <el-button size="small" type="primary" @click="applyFullRewrite">
+            <el-button size="small" type="primary" @click.stop="applyFullRewrite">
               应用全文改写
             </el-button>
           </div>
@@ -138,8 +189,9 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getRunSections, getRewriteAdvice } from '../api'
-import type { RunSectionItem, RewriteAdviceResponse } from '../types'
+import { ArrowLeft, ArrowRight, ArrowDown } from '@element-plus/icons-vue'
+import { getRunSections, getRewriteAdvice, reanalyzeRun, exportRun } from '../api'
+import type { RunSectionItem, RewriteAdviceResponse, ReanalyzeResponse } from '../types'
 
 const props = defineProps<{
   runId: string
@@ -162,6 +214,25 @@ const panelError = ref('')
 const activeSectionIndex = ref<number | null>(null)
 const rewriteAdvice = ref<RewriteAdviceResponse | null>(null)
 
+// 真实重算结果
+const realScores = ref<ReanalyzeResponse | null>(null)
+const isReanalyzing = ref(false)
+
+// 批量建议
+const batchAdviceMap = ref<Map<number, RewriteAdviceResponse>>(new Map())
+const batchLoading = ref(false)
+const batchProgress = ref(0)
+
+// 历史栈（撤销/重做）
+interface HistoryEntry {
+  sectionIndex: number
+  previousText: string | undefined
+  newText: string
+  timestamp: number
+}
+const historyStack = ref<HistoryEntry[]>([])
+const historyIndex = ref(-1)
+
 // 动画分数
 const animatedAigc = ref(props.initialAigc * 100)
 const animatedDup = ref(props.initialDup * 100)
@@ -172,17 +243,29 @@ onMounted(() => {
 
 const rewrittenCount = computed(() => rewrittenMap.value.size)
 
-const aigcDelta = computed(() => {
-  const base = props.initialAigc * 100
-  const reduction = rewrittenCount.value * 1.5 // 每改写一段模拟降低 1.5%
-  return Math.max(-base + 1, -reduction)
+const highRiskSections = computed(() =>
+  sections.value.filter(s => s.risk_level !== 'low')
+)
+
+const batchAdviceReadyCount = computed(() => {
+  let count = 0
+  for (const sec of highRiskSections.value) {
+    if (batchAdviceMap.value.has(sec.section_index) && !rewrittenMap.value.has(sec.section_index)) {
+      count++
+    }
+  }
+  return count
 })
 
-const dupDelta = computed(() => {
-  const base = props.initialDup * 100
-  const reduction = rewrittenCount.value * 1.2
-  return Math.max(-base + 1, -reduction)
-})
+const currentAigc = computed(() =>
+  realScores.value ? realScores.value.ai_like_percent : props.initialAigc * 100
+)
+const currentDup = computed(() =>
+  realScores.value ? realScores.value.duplication_percent : props.initialDup * 100
+)
+
+const aigcDelta = computed(() => currentAigc.value - props.initialAigc * 100)
+const dupDelta = computed(() => currentDup.value - props.initialDup * 100)
 
 const aigcColor = computed(() => {
   const v = animatedAigc.value
@@ -194,13 +277,16 @@ const dupColor = computed(() => {
   return v >= 20 ? 'high' : v >= 10 ? 'medium' : 'low'
 })
 
-watch(rewrittenCount, () => {
+const canUndo = computed(() => historyIndex.value >= 0)
+const canRedo = computed(() => historyIndex.value < historyStack.value.length - 1)
+
+watch([currentAigc, currentDup], () => {
   animateScore()
 })
 
 function animateScore() {
-  const targetAigc = props.initialAigc * 100 + aigcDelta.value
-  const targetDup = props.initialDup * 100 + dupDelta.value
+  const targetAigc = currentAigc.value
+  const targetDup = currentDup.value
   const startAigc = animatedAigc.value
   const startDup = animatedDup.value
   const duration = 600
@@ -226,6 +312,30 @@ async function loadSections() {
   }
 }
 
+function effectiveAigc(sec: RunSectionItem): number {
+  if (realScores.value) {
+    const rs = realScores.value.sections.find(s => s.section_index === sec.section_index)
+    if (rs) return rs.aigc_score
+  }
+  return sec.aigc_score
+}
+
+function effectiveDup(sec: RunSectionItem): number {
+  if (realScores.value) {
+    const rs = realScores.value.sections.find(s => s.section_index === sec.section_index)
+    if (rs) return rs.duplication_score
+  }
+  return sec.dup_score
+}
+
+function effectiveRisk(sec: RunSectionItem): 'low' | 'medium' | 'high' {
+  if (realScores.value) {
+    const rs = realScores.value.sections.find(s => s.section_index === sec.section_index)
+    if (rs) return rs.risk_level
+  }
+  return sec.risk_level
+}
+
 function displayContent(sec: RunSectionItem): string {
   return rewrittenMap.value.get(sec.section_index) || sec.content
 }
@@ -241,6 +351,14 @@ async function selectSection(sec: RunSectionItem) {
   panelError.value = ''
   rewriteAdvice.value = null
 
+  // 优先使用缓存的批量建议
+  const cached = batchAdviceMap.value.get(sec.section_index)
+  if (cached) {
+    rewriteAdvice.value = cached
+    panelLoading.value = false
+    return
+  }
+
   try {
     rewriteAdvice.value = await getRewriteAdvice(props.runId, sec.section_index)
   } catch (err) {
@@ -248,6 +366,26 @@ async function selectSection(sec: RunSectionItem) {
   } finally {
     panelLoading.value = false
   }
+}
+
+function pushHistory(sectionIndex: number, previousText: string | undefined, newText: string) {
+  // 如果当前不在栈顶，截断后面的历史
+  if (historyIndex.value < historyStack.value.length - 1) {
+    historyStack.value = historyStack.value.slice(0, historyIndex.value + 1)
+  }
+  historyStack.value.push({
+    sectionIndex,
+    previousText,
+    newText,
+    timestamp: Date.now()
+  })
+  historyIndex.value = historyStack.value.length - 1
+}
+
+function applyRewrite(sectionIndex: number, newText: string) {
+  const previousText = rewrittenMap.value.get(sectionIndex)
+  rewrittenMap.value.set(sectionIndex, newText)
+  pushHistory(sectionIndex, previousText, newText)
 }
 
 function applySentenceRewrite(sentenceIdx: number) {
@@ -260,25 +398,116 @@ function applySentenceRewrite(sentenceIdx: number) {
 
   const current = rewrittenMap.value.get(activeSectionIndex.value) || sec.content
   const updated = current.replace(sent.original, sent.rewritten)
-  rewrittenMap.value.set(activeSectionIndex.value, updated)
+  applyRewrite(activeSectionIndex.value, updated)
   ElMessage.success('已应用改写')
 }
 
 function applyFullRewrite() {
   if (!rewriteAdvice.value || activeSectionIndex.value === null) return
-  rewrittenMap.value.set(activeSectionIndex.value, rewriteAdvice.value.rewritten_paragraph)
+  applyRewrite(activeSectionIndex.value, rewriteAdvice.value.rewritten_paragraph)
   ElMessage.success('已应用全文改写')
 }
 
-function applyAll() {
-  if (!rewriteAdvice.value) return
-  // 对当前所有高风险段落应用全文改写
-  for (const sec of sections.value) {
-    if (sec.risk_level !== 'low' && !rewrittenMap.value.has(sec.section_index)) {
-      // 这里简化处理：不能批量调用 API，只能提示用户逐段处理
+async function fetchBatchAdvice() {
+  const targets = highRiskSections.value.filter(s => !batchAdviceMap.value.has(s.section_index))
+  if (!targets.length) {
+    ElMessage.info('所有高风险段落建议已获取')
+    return
+  }
+  batchLoading.value = true
+  batchProgress.value = 0
+  try {
+    await Promise.all(
+      targets.map(async (sec) => {
+        try {
+          const advice = await getRewriteAdvice(props.runId, sec.section_index)
+          batchAdviceMap.value.set(sec.section_index, advice)
+        } catch {
+          // 忽略单个失败
+        } finally {
+          batchProgress.value++
+        }
+      })
+    )
+    ElMessage.success(`已获取 ${batchAdviceMap.value.size} 条改写建议`)
+  } finally {
+    batchLoading.value = false
+  }
+}
+
+function applyAllBatch() {
+  let applied = 0
+  for (const sec of highRiskSections.value) {
+    const advice = batchAdviceMap.value.get(sec.section_index)
+    if (advice?.rewritten_paragraph && !rewrittenMap.value.has(sec.section_index)) {
+      applyRewrite(sec.section_index, advice.rewritten_paragraph)
+      applied++
     }
   }
-  ElMessage.info('请逐段点击获取改写建议后应用')
+  if (applied) {
+    ElMessage.success(`已一键应用 ${applied} 段改写`)
+  } else {
+    ElMessage.info('没有可应用的改写建议')
+  }
+}
+
+async function doReanalyze() {
+  if (!rewrittenCount.value) return
+  isReanalyzing.value = true
+  try {
+    const payload = sections.value.map(sec => ({
+      section_index: sec.section_index,
+      content: rewrittenMap.value.get(sec.section_index) || sec.content
+    }))
+    const result = await reanalyzeRun(props.runId, payload)
+    realScores.value = result
+    ElMessage.success(`重算完成：AIGC ${result.ai_like_percent.toFixed(1)}%，查重 ${result.duplication_percent.toFixed(1)}%`)
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : '重算失败')
+  } finally {
+    isReanalyzing.value = false
+  }
+}
+
+async function doExport(format: 'docx' | 'txt') {
+  try {
+    const payload = sections.value.map(sec => ({
+      section_index: sec.section_index,
+      content: rewrittenMap.value.get(sec.section_index) || sec.content
+    }))
+    const blob = await exportRun(props.runId, payload, format)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `改写稿.${format}`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    ElMessage.success(`已导出 ${format.toUpperCase()}`)
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : '导出失败')
+  }
+}
+
+function undo() {
+  if (!canUndo.value) return
+  const entry = historyStack.value[historyIndex.value]
+  if (entry.previousText === undefined) {
+    rewrittenMap.value.delete(entry.sectionIndex)
+  } else {
+    rewrittenMap.value.set(entry.sectionIndex, entry.previousText)
+  }
+  historyIndex.value--
+  ElMessage.success('已撤销')
+}
+
+function redo() {
+  if (!canRedo.value) return
+  historyIndex.value++
+  const entry = historyStack.value[historyIndex.value]
+  rewrittenMap.value.set(entry.sectionIndex, entry.newText)
+  ElMessage.success('已重做')
 }
 </script>
 
@@ -293,10 +522,25 @@ function applyAll() {
 .score-bar {
   display: flex;
   align-items: center;
-  gap: 24px;
+  justify-content: space-between;
+  gap: 16px;
   padding: 14px 20px;
   border-bottom: 1px solid #e8e8e8;
   background: #fafbfc;
+  flex-wrap: wrap;
+}
+
+.score-group {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.score-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .score-item {
@@ -374,9 +618,17 @@ function applyAll() {
   background: #fffbf0;
 }
 
+.para-block.risk-low {
+  border-color: rgba(47, 125, 103, 0.15);
+  background: #f6ffed;
+}
+
 .para-block.rewritten {
-  border-color: rgba(230, 162, 60, 0.4);
-  background: #fffbe6;
+  border-left: 4px solid #2f7d67;
+}
+
+.para-block.has-batch-advice {
+  border-style: dashed;
 }
 
 .para-title {
@@ -397,6 +649,7 @@ function applyAll() {
   display: flex;
   gap: 8px;
   margin-top: 8px;
+  flex-wrap: wrap;
 }
 
 .risk-tag {
@@ -426,6 +679,14 @@ function applyAll() {
   color: #666;
   padding: 2px 8px;
   background: #f0f0f0;
+  border-radius: 4px;
+}
+
+.advice-tag {
+  font-size: 11px;
+  color: #2f7d67;
+  padding: 2px 8px;
+  background: #e8f5e9;
   border-radius: 4px;
 }
 
@@ -551,6 +812,15 @@ function applyAll() {
     bottom: 0;
     width: 100%;
     z-index: 100;
+  }
+
+  .score-bar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .score-actions {
+    width: 100%;
   }
 }
 </style>

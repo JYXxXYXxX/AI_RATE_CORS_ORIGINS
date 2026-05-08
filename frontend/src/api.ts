@@ -18,6 +18,7 @@ import type {
   ProviderFetchResponse,
   ProviderResultImportResponse,
   ProxyModelTrainResponse,
+  ReanalyzeResponse,
   RewriteAdviceResponse,
   RunSectionItem,
   UnifiedReportResponse,
@@ -453,6 +454,37 @@ export async function getRunSections(runId: string): Promise<RunSectionItem[]> {
     credentials: 'include'
   })
   return parseResponse<RunSectionItem[]>(response)
+}
+
+export async function reanalyzeRun(
+  runId: string,
+  sections: { section_index: number; content: string }[]
+): Promise<ReanalyzeResponse> {
+  const response = await fetchWithRetry(`${baseUrl}/v1/runs/${runId}/reanalyze`, {
+    method: 'POST',
+    headers: jsonHeaders(true),
+    credentials: 'include',
+    body: JSON.stringify({ sections })
+  })
+  return parseResponse<ReanalyzeResponse>(response)
+}
+
+export async function exportRun(
+  runId: string,
+  sections: { section_index: number; content: string }[],
+  format: 'docx' | 'txt' = 'docx'
+): Promise<Blob> {
+  const response = await fetchWithRetry(`${baseUrl}/v1/runs/${runId}/export`, {
+    method: 'POST',
+    headers: jsonHeaders(true),
+    credentials: 'include',
+    body: JSON.stringify({ sections, format })
+  })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}))
+    throw new Error(payload.detail || `请求失败：${response.status}`)
+  }
+  return response.blob()
 }
 
 function authHeaders() {

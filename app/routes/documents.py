@@ -29,15 +29,22 @@ from app.routes.deps import (
     get_unified_pipeline,
     stage_from_status,
 )
+from app.plagiarism.scoring import score_duplication
 from app.schemas_unified import (
     AnalysisRunStatusResponse,
     AnalysisTaskCreateResponse,
     AnalysisTaskStatusResponse,
     AnalyzeDocumentResponse,
     DocumentUploadResponse,
+    ExportRequest,
+    ReanalyzeRequest,
+    ReanalyzeResponse,
+    ReanalyzeSectionResult,
     RewriteAdviceResponse,
     UnifiedReportResponse,
 )
+from app.services.analyzer import PaperAnalyzer, risk_level
+from app.services.text_processing import preview_text, segment_document
 from app.task_queue import dispatch_analysis_task
 
 router = APIRouter(prefix="/v1", tags=["documents"])
@@ -290,6 +297,176 @@ def _safe_download_name(value: str) -> str:
         for char in value
     )
     return cleaned.strip("_") or "report"
+
+
+@router.post("/runs/{run_id}/reanalyze", response_model=ReanalyzeResponse)
+async def reanalyze_run(
+    run_id: str,
+    payload: ReanalyzeRequest,
+    auth: AuthContext = Depends(get_auth_context),
+) -> ReanalyzeResponse:
+    """接收改写后的段落，重新计算 AIGC 和查重分数。"""
+    repository = get_repository()
+    run = repository.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    ensure_document_access(
+        document_id=str(run["document_id"]), auth=auth, repository=repository
+    )
+
+    original_sections = repository.list_document_sections(str(run["document_id"]))
+    rewritten_map = {s.section_index: s.content for s in payload.sections}
+
+    text_parts: list[str] = []
+    for sec in sorted(original_sections, key=lambda s: s.get("section_index", 0)):
+        idx = sec.get("section_index", 0)
+        text = rewritten_map.get(idx, sec.get("content") or sec.get("text_preview") or "")
+        text_parts.append(text)
+    full_text = "\n\n".join(text_parts)
+
+    if not full_text.strip():
+        raise HTTPException(status_code=400, detail="text is empty after assembly")
+
+    settings = get_settings()
+
+    # AIGC 重算（在线程池中执行，避免阻塞事件循环）
+    analyzer = PaperAnalyzer(settings)
+    ai_report = await asyncio.to_thread(
+        analyzer.analyze,
+        full_text,
+        run.get("title"),
+        run.get("subject"),
+        run.get("degree_level"),
+    )
+
+    # 查重重算（本地段落间相似度 + 模板检测，无需 embedding）
+    segments = segment_document(full_text, settings)
+    dup_sections: list[dict[str, Any]] = []
+    for seg in segments:
+        dup_sections.append(
+            {
+                "section_index": seg.index,
+                "content": seg.text,
+                "text_preview": preview_text(seg.text),
+                "char_count": len(seg.text),
+                "section_title": seg.section_title,
+            }
+        )
+    duplication = await asyncio.to_thread(score_duplication, dup_sections)
+
+    dup_map = {s.section_index: s for s in duplication.section_scores}
+    sections_result: list[ReanalyzeSectionResult] = []
+    for seg in ai_report.segment_reports:
+        dup_sec = dup_map.get(seg.index)
+        dup_score = dup_sec.normalized_score if dup_sec else 0.0
+        combined_risk = risk_level(max(seg.ai_like_score, dup_score))
+        sections_result.append(
+            ReanalyzeSectionResult(
+                section_index=seg.index,
+                section_title=seg.section_title,
+                aigc_score=seg.ai_like_score,
+                duplication_score=dup_score,
+                risk_level=combined_risk,
+            )
+        )
+
+    return ReanalyzeResponse(
+        ai_like_score=ai_report.ai_like_score,
+        ai_like_percent=ai_report.ai_like_percent,
+        duplication_score=duplication.overall_score,
+        duplication_percent=round(duplication.overall_score * 100, 2),
+        risk_level=risk_level(max(ai_report.ai_like_score, duplication.overall_score)),
+        predicted_cnki_range=ai_report.predicted_cnki_range,
+        confidence=ai_report.confidence,
+        segment_count=ai_report.segment_count,
+        total_chars=ai_report.total_chars,
+        sections=sections_result,
+        disclaimer=ai_report.disclaimer,
+    )
+
+
+@router.post("/runs/{run_id}/export")
+async def export_rewritten_document(
+    run_id: str,
+    payload: ExportRequest,
+    auth: AuthContext = Depends(get_auth_context),
+):
+    """导出改写后的文档（.docx 或 .txt）。"""
+    repository = get_repository()
+    db_run = repository.get_run(run_id)
+    if db_run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    ensure_document_access(
+        document_id=str(db_run["document_id"]), auth=auth, repository=repository
+    )
+
+    original_sections = repository.list_document_sections(str(db_run["document_id"]))
+    rewritten_map = {s.section_index: s.content for s in payload.sections}
+
+    # 组装全文，保持原有顺序
+    assembled: list[tuple[int, str | None, str]] = []
+    for sec in sorted(original_sections, key=lambda s: s.get("section_index", 0)):
+        idx = sec.get("section_index", 0)
+        title = sec.get("section_title")
+        text = rewritten_map.get(idx, sec.get("content") or sec.get("text_preview") or "")
+        assembled.append((idx, title, text))
+
+    doc_title = db_run.get("title") or "rewritten"
+    safe_title = "".join(c if c.isalnum() or c in "-_" else "_" for c in doc_title).strip() or "rewritten"
+
+    if payload.format == "txt":
+        lines: list[str] = []
+        if doc_title:
+            lines.append(doc_title)
+            lines.append("=" * 40)
+            lines.append("")
+        for _idx, sec_title, text in assembled:
+            if sec_title:
+                lines.append(sec_title)
+                lines.append("-" * 20)
+            lines.append(text)
+            lines.append("")
+        content = "\n".join(lines)
+        return Response(
+            content=content,
+            media_type="text/plain; charset=utf-8",
+            headers={
+                "Content-Disposition": f'attachment; filename="{safe_title}.txt"'
+            },
+        )
+
+    # docx
+    try:
+        from docx import Document
+        from docx.shared import Pt
+    except ImportError as exc:
+        raise HTTPException(status_code=501, detail="docx export not available") from exc
+
+    doc = Document()
+    if doc_title:
+        heading = doc.add_heading(doc_title, level=0)
+        heading.alignment = 1  # center
+
+    for _idx, sec_title, text in assembled:
+        if sec_title:
+            doc.add_heading(sec_title, level=1)
+        p = doc.add_paragraph(text)
+        p.paragraph_format.line_spacing = 1.5
+        for run in p.runs:
+            run.font.size = Pt(12)
+            run.font.name = "宋体"
+
+    import io
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_title}.docx"'
+        },
+    )
 
 
 @router.post(

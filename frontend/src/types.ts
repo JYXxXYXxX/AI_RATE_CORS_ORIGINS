@@ -461,3 +461,25 @@ export interface ModelStatusResponse {
   active_models: ModelStatusItem[]
   recent_models: ModelStatusItem[]
 }
+
+export interface ReanalyzeSectionResult {
+  section_index: number
+  section_title: string | null
+  aigc_score: number
+  duplication_score: number
+  risk_level: 'low' | 'medium' | 'high'
+}
+
+export interface ReanalyzeResponse {
+  ai_like_score: number
+  ai_like_percent: number
+  duplication_score: number
+  duplication_percent: number
+  risk_level: 'low' | 'medium' | 'high'
+  predicted_cnki_range: string
+  confidence: string
+  segment_count: number
+  total_chars: number
+  sections: ReanalyzeSectionResult[]
+  disclaimer: string
+}
