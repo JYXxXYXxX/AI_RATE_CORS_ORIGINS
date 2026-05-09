@@ -3,21 +3,32 @@
     <header class="app-header">
       <div class="app-header-left">
         <router-link to="/app" class="app-logo">
-          <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><circle cx="14" cy="14" r="13" stroke="currentColor" stroke-width="2"/><path d="M8 14.5l3.5 3.5L20 10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <span>论文风险预检</span>
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <rect x="2" y="2" width="24" height="24" rx="6" stroke="#2E7D5A" stroke-width="2.5"/>
+            <path d="M8 20V8h5.5c2.5 0 4 1.5 4 3.5 0 2-1.5 3.5-4 3.5H10.5v5H8zm2.5-7h3c1.2 0 2-.8 2-1.8s-.8-1.7-2-1.7h-3v3.5z" fill="#2E7D5A"/>
+          </svg>
+          <span>PataFix</span>
         </router-link>
         <nav class="app-nav">
-          <router-link to="/app" class="nav-link" exact-active-class="active">工作台</router-link>
-          <router-link to="/app/new" class="nav-link" active-class="active">新建分析</router-link>
-          <router-link to="/app/account" class="nav-link" active-class="active">账户</router-link>
+          <router-link to="/app" class="nav-link" exact-active-class="active">
+            <el-icon><HomeFilled /></el-icon>工作台
+          </router-link>
+          <router-link to="/app/new" class="nav-link" active-class="active">
+            <el-icon><CirclePlusFilled /></el-icon>新建分析
+          </router-link>
+          <router-link to="/app/account" class="nav-link" active-class="active">
+            <el-icon><UserFilled /></el-icon>账户
+          </router-link>
         </nav>
       </div>
       <div class="app-header-right">
         <div class="credits-badge" v-if="auth.billing">
+          <el-icon><Coin /></el-icon>
           <span class="credits-num">{{ auth.credits }}</span>
-          <span class="credits-label">次额度</span>
+          <span class="credits-label">剩余次数</span>
         </div>
         <div class="user-info">
+          <el-avatar :size="28" class="user-avatar">{{ userInitial }}</el-avatar>
           <span class="user-name">{{ auth.user?.display_name || auth.user?.email }}</span>
           <button class="btn-text" @click="handleLogout">退出</button>
         </div>
@@ -30,11 +41,18 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { HomeFilled, CirclePlusFilled, UserFilled, Coin } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
 const router = useRouter()
+
+const userInitial = computed(() => {
+  const name = auth.user?.display_name || auth.user?.email || 'U'
+  return name.charAt(0).toUpperCase()
+})
 
 async function handleLogout() {
   await auth.logout()
@@ -47,6 +65,7 @@ async function handleLogout() {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  background: #FAF9F6;
 }
 
 .app-header {
@@ -56,83 +75,84 @@ async function handleLogout() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 60px;
+  height: 64px;
   padding: 0 28px;
-  background: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(16px);
-  border-bottom: 1px solid rgba(31, 54, 73, 0.08);
+  border-bottom: 1px solid #E8E6E1;
 }
 
 .app-header-left {
   display: flex;
   align-items: center;
-  gap: 32px;
+  gap: 40px;
 }
 
 .app-logo {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 700;
-  color: #172033;
+  color: #1A1A1A;
   text-decoration: none;
+  letter-spacing: -0.3px;
 }
 
 .app-logo svg {
-  color: #2f7d67;
+  flex-shrink: 0;
 }
 
 .app-nav {
   display: flex;
-  gap: 4px;
+  gap: 8px;
 }
 
 .nav-link {
-  padding: 6px 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
   border-radius: 8px;
   font-size: 14px;
   font-weight: 500;
-  color: #53606f;
+  color: #6B6B6B;
   text-decoration: none;
   transition: all 0.15s ease;
 }
 
 .nav-link:hover {
-  color: #172033;
-  background: rgba(47, 125, 103, 0.06);
+  color: #2E7D5A;
+  background: #E8F5E9;
 }
 
 .nav-link.active {
-  color: #2f7d67;
-  background: rgba(47, 125, 103, 0.1);
+  color: #2E7D5A;
+  background: #E8F5E9;
   font-weight: 600;
 }
 
 .app-header-right {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 20px;
 }
 
 .credits-badge {
   display: flex;
-  align-items: baseline;
-  gap: 4px;
-  padding: 4px 12px;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: #FFF3E0;
   border-radius: 20px;
-  background: rgba(47, 125, 103, 0.1);
-}
-
-.credits-num {
-  font-size: 16px;
-  font-weight: 700;
-  color: #2f7d67;
+  font-size: 13px;
+  color: #E65100;
+  font-weight: 600;
 }
 
 .credits-label {
-  font-size: 12px;
-  color: #53606f;
+  font-weight: 400;
+  opacity: 0.8;
 }
 
 .user-info {
@@ -141,68 +161,37 @@ async function handleLogout() {
   gap: 10px;
 }
 
+.user-avatar {
+  background: #2E7D5A;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .user-name {
   font-size: 14px;
-  color: #344150;
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: #1A1A1A;
+  font-weight: 500;
 }
 
 .btn-text {
-  border: none;
   background: none;
-  padding: 4px 8px;
+  border: none;
+  color: #9E9E9E;
   font-size: 13px;
-  color: #8b95a2;
   cursor: pointer;
-  border-radius: 6px;
-  transition: all 0.15s;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: color 0.15s;
 }
 
 .btn-text:hover {
-  color: #c84b52;
-  background: rgba(200, 75, 82, 0.06);
+  color: #D32F2F;
+  background: #FFEBEE;
 }
 
 .app-main {
   flex: 1;
-  padding: 28px;
-  max-width: 1200px;
-  width: 100%;
-  margin: 0 auto;
-}
-
-@media (max-width: 768px) {
-  .app-header {
-    padding: 0 16px;
-    gap: 12px;
-  }
-
-  .app-header-left {
-    gap: 16px;
-  }
-
-  .app-logo span {
-    display: none;
-  }
-
-  .app-nav {
-    gap: 2px;
-  }
-
-  .nav-link {
-    padding: 6px 10px;
-    font-size: 13px;
-  }
-
-  .user-name {
-    display: none;
-  }
-
-  .app-main {
-    padding: 16px;
-  }
+  min-height: 0;
 }
 </style>

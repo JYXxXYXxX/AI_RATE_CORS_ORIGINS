@@ -574,6 +574,26 @@ class UnifiedRepository:
         """
         return self._fetchall(query, (document_id, limit))
 
+    def list_processing_runs(
+        self, document_id: str, limit: int = 1
+    ) -> list[dict[str, Any]]:
+        """返回指定文档正在处理中的分析记录（最新在前）。"""
+        query = """
+            SELECT
+                runs.*,
+                documents.title,
+                documents.filename,
+                documents.subject,
+                documents.degree_level,
+                documents.status AS document_status
+            FROM analysis_runs AS runs
+            JOIN documents ON documents.id = runs.document_id
+            WHERE runs.document_id = %s AND runs.status = 'processing'
+            ORDER BY runs.created_at DESC
+            LIMIT %s
+        """
+        return self._fetchall(query, (document_id, limit))
+
     def create_analysis_task(
         self, *, user_id: str | None, document_id: str, task_type: str = "analysis"
     ) -> dict[str, Any]:

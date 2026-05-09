@@ -9,6 +9,7 @@ declare module 'vue' {
   export interface GlobalComponents {
     AccountPanel: typeof import('./components/AccountPanel.vue')['default']
     ElAlert: typeof import('element-plus/es')['ElAlert']
+    ElAvatar: typeof import('element-plus/es')['ElAvatar']
     ElButton: typeof import('element-plus/es')['ElButton']
     ElCard: typeof import('element-plus/es')['ElCard']
     ElCheckbox: typeof import('element-plus/es')['ElCheckbox']
@@ -28,6 +29,7 @@ declare module 'vue' {
     ElSkeleton: typeof import('element-plus/es')['ElSkeleton']
     ElTag: typeof import('element-plus/es')['ElTag']
     ElUpload: typeof import('element-plus/es')['ElUpload']
+    PataFixEditor: typeof import('./components/editor/PataFixEditor.vue')['default']
     ProviderConfigPanel: typeof import('./components/ProviderConfigPanel.vue')['default']
     ReportView: typeof import('./components/ReportView.vue')['default']
     ReportWorkflowSidebar: typeof import('./components/ReportWorkflowSidebar.vue')['default']

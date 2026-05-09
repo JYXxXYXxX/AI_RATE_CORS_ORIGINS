@@ -670,21 +670,6 @@
     </div>
   </el-dialog>
 
-  <!-- 在线改写编辑器 -->
-  <div v-if="rewriteEditorVisible" class="rewrite-editor-overlay">
-    <div class="rewrite-editor-header">
-      <h2>在线改写编辑器</h2>
-      <el-button type="primary" plain @click="rewriteEditorVisible = false">
-        返回报告
-      </el-button>
-    </div>
-    <RewriteEditor
-      :run-id="props.report.run_id"
-      :initial-aigc="props.report.local_metrics.ai_like_score"
-      :initial-dup="props.report.local_metrics.duplication_score"
-      @close="rewriteEditorVisible = false"
-    />
-  </div>
 </template>
 
 <script setup lang="ts">
@@ -693,7 +678,6 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { EditPen, Bottom, DocumentCopy, Warning, Upload } from '@element-plus/icons-vue'
 import { getRewriteAdvice, previewCnkiFeedbackOcr, submitCnkiFeedback } from '../api'
-import RewriteEditor from './RewriteEditor.vue'
 import type {
   AnalysisRunStatusResponse,
   ChecklistItem,
@@ -718,7 +702,6 @@ const emit = defineEmits<{
 const checklist = ref<ChecklistItem[]>([])
 
 const rewriteDialogVisible = ref(false)
-const rewriteEditorVisible = ref(false)
 const rewriteDialogLoading = ref(false)
 const currentRewriteAdvice = ref<RewriteAdviceResponse | null>(null)
 const currentRewriteSectionTitle = ref('')
@@ -939,13 +922,6 @@ watch(
   { immediate: true, deep: true }
 )
 
-watch(rewriteEditorVisible, (visible) => {
-  if (visible) {
-    document.body.style.overflow = 'hidden'
-  } else {
-    document.body.style.overflow = ''
-  }
-})
 
 async function openRewriteAdvice(sectionIndex: number) {
   const section = props.report.top_risk_sections.find((s) => s.section_index === sectionIndex)
@@ -1004,7 +980,7 @@ function openPrintReport() {
 }
 
 function openRewriteEditor() {
-  rewriteEditorVisible.value = true
+  router.push(`/app/rewrite/${props.report.run_id}`)
 }
 
 async function copyMentorBrief() {

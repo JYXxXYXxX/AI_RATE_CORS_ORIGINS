@@ -62,6 +62,7 @@ class UnifiedPipeline:
         title: str | None,
         subject: str | None,
         degree_level: str | None,
+        user_id: str | None = None,
     ) -> UploadResult:
         # 优先通过 Content-Length 预检，避免一次性读取大文件耗尽内存
         if file.size is not None and file.size > self.settings.max_upload_bytes:
@@ -81,7 +82,8 @@ class UnifiedPipeline:
             raise ValueError("未能从文件中提取可分析正文")
 
         doc_hash = hashlib.sha256(cleaned_text.encode("utf-8")).hexdigest()
-        existing = self.repository.get_document_by_hash(doc_hash)
+        # 匿名用户不启用 hash 去重，避免复用到带权限限制的已有文档
+        existing = None if user_id is None else self.repository.get_document_by_hash(doc_hash)
 
         original_path = self._write_binary(
             self.settings.upload_storage_dir, filename, content
@@ -117,6 +119,10 @@ class UnifiedPipeline:
                 report = self.repository.get_report_snapshot(str(latest_run["id"]))
                 if report is not None:
                     return {"run": latest_run, "report": report["report_json"]}
+            # 检查是否已有正在处理中的分析，防止并发重复分析
+            processing_runs = self.repository.list_processing_runs(document_id)
+            if processing_runs:
+                raise ValueError("该文档已有分析任务正在处理中，请勿重复提交")
 
         cleaned_text_path = document.get("cleaned_text_path")
         if not cleaned_text_path:

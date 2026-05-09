@@ -48,6 +48,12 @@ const routes: RouteRecordRaw[] = [
         path: 'account',
         name: 'account',
         component: () => import('./pages/AccountPage.vue')
+      },
+      {
+        path: 'rewrite/:runId',
+        name: 'rewrite',
+        component: () => import('./pages/RewritePage.vue'),
+        props: true
       }
     ]
   }

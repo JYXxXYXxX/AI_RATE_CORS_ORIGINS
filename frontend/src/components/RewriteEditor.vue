@@ -525,7 +525,10 @@ function riskText(level: string) {
 }
 
 function scrollToSection(index: number) {
-  const el = document.getElementById('para-' + index)
+  const sec = sections.value.find((s: RunSectionItem) => s.section_index === index)
+  if (!sec) return
+  const paraIdx = sec.paragraph_index ?? sec.section_index
+  const el = document.getElementById('para-' + paraIdx)
   if (el && docRef.value) {
     el.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
@@ -912,17 +915,17 @@ function redo() {
 
 /* 风险着色 */
 .para-red {
-  background: rgba(229, 57, 53, 0.08);
+  background: rgba(229, 57, 53, 0.18);
   border-left-color: #e53935;
 }
 
 .para-orange {
-  background: rgba(251, 140, 0, 0.08);
+  background: rgba(251, 140, 0, 0.18);
   border-left-color: #fb8c00;
 }
 
 .para-purple {
-  background: rgba(142, 36, 170, 0.08);
+  background: rgba(142, 36, 170, 0.15);
   border-left-color: #8e24aa;
 }
 
@@ -932,6 +935,7 @@ function redo() {
 
 .para-gray {
   color: #9e9e9e;
+  background: rgba(189, 189, 189, 0.10);
   border-left-color: #bdbdbd;
 }
 

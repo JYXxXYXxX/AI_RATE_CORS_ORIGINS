@@ -246,6 +246,7 @@ function Start-ManagedService {
         throw "$Name failed to start.`n--- stdout ---`n$stdout`n--- stderr ---`n$stderr"
     }
 
+    $process.Dispose()
     Write-Step "$Name started"
 }
 
@@ -268,7 +269,7 @@ Start-ManagedService `
 
 Start-ManagedService `
     -Name "frontend" `
-    -HealthUrl "http://127.0.0.1:5174/" `
+    -HealthUrl "http://127.0.0.1:3000/" `
     -PidFile $frontendPidFile `
     -FilePath $npmCmd `
     -Arguments @("--script-shell=$env:ComSpec", "run", "dev", "--", "--strictPort") `
@@ -278,8 +279,10 @@ Start-ManagedService `
     -TimeoutSeconds 30
 
 Write-Host ""
-Write-Host "Frontend: http://localhost:5174" -ForegroundColor Green
+Write-Host "Frontend: http://localhost:3000" -ForegroundColor Green
 Write-Host "Backend:  http://localhost:8010/docs" -ForegroundColor Green
 Write-Host "Mode:     free closed-loop demo (anonymous upload enabled)" -ForegroundColor Green
 Write-Host "Logs:     $runtimeDir" -ForegroundColor DarkGray
 Write-Host "Tip:      open the frontend and upload a paper directly, no login required" -ForegroundColor DarkGray
+
+

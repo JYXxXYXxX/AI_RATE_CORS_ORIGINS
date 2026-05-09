@@ -120,7 +120,7 @@ export const useAnalysisStore = defineStore('analysis', () => {
   }
 
   async function pollTask(taskId: string): Promise<AnalysisTaskStatusResponse> {
-    const MAX_ATTEMPTS = 120
+    const MAX_ATTEMPTS = 240
     for (let i = 0; i < MAX_ATTEMPTS; i++) {
       const task = await getAnalysisTask(taskId)
       taskStatus.value = task

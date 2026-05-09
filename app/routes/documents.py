@@ -65,6 +65,7 @@ async def upload_document(
             title=title,
             subject=subject,
             degree_level=degree_level,
+            user_id=str(auth.user["id"]) if auth.user is not None else None,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -306,7 +307,7 @@ async def reanalyze_run(
     payload: ReanalyzeRequest,
     auth: AuthContext = Depends(get_auth_context),
 ) -> ReanalyzeResponse:
-    """接收改写后的段落，重新计算 AIGC 和查重分数。"""
+    """接收改写后的段落，重新计算 AIGC 和查重分数，保持 section_index 不变。"""
     repository = get_repository()
     run = repository.get_run(run_id)
     if run is None:
@@ -318,6 +319,7 @@ async def reanalyze_run(
     original_sections = repository.list_document_sections(str(run["document_id"]))
     rewritten_map = {s.section_index: s.content for s in payload.sections}
 
+    # 按原始顺序组装当前文本（优先使用改写后内容）
     text_parts: list[str] = []
     for sec in sorted(original_sections, key=lambda s: s.get("section_index", 0)):
         idx = sec.get("section_index", 0)
@@ -330,59 +332,82 @@ async def reanalyze_run(
 
     settings = get_settings()
 
+    # 为了保持 section_index 一致，直接对输入的每个 section 评分，而不是重新 segment
+    from app.services.text_processing import TextSegment
+
+    input_segments: list[TextSegment] = []
+    for sec in payload.sections:
+        input_segments.append(
+            TextSegment(
+                index=sec.section_index,
+                text=sec.content,
+                section_title=None,
+                paragraph_index=sec.section_index,
+            )
+        )
+
     # AIGC 重算（在线程池中执行，避免阻塞事件循环）
     analyzer = PaperAnalyzer(settings)
-    ai_report = await asyncio.to_thread(
-        analyzer.analyze,
-        full_text,
-        run.get("title"),
-        run.get("subject"),
-        run.get("degree_level"),
+    scored_reports = await asyncio.to_thread(
+        lambda: [analyzer._score_segment(seg, input_segments) for seg in input_segments]
     )
 
+    total_chars = sum(r.char_count for r in scored_reports)
+    scored_chars = total_chars
+    if scored_chars == 0:
+        ai_like_score = 0.0
+    else:
+        weighted = sum(r.ai_like_score * r.char_count for r in scored_reports)
+        ai_like_score = weighted / scored_chars
+
+    dispersion = PaperAnalyzer._segment_dispersion(scored_reports)
+    predicted_range = analyzer.calibrator.predict_range(
+        ai_like_score, dispersion, run.get("subject")
+    )
+    confidence = analyzer.calibrator.confidence(len(scored_reports), dispersion)
+
     # 查重重算（本地段落间相似度 + 模板检测，无需 embedding）
-    segments = segment_document(full_text, settings)
     dup_sections: list[dict[str, Any]] = []
-    for seg in segments:
+    for sec in payload.sections:
         dup_sections.append(
             {
-                "section_index": seg.index,
-                "content": seg.text,
-                "text_preview": preview_text(seg.text),
-                "char_count": len(seg.text),
-                "section_title": seg.section_title,
+                "section_index": sec.section_index,
+                "content": sec.content,
+                "text_preview": preview_text(sec.content),
+                "char_count": len(sec.content),
+                "section_title": None,
             }
         )
     duplication = await asyncio.to_thread(score_duplication, dup_sections)
 
     dup_map = {s.section_index: s for s in duplication.section_scores}
     sections_result: list[ReanalyzeSectionResult] = []
-    for seg in ai_report.segment_reports:
-        dup_sec = dup_map.get(seg.index)
+    for rep in scored_reports:
+        dup_sec = dup_map.get(rep.index)
         dup_score = dup_sec.normalized_score if dup_sec else 0.0
-        combined_risk = risk_level(max(seg.ai_like_score, dup_score))
+        combined_risk = risk_level(max(rep.ai_like_score, dup_score))
         sections_result.append(
             ReanalyzeSectionResult(
-                section_index=seg.index,
-                section_title=seg.section_title,
-                aigc_score=seg.ai_like_score,
+                section_index=rep.index,
+                section_title=rep.section_title,
+                aigc_score=rep.ai_like_score,
                 duplication_score=dup_score,
                 risk_level=combined_risk,
             )
         )
 
     return ReanalyzeResponse(
-        ai_like_score=ai_report.ai_like_score,
-        ai_like_percent=ai_report.ai_like_percent,
+        ai_like_score=round(ai_like_score, 4),
+        ai_like_percent=round(ai_like_score * 100, 2),
         duplication_score=duplication.overall_score,
         duplication_percent=round(duplication.overall_score * 100, 2),
-        risk_level=risk_level(max(ai_report.ai_like_score, duplication.overall_score)),
-        predicted_cnki_range=ai_report.predicted_cnki_range,
-        confidence=ai_report.confidence,
-        segment_count=ai_report.segment_count,
-        total_chars=ai_report.total_chars,
+        risk_level=risk_level(max(ai_like_score, duplication.overall_score)),
+        predicted_cnki_range=f"{predicted_range.label} ({predicted_range.lower_percent:.1f}%-{predicted_range.upper_percent:.1f}%)",
+        confidence=f"{confidence:.2f}",
+        segment_count=len(scored_reports),
+        total_chars=total_chars,
         sections=sections_result,
-        disclaimer=ai_report.disclaimer,
+        disclaimer="本报告为改写后重新计算的 AIGC 疑似风险与知网结果区间预测，不等同于知网、维普、万方或 Turnitin 官方结果。",
     )
 
 
@@ -413,7 +438,7 @@ async def export_rewritten_document(
         assembled.append((idx, title, text))
 
     doc_title = db_run.get("title") or "rewritten"
-    safe_title = "".join(c if c.isalnum() or c in "-_" else "_" for c in doc_title).strip() or "rewritten"
+    safe_title = _safe_download_name(doc_title) or "rewritten"
 
     if payload.format == "txt":
         lines: list[str] = []
