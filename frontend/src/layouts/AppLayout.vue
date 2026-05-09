@@ -16,6 +16,9 @@
           <router-link to="/app/new" class="nav-link" active-class="active">
             <el-icon><CirclePlusFilled /></el-icon>新建分析
           </router-link>
+          <router-link to="/app" class="nav-link" active-class="active">
+            <el-icon><EditPen /></el-icon>在线改写
+          </router-link>
           <router-link to="/app/account" class="nav-link" active-class="active">
             <el-icon><UserFilled /></el-icon>账户
           </router-link>
@@ -43,7 +46,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { HomeFilled, CirclePlusFilled, UserFilled, Coin } from '@element-plus/icons-vue'
+import { HomeFilled, CirclePlusFilled, UserFilled, Coin, EditPen } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()

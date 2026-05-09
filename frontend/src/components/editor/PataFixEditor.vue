@@ -73,7 +73,7 @@
             v-for="(group, gIdx) in groupedSections"
             :key="gIdx"
             class="outline-chapter"
-            :class="{ active: activeGroupIndex === gIdx }"
+            :class="[activeGroupIndex === gIdx ? 'active' : '', 'outline-risk-' + groupMaxColor(group)]"
             @click="scrollToGroup(gIdx)"
           >
             <div class="outline-title">
@@ -85,7 +85,7 @@
                 v-for="(para, pIdx) in group.paragraphs"
                 :key="pIdx"
                 class="outline-para"
-                :class="{ active: activeParaIndex === para.paragraphIndex }"
+                :class="[activeParaIndex === para.paragraphIndex ? 'active' : '', 'outline-risk-' + paraRiskColor(para)]"
                 @click.stop="scrollToParagraph(para.paragraphIndex)"
               >
                 <span class="outline-dot" :class="'dot-' + paraRiskColor(para)" />
@@ -106,29 +106,48 @@
 
       <!-- 中间正文 -->
       <main ref="docRef" class="editor-document">
-        <div v-if="loading" class="doc-loading">
+        <div v-if="loading || docxLoading" class="doc-loading">
           <el-skeleton :rows="10" animated />
         </div>
-        <template v-else>
-          <div class="a4-page">
+        <div v-else-if="docxError" class="doc-loading">
+          <el-alert :title="docxError" type="warning" :closable="false" show-icon />
+          <!-- fallback 纯文本渲染 -->
+          <div class="a4-page" style="margin-top: 20px;">
             <div v-if="paperTitle" class="paper-title">{{ paperTitle }}</div>
-            <div
-              v-for="(group, gIdx) in groupedSections"
-              :key="gIdx"
-              :id="'group-' + gIdx"
-              class="chapter-block"
-            >
+            <div v-for="(group, gIdx) in groupedSections" :key="gIdx" class="chapter-block">
               <h3 v-if="group.title" class="chapter-title">{{ group.title }}</h3>
               <div class="chapter-body">
                 <div
                   v-for="para in group.paragraphs"
                   :key="para.paragraphIndex ?? -1"
-                  :id="'para-' + para.paragraphIndex"
                   class="doc-paragraph"
-                  :class="[
-                    'para-' + paraRiskColor(para),
-                    { 'is-rewritten': para.rewritten, 'is-active': activeParaIndex === para.paragraphIndex }
-                  ]"
+                  :class="['para-' + paraRiskColor(para), { 'is-rewritten': para.rewritten }]"
+                  @click="selectParagraph(para)"
+                >
+                  <div class="doc-paragraph-content">{{ para.content }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <template v-else-if="originalBuffer">
+          <DocxRenderer
+            :array-buffer="originalBuffer"
+            file-type="docx"
+            @rendered="onDocxRendered"
+          />
+        </template>
+        <template v-else>
+          <div class="a4-page">
+            <div v-if="paperTitle" class="paper-title">{{ paperTitle }}</div>
+            <div v-for="(group, gIdx) in groupedSections" :key="gIdx" class="chapter-block">
+              <h3 v-if="group.title" class="chapter-title">{{ group.title }}</h3>
+              <div class="chapter-body">
+                <div
+                  v-for="para in group.paragraphs"
+                  :key="para.paragraphIndex ?? -1"
+                  class="doc-paragraph"
+                  :class="['para-' + paraRiskColor(para), { 'is-rewritten': para.rewritten }]"
                   @click="selectParagraph(para)"
                 >
                   <div class="doc-paragraph-content">{{ para.content }}</div>
@@ -252,8 +271,10 @@
           </el-button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item @click="doExport('docx')">导出 Word (.docx)</el-dropdown-item>
-              <el-dropdown-item @click="doExport('txt')">导出 TXT (.txt)</el-dropdown-item>
+              <el-dropdown-item @click="doExportOriginal">导出 Word 原始格式 (.docx)</el-dropdown-item>
+              <el-dropdown-item @click="doExportHtml">导出带高亮 HTML (.html)</el-dropdown-item>
+              <el-dropdown-item divided @click="doExport('docx')">导出改写稿 (.docx)</el-dropdown-item>
+              <el-dropdown-item @click="doExport('txt')">导出改写稿 (.txt)</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -269,8 +290,9 @@ import {
   ArrowLeft, ArrowRight, ArrowDown, RefreshLeft, RefreshRight,
   Download, Refresh, CircleCheck
 } from '@element-plus/icons-vue'
-import { getRunSections, getRewriteAdvice, reanalyzeRun, exportRun } from '../../api'
+import { getRun, getRunSections, getRewriteAdvice, reanalyzeRun, exportRun } from '../../api'
 import type { RunSectionItem, RewriteAdviceResponse, ReanalyzeResponse } from '../../types'
+import DocxRenderer from './DocxRenderer.vue'
 
 const props = defineProps<{
   runId: string
@@ -280,6 +302,14 @@ const sections = ref<RunSectionItem[]>([])
 const loading = ref(false)
 const docRef = ref<HTMLDivElement | null>(null)
 const paperTitle = ref('')
+
+// 原始 docx 渲染
+const documentId = ref('')
+const originalBuffer = ref<ArrayBuffer | null>(null)
+const docxLoading = ref(false)
+const docxError = ref('')
+const renderedContainer = ref<HTMLElement | null>(null)
+const paragraphMap = ref<Map<HTMLElement, number>>(new Map()) // DOM paragraph -> section_index
 
 // 改写状态
 const rewrittenMap = ref<Map<number, string>>(new Map())
@@ -319,6 +349,115 @@ const animatedDup = ref(0)
 onMounted(() => {
   loadSections()
 })
+
+const baseUrl = import.meta.env.VITE_API_BASE_URL || ''
+
+async function loadOriginalDocx() {
+  if (!documentId.value) return
+  docxLoading.value = true
+  docxError.value = ''
+  try {
+    const response = await fetch(`${baseUrl}/v1/documents/${documentId.value}/original`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
+      credentials: 'include'
+    })
+    if (!response.ok) {
+      throw new Error(`下载原始文件失败: ${response.status}`)
+    }
+    originalBuffer.value = await response.arrayBuffer()
+  } catch (err) {
+    docxError.value = err instanceof Error ? err.message : '下载原始文件失败'
+  } finally {
+    docxLoading.value = false
+  }
+}
+
+function onDocxRendered(container: HTMLElement) {
+  renderedContainer.value = container
+  applyHighlightsToDocx(container)
+}
+
+function applyHighlightsToDocx(container: HTMLElement) {
+  paragraphMap.value.clear()
+  const paragraphs = container.querySelectorAll('p.doc-paragraph')
+  let paraIdx = 0
+  
+  paragraphs.forEach((p) => {
+    const el = p as HTMLElement
+    // 跳过空段落和标题
+    const text = el.textContent?.trim() || ''
+    if (!text) return
+    
+    // 找到对应 section（按 paragraph_index 匹配）
+    const sec = sections.value.find(s => s.paragraph_index === paraIdx || s.section_index === paraIdx)
+    if (sec) {
+      paragraphMap.value.set(el, sec.section_index)
+      const level = effectiveRisk(sec)
+      el.classList.add('risk-' + (level === 'high' ? 'high' : level === 'medium' ? 'medium' : level === 'low' ? 'low' : sec.section_type === 'references' || sec.section_type === 'acknowledgement' ? 'gray' : 'normal'))
+      
+      // 如果被改写，添加标记
+      if (rewrittenMap.value.has(sec.section_index)) {
+        el.classList.add('is-rewritten')
+      }
+      
+      // 点击事件
+      el.addEventListener('click', (e) => {
+        e.stopPropagation()
+        selectSection(sec)
+        // 移除其他 active
+        paragraphs.forEach(other => other.classList.remove('is-active'))
+        el.classList.add('is-active')
+      })
+    }
+    paraIdx++
+  })
+}
+
+function replaceTextInElement(element: HTMLElement, oldText: string, newText: string) {
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+  const nodes: Text[] = []
+  let accumulated = ''
+  let startNode: Text | null = null
+  let startOffset = 0
+  
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text
+    const text = node.textContent || ''
+    
+    if (!startNode) {
+      const idx = (accumulated + text).indexOf(oldText)
+      if (idx !== -1 && idx < accumulated.length + text.length) {
+        startNode = node
+        startOffset = idx - accumulated.length
+      }
+    }
+    
+    if (startNode) {
+      nodes.push(node)
+      accumulated += text
+      if (accumulated.length >= oldText.length) break
+    } else {
+      accumulated += text
+    }
+  }
+  
+  if (!startNode || nodes.length === 0) return false
+  
+  if (nodes.length === 1) {
+    const t = nodes[0].textContent!
+    nodes[0].textContent = t.slice(0, startOffset) + newText + t.slice(startOffset + oldText.length)
+  } else {
+    const first = nodes[0]
+    const last = nodes[nodes.length - 1]
+    const remainingInLast = oldText.length - (nodes.slice(0, -1).reduce((s, n) => s + (n.textContent?.length || 0), 0) - startOffset)
+    first.textContent = (first.textContent || '').slice(0, startOffset) + newText
+    for (let i = 1; i < nodes.length - 1; i++) {
+      nodes[i].textContent = ''
+    }
+    last.textContent = (last.textContent || '').slice(remainingInLast)
+  }
+  return true
+}
 
 interface ParagraphBlock {
   paragraphIndex: number | null
@@ -522,7 +661,14 @@ function animateScore() {
 async function loadSections() {
   loading.value = true
   try {
-    sections.value = await getRunSections(props.runId)
+    const [run, secs] = await Promise.all([
+      getRun(props.runId),
+      getRunSections(props.runId)
+    ])
+    sections.value = secs
+    documentId.value = run.document_id
+    paperTitle.value = run.title || ''
+    
     // 计算初始分数
     const scored = sections.value.filter(s => s.section_type !== 'references' && s.section_type !== 'acknowledgement')
     const scoredChars = scored.reduce((sum, s) => sum + s.char_count, 0)
@@ -533,10 +679,8 @@ async function loadSections() {
     animatedAigc.value = initialAigc.value * 100
     animatedDup.value = initialDup.value * 100
 
-    const first = sections.value[0]
-    if (first?.section_title && first.section_type === 'abstract') {
-      paperTitle.value = first.section_title
-    }
+    // 下载原始 docx 并渲染
+    await loadOriginalDocx()
   } catch (err) {
     ElMessage.error(err instanceof Error ? err.message : '加载段落失败')
   } finally {
@@ -656,6 +800,21 @@ function applyRewrite(sectionIndex: number, newText: string) {
   const previousText = rewrittenMap.value.get(sectionIndex)
   rewrittenMap.value.set(sectionIndex, newText)
   pushHistory(sectionIndex, previousText, newText)
+  
+  // 同步更新 mammoth HTML 中的文本
+  if (renderedContainer.value) {
+    const sec = sections.value.find(s => s.section_index === sectionIndex)
+    if (sec) {
+      const oldText = previousText || sec.content
+      for (const [el, idx] of paragraphMap.value.entries()) {
+        if (idx === sectionIndex) {
+          replaceTextInElement(el, oldText, newText)
+          el.classList.add('is-rewritten')
+          break
+        }
+      }
+    }
+  }
 }
 
 function applySentenceRewrite(sentenceIdx: number) {
@@ -747,6 +906,73 @@ async function doExport(format: 'docx' | 'txt') {
   } catch (err) {
     ElMessage.error(err instanceof Error ? err.message : '导出失败')
   }
+}
+
+async function doExportOriginal() {
+  if (!documentId.value) return
+  try {
+    const response = await fetch(`${baseUrl}/v1/documents/${documentId.value}/original`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
+      credentials: 'include'
+    })
+    if (!response.ok) throw new Error(`下载失败: ${response.status}`)
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    const filename = paperTitle.value || '原始文档'
+    a.download = `${filename}.docx`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    ElMessage.success('已导出原始格式文档')
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : '导出失败')
+  }
+}
+
+function doExportHtml() {
+  if (!renderedContainer.value) return
+  const clone = renderedContainer.value.cloneNode(true) as HTMLElement
+  // 移除点击事件和高亮 overlay（只保留风险背景色）
+  clone.querySelectorAll('.doc-paragraph').forEach((p) => {
+    const el = p as HTMLElement
+    el.style.cursor = 'default'
+    el.onclick = null
+  })
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>${paperTitle.value || 'PataFix 改写稿'}</title>
+<style>
+body { font-family: 'Times New Roman','SimSun',serif; font-size: 12pt; line-height: 1.8; max-width: 210mm; margin: 0 auto; padding: 20mm; background: #fff; color: #1a1a1a; }
+h1,h2,h3 { font-family: 'SimHei','黑体',sans-serif; text-align: center; font-weight: bold; }
+p { text-indent: 2em; margin: 0 0 6pt 0; border-left: 3px solid transparent; padding: 4px 8px; }
+table { border-collapse: collapse; margin: 12pt auto; width: 100%; }
+td,th { border: 1px solid #ccc; padding: 6px 10px; font-size: 11pt; }
+img { max-width: 100%; display: block; margin: 12pt auto; }
+.risk-high { background: rgba(229,57,53,0.18); border-left-color: #E53935; }
+.risk-medium { background: rgba(251,140,0,0.18); border-left-color: #FB8C00; }
+.risk-low { background: rgba(142,36,170,0.15); border-left-color: #8E24AA; }
+.is-rewritten { border-left-color: #2E7D5A !important; border-left-width: 4px; }
+</style>
+</head>
+<body>
+${clone.innerHTML}
+</body>
+</html>`
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${paperTitle.value || 'PataFix_改写稿'}.html`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+  ElMessage.success('已导出带高亮 HTML')
 }
 
 function doSave() {
@@ -919,12 +1145,19 @@ function goNext() {
   cursor: pointer;
   border-radius: 6px;
   transition: background 0.12s;
+  border-left: 3px solid transparent;
 }
 
 .outline-chapter:hover,
 .outline-chapter.active {
   background: #E8F5E9;
 }
+
+.outline-chapter.outline-risk-high { border-left-color: #E53935; background: rgba(229, 57, 53, 0.06); }
+.outline-chapter.outline-risk-medium { border-left-color: #FB8C00; background: rgba(251, 140, 0, 0.06); }
+.outline-chapter.outline-risk-low { border-left-color: #8E24AA; background: rgba(142, 36, 170, 0.05); }
+.outline-chapter.outline-risk-normal { border-left-color: #9E9E9E; }
+.outline-chapter.outline-risk-gray { border-left-color: #BDBDBD; }
 
 .outline-title {
   display: flex;
@@ -949,6 +1182,7 @@ function goNext() {
   color: #6B6B6B;
   border-radius: 4px;
   cursor: pointer;
+  border-left: 3px solid transparent;
 }
 
 .outline-para:hover,
@@ -956,6 +1190,12 @@ function goNext() {
   background: #F5F5F5;
   color: #1A1A1A;
 }
+
+.outline-para.outline-risk-high { border-left-color: #E53935; background: rgba(229, 57, 53, 0.06); }
+.outline-para.outline-risk-medium { border-left-color: #FB8C00; background: rgba(251, 140, 0, 0.06); }
+.outline-para.outline-risk-low { border-left-color: #8E24AA; background: rgba(142, 36, 170, 0.05); }
+.outline-para.outline-risk-normal { border-left-color: transparent; }
+.outline-para.outline-risk-gray { border-left-color: #BDBDBD; }
 
 .outline-dot {
   width: 8px;
@@ -1074,17 +1314,17 @@ function goNext() {
 
 /* 风险着色 */
 .para-red {
-  background: rgba(229, 57, 53, 0.12);
+  background: rgba(229, 57, 53, 0.20);
   border-left-color: #E53935;
 }
 
 .para-orange {
-  background: rgba(251, 140, 0, 0.12);
+  background: rgba(251, 140, 0, 0.20);
   border-left-color: #FB8C00;
 }
 
 .para-purple {
-  background: rgba(142, 36, 170, 0.10);
+  background: rgba(142, 36, 170, 0.16);
   border-left-color: #8E24AA;
 }
 
@@ -1094,7 +1334,7 @@ function goNext() {
 
 .para-gray {
   color: #9E9E9E;
-  background: rgba(189, 189, 189, 0.06);
+  background: rgba(189, 189, 189, 0.10);
   border-left-color: #BDBDBD;
 }
 

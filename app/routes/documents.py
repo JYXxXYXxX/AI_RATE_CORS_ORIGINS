@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
@@ -16,6 +17,7 @@ from fastapi import (
     Response,
     UploadFile,
 )
+from fastapi.responses import FileResponse
 
 from app.config import Settings, get_settings
 from app.db import get_repository
@@ -408,6 +410,46 @@ async def reanalyze_run(
         total_chars=total_chars,
         sections=sections_result,
         disclaimer="本报告为改写后重新计算的 AIGC 疑似风险与知网结果区间预测，不等同于知网、维普、万方或 Turnitin 官方结果。",
+    )
+
+
+@router.get("/documents/{document_id}/original")
+async def download_original_document(
+    document_id: str,
+    auth: AuthContext = Depends(get_auth_context),
+):
+    """下载用户上传的原始文档文件（docx/pdf/txt等）。"""
+    repository = get_repository()
+    document = repository.get_document(document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="document not found")
+    ensure_document_access(
+        document_id=document_id, auth=auth, repository=repository
+    )
+
+    original_path = document.get("original_file_path")
+    if not original_path:
+        raise HTTPException(status_code=404, detail="original file not found")
+
+    file_path = Path(original_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="original file missing on disk")
+
+    suffix = file_path.suffix.lower()
+    media_type_map = {
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".doc": "application/msword",
+        ".pdf": "application/pdf",
+        ".txt": "text/plain; charset=utf-8",
+        ".md": "text/plain; charset=utf-8",
+    }
+    media_type = media_type_map.get(suffix, "application/octet-stream")
+    filename = document.get("filename") or f"original{suffix}"
+
+    return FileResponse(
+        path=str(file_path),
+        media_type=media_type,
+        filename=filename,
     )
 
 
