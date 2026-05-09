@@ -3,8 +3,8 @@
     <div v-if="loading" class="renderer-loading">
       <el-skeleton :rows="12" animated />
     </div>
-    <div v-else-if="error" class="renderer-error">
-      <el-alert :title="error" type="error" :closable="false" show-icon />
+    <div v-else-if="error" class="renderer-error" style="display:none;">
+      <!-- 错误由父组件处理 -->
     </div>
     <div v-else class="mammoth-doc" v-html="htmlContent" />
   </div>
@@ -21,6 +21,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'rendered', container: HTMLElement): void
+  (e: 'error', message: string): void
 }>()
 
 const containerRef = ref<HTMLDivElement | null>(null)
@@ -54,7 +55,9 @@ async function renderDocx(buffer: ArrayBuffer) {
     )
     htmlContent.value = result.value
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '文档渲染失败'
+    const msg = err instanceof Error ? err.message : '文档渲染失败'
+    error.value = msg
+    emit('error', msg)
   } finally {
     loading.value = false
   }

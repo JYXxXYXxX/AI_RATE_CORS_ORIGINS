@@ -135,6 +135,7 @@
             :array-buffer="originalBuffer"
             file-type="docx"
             @rendered="onDocxRendered"
+            @error="onDocxError"
           />
         </template>
         <template v-else>
@@ -305,6 +306,7 @@ const paperTitle = ref('')
 
 // 原始 docx 渲染
 const documentId = ref('')
+const originalFilename = ref('')
 const originalBuffer = ref<ArrayBuffer | null>(null)
 const docxLoading = ref(false)
 const docxError = ref('')
@@ -364,9 +366,19 @@ async function loadOriginalDocx() {
     if (!response.ok) {
       throw new Error(`下载原始文件失败: ${response.status}`)
     }
-    originalBuffer.value = await response.arrayBuffer()
+    const buf = await response.arrayBuffer()
+    // 简单验证是否为 zip（docx 本质是 zip）
+    const header = new Uint8Array(buf.slice(0, 4))
+    const isZip = header[0] === 0x50 && header[1] === 0x4B && header[2] === 0x03 && header[3] === 0x04
+    if (!isZip) {
+      // 不是 docx，静默 fallback 到纯文本
+      originalBuffer.value = null
+      return
+    }
+    originalBuffer.value = buf
   } catch (err) {
-    docxError.value = err instanceof Error ? err.message : '下载原始文件失败'
+    // 下载失败也静默 fallback，不显示错误
+    originalBuffer.value = null
   } finally {
     docxLoading.value = false
   }
@@ -375,6 +387,13 @@ async function loadOriginalDocx() {
 function onDocxRendered(container: HTMLElement) {
   renderedContainer.value = container
   applyHighlightsToDocx(container)
+}
+
+function onDocxError(msg: string) {
+  // mammoth 渲染失败，静默 fallback 到纯文本
+  originalBuffer.value = null
+  docxError.value = ''
+  console.warn('mammoth render failed, fallback to text:', msg)
 }
 
 function applyHighlightsToDocx(container: HTMLElement) {
@@ -667,6 +686,7 @@ async function loadSections() {
     ])
     sections.value = secs
     documentId.value = run.document_id
+    originalFilename.value = run.filename || ''
     paperTitle.value = run.title || ''
     
     // 计算初始分数
@@ -679,8 +699,11 @@ async function loadSections() {
     animatedAigc.value = initialAigc.value * 100
     animatedDup.value = initialDup.value * 100
 
-    // 下载原始 docx 并渲染
-    await loadOriginalDocx()
+    // 只有 docx 才尝试 mammoth 渲染，其他格式直接 fallback 纯文本
+    const isDocx = originalFilename.value.toLowerCase().endsWith('.docx')
+    if (isDocx && documentId.value) {
+      await loadOriginalDocx()
+    }
   } catch (err) {
     ElMessage.error(err instanceof Error ? err.message : '加载段落失败')
   } finally {
