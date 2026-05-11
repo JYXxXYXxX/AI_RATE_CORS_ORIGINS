@@ -37,6 +37,9 @@ from app.schemas_unified import (
     AnalysisTaskCreateResponse,
     AnalysisTaskStatusResponse,
     AnalyzeDocumentResponse,
+    DocumentBlockResponse,
+    DocumentPatchRequest,
+    DocumentPatchResponse,
     DocumentUploadResponse,
     ExportRequest,
     ReanalyzeRequest,
@@ -507,15 +510,66 @@ async def export_rewritten_document(
     try:
         from docx import Document
         from docx.shared import Pt
+        from docx.oxml.ns import qn
+        from docx.oxml import parse_xml
     except ImportError as exc:
         raise HTTPException(status_code=501, detail="docx export not available") from exc
 
+    # 风险颜色映射（浅色背景，适合 Word 文档）
+    RISK_COLORS = {
+        "high": "FFCDD2",
+        "medium": "FFE0B2",
+        "low": "E1BEE7",
+        "normal": "C8E6C9",
+    }
+
+    def _set_para_shading(paragraph, color_hex: str):
+        pPr = paragraph._element.get_or_add_pPr()
+        shading = parse_xml(
+            f'<w:shd xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+            f'w:fill="{color_hex}" w:val="clear"/>'
+        )
+        pPr.append(shading)
+
+    # 尝试基于原始 docx + blocks + patches 导出（新架构）
+    original_path = None
+    document = repository.get_document(str(db_run["document_id"]))
+    if document:
+        original_path = document.get("original_file_path")
+
+    # 优先使用 blocks + patches 模式导出
+    try:
+        blocks = repository.list_document_blocks(str(db_run["document_id"]))
+        patches = repository.list_latest_patches_by_run(
+            str(db_run["document_id"]), run_id
+        )
+    except Exception:
+        blocks = []
+        patches = []
+
+    if blocks and original_path and Path(original_path).suffix.lower() == ".docx" and Path(original_path).exists():
+        try:
+            from app.services.docx_patch import export_docx_with_patches
+            docx_bytes = export_docx_with_patches(original_path, blocks, patches)
+            return Response(
+                content=docx_bytes,
+                media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{safe_title}.docx"'
+                },
+            )
+        except Exception:
+            # 回退到旧逻辑
+            pass
+
+    # 回退：基于 sections 的导出（兼容旧数据）
+    risk_map = {s.section_index: s.risk_level for s in payload.sections}
     doc = Document()
     if doc_title:
         heading = doc.add_heading(doc_title, level=0)
         heading.alignment = 1  # center
 
-    for _idx, sec_title, text in assembled:
+    for idx, sec_title, text in assembled:
         if sec_title:
             doc.add_heading(sec_title, level=1)
         p = doc.add_paragraph(text)
@@ -523,6 +577,9 @@ async def export_rewritten_document(
         for run in p.runs:
             run.font.size = Pt(12)
             run.font.name = "宋体"
+        # 添加风险背景色
+        risk = risk_map.get(idx, "normal")
+        _set_para_shading(p, RISK_COLORS.get(risk, "C8E6C9"))
 
     import io
     buf = io.BytesIO()
@@ -662,3 +719,120 @@ async def get_section_rewrite_advice(
         rewritten_paragraph=result.get("rewritten_paragraph", ""),
         overall_advice=result.get("overall_advice", ""),
     )
+
+
+# ------------------------------------------------------------------
+# Document Blocks
+# ------------------------------------------------------------------
+
+@router.get("/runs/{run_id}/blocks")
+async def get_run_blocks(
+    run_id: str,
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict[str, Any]:
+    """获取某个 run 下的所有 blocks（含最新 patch 后的 effective_text）。"""
+    repository = get_repository()
+    db_run = repository.get_run(run_id)
+    if db_run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    ensure_document_access(
+        document_id=str(db_run["document_id"]), auth=auth, repository=repository
+    )
+
+    blocks = repository.list_document_blocks(str(db_run["document_id"]))
+    patches = repository.list_latest_patches_by_run(
+        str(db_run["document_id"]), run_id
+    )
+    patch_map = {p["block_id"]: p for p in patches}
+
+    result = []
+    for b in blocks:
+        patch = patch_map.get(b["block_id"])
+        effective_text = patch["new_text"] if patch else b["text"]
+        result.append(
+            DocumentBlockResponse(
+                block_id=b["block_id"],
+                block_type=b["block_type"],
+                text=b["text"],
+                effective_text=effective_text,
+                risk_score=b.get("risk_score"),
+                rewrite_status="rewritten" if patch else "none",
+                source_type=b["source_type"],
+                source_map=b.get("source_map"),
+                section_title=b.get("section_title"),
+                section_type=b.get("section_type"),
+                char_count=b.get("char_count", 0),
+                display_order=b["display_order"],
+            )
+        )
+
+    return {"blocks": result}
+
+
+# ------------------------------------------------------------------
+# Document Patches
+# ------------------------------------------------------------------
+
+@router.post("/runs/{run_id}/patches")
+async def create_patch(
+    run_id: str,
+    payload: DocumentPatchRequest,
+    auth: AuthContext = Depends(get_auth_context),
+) -> DocumentPatchResponse:
+    """为某个 block 创建改写 patch。"""
+    repository = get_repository()
+    db_run = repository.get_run(run_id)
+    if db_run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    ensure_document_access(
+        document_id=str(db_run["document_id"]), auth=auth, repository=repository
+    )
+
+    patch = repository.insert_document_patch(
+        document_id=str(db_run["document_id"]),
+        run_id=run_id,
+        block_id=payload.block_id,
+        old_text=payload.old_text,
+        new_text=payload.new_text,
+        source_map=payload.source_map,
+        created_by=auth.user_id if auth.authenticated else None,
+    )
+
+    return DocumentPatchResponse(
+        id=str(patch["id"]),
+        document_id=str(patch["document_id"]),
+        run_id=str(patch["run_id"]) if patch.get("run_id") else None,
+        block_id=patch["block_id"],
+        old_text=patch["old_text"],
+        new_text=patch["new_text"],
+        created_at=patch["created_at"].isoformat() if patch.get("created_at") else "",
+    )
+
+
+@router.get("/runs/{run_id}/patches")
+async def list_patches(
+    run_id: str,
+    auth: AuthContext = Depends(get_auth_context),
+) -> list[DocumentPatchResponse]:
+    """列出某个 run 下的所有 patches。"""
+    repository = get_repository()
+    db_run = repository.get_run(run_id)
+    if db_run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    ensure_document_access(
+        document_id=str(db_run["document_id"]), auth=auth, repository=repository
+    )
+
+    patches = repository.list_document_patches(str(db_run["document_id"]), run_id)
+    return [
+        DocumentPatchResponse(
+            id=str(p["id"]),
+            document_id=str(p["document_id"]),
+            run_id=str(p["run_id"]) if p.get("run_id") else None,
+            block_id=p["block_id"],
+            old_text=p["old_text"],
+            new_text=p["new_text"],
+            created_at=p["created_at"].isoformat() if p.get("created_at") else "",
+        )
+        for p in patches
+    ]

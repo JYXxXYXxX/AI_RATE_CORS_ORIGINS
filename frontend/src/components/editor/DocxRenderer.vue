@@ -144,13 +144,8 @@ watch(htmlContent, async () => {
 }
 
 .mammoth-doc p.doc-paragraph.risk-normal {
-  border-left-color: transparent;
-}
-
-.mammoth-doc p.doc-paragraph.risk-gray {
-  color: #9e9e9e;
-  background: rgba(189, 189, 189, 0.08) !important;
-  border-left-color: #bdbdbd;
+  background: rgba(67, 160, 71, 0.12) !important;
+  border-left-color: #43A047;
 }
 
 .mammoth-doc p.doc-paragraph.is-rewritten {

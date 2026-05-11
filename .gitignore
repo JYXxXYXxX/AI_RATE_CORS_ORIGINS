@@ -30,6 +30,8 @@ data/test_*runtime*/
 data/test_provider_registry/
 data/test_billing_orders_runtime/
 data/*.jsonl
+data/app.db
+data/job_store.json
 
 # Keep provider_configs.json and provider_results (demo data)
 !data/provider_configs.json
@@ -44,4 +46,8 @@ frontend/dist/
 Thumbs.db
 
 .env.backup.*
+
+
+# Test logs
+tests/*.log
 

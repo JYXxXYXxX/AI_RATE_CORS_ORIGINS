@@ -353,6 +353,49 @@ export interface RunSectionItem {
   reasons: string[]
 }
 
+// ------------------------------------------------------------------
+// Document Blocks & Patches（新架构）
+// ------------------------------------------------------------------
+
+export interface DocumentBlock {
+  blockId: string
+  type: 'title' | 'heading' | 'paragraph' | 'table' | 'list' | 'image' | 'unknown'
+  text: string
+  html?: string
+  effectiveText?: string
+  riskScore?: number
+  rewriteStatus?: 'none' | 'rewritten'
+  sourceType: 'docx' | 'pdf' | 'doc' | 'txt'
+  sourceMap?: {
+    paragraphIndex?: number
+    runRange?: [number, number]
+    pageNumber?: number
+    bbox?: {
+      x: number
+      y: number
+      width: number
+      height: number
+    }
+  }
+  sectionTitle?: string | null
+  sectionType?: string | null
+  charCount: number
+  displayOrder: number
+}
+
+export interface DocumentPatch {
+  blockId: string
+  oldText: string
+  newText: string
+  createdAt: string
+}
+
+export interface RiskStyle {
+  level: 'high' | 'medium' | 'low' | 'normal'
+  bg: string
+  border: string
+}
+
 export interface ProviderResultImportResponse {
   payload_id: string
   document_id: string

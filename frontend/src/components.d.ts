@@ -31,6 +31,7 @@ declare module 'vue' {
     ElTag: typeof import('element-plus/es')['ElTag']
     ElUpload: typeof import('element-plus/es')['ElUpload']
     PataFixEditor: typeof import('./components/editor/PataFixEditor.vue')['default']
+    PdfRenderer: typeof import('./components/editor/PdfRenderer.vue')['default']
     ProviderConfigPanel: typeof import('./components/ProviderConfigPanel.vue')['default']
     ReportView: typeof import('./components/ReportView.vue')['default']
     ReportWorkflowSidebar: typeof import('./components/ReportWorkflowSidebar.vue')['default']

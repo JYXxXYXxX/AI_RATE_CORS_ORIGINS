@@ -209,6 +209,57 @@ CREATE TABLE public.document_sections (
 
 
 --
+-- Name: document_blocks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.document_blocks (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    document_id uuid NOT NULL,
+    block_id character varying(64) NOT NULL,
+    block_type character varying(30) NOT NULL,
+    text text NOT NULL,
+    html text,
+    source_type character varying(20) NOT NULL,
+    source_map jsonb DEFAULT '{}'::jsonb,
+    section_index integer,
+    paragraph_index integer,
+    section_title character varying(255),
+    section_type character varying(50),
+    char_count integer DEFAULT 0 NOT NULL,
+    display_order integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT document_blocks_char_count_check CHECK ((char_count >= 0)),
+    CONSTRAINT document_blocks_display_order_check CHECK ((display_order >= 0)),
+    CONSTRAINT document_blocks_paragraph_index_check CHECK (((paragraph_index IS NULL) OR (paragraph_index >= 0))),
+    CONSTRAINT document_blocks_section_index_check CHECK (((section_index IS NULL) OR (section_index >= 0))),
+    CONSTRAINT document_blocks_section_type_check CHECK (((section_type IS NULL) OR ((section_type)::text = ANY ((ARRAY['abstract'::character varying, 'introduction'::character varying, 'review'::character varying, 'method'::character varying, 'result'::character varying, 'discussion'::character varying, 'conclusion'::character varying, 'references'::character varying, 'acknowledgement'::character varying, 'body'::character varying, 'other'::character varying])::text[]))))
+);
+
+CREATE UNIQUE INDEX idx_document_blocks_doc_block ON public.document_blocks(document_id, block_id);
+CREATE INDEX idx_document_blocks_doc_order ON public.document_blocks(document_id, display_order);
+
+
+--
+-- Name: document_patches; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.document_patches (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    document_id uuid NOT NULL,
+    run_id uuid,
+    block_id character varying(64) NOT NULL,
+    old_text text NOT NULL,
+    new_text text NOT NULL,
+    source_map jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid
+);
+
+CREATE INDEX idx_document_patches_doc_block ON public.document_patches(document_id, block_id);
+CREATE INDEX idx_document_patches_run ON public.document_patches(run_id);
+
+
+--
 -- Name: documents; Type: TABLE; Schema: public; Owner: -
 --
 

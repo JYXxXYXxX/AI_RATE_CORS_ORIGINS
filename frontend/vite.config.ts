@@ -19,12 +19,15 @@ export default defineConfig({
     })
   ],
   build: {
+    chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
         manualChunks(id) {
           if (id.includes('node_modules/@element-plus/icons-vue')) return 'vendor-element-icons'
           if (id.includes('node_modules/vue')) return 'vendor-vue'
           if (id.includes('node_modules/echarts')) return 'vendor-echarts'
+          if (id.includes('node_modules/mammoth')) return 'vendor-mammoth'
+          if (id.includes('node_modules/pdfjs-dist')) return 'vendor-pdfjs'
           return undefined
         }
       }

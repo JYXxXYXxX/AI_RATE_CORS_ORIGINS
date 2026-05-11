@@ -86,6 +86,50 @@ def _run_external_tool(cmd: list[str], content: bytes, timeout: int = 60) -> str
     return None
 
 
+def convert_doc_to_docx(content: bytes, output_dir: str) -> str | None:
+    """尝试将 .doc 转换为 .docx。返回转换后的文件路径，失败返回 None。
+
+    优先使用 soffice (LibreOffice)，其次尝试其他工具。
+    """
+    try:
+        import subprocess
+        import tempfile
+        import shutil
+
+        # 检查是否有 soffice
+        if shutil.which("soffice") is None:
+            return None
+
+        with tempfile.NamedTemporaryFile(suffix=".doc", delete=False) as input_tmp:
+            input_tmp.write(content)
+            input_path = input_tmp.name
+
+        output_path = Path(output_dir) / (Path(input_path).stem + ".docx")
+
+        result = subprocess.run(
+            [
+                "soffice",
+                "--headless",
+                "--convert-to",
+                "docx",
+                "--outdir",
+                output_dir,
+                input_path,
+            ],
+            capture_output=True,
+            timeout=60,
+        )
+
+        import os
+        os.unlink(input_path)
+
+        if result.returncode == 0 and output_path.exists():
+            return str(output_path)
+    except Exception:
+        pass
+    return None
+
+
 def _extract_doc(content: bytes) -> str:
     """提取 .doc 格式文本。
 

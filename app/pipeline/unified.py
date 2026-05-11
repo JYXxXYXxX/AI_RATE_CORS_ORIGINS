@@ -20,7 +20,8 @@ from app.reporting.composer import compose_report
 from app.schemas_unified import AnalysisRunStatusResponse
 from app.services.analyzer import PaperAnalyzer, risk_level
 from app.services.calibration import CalibrationSample, CnkiCalibrator
-from app.services.document_loader import extract_text
+from app.services.document_blocks import parse_document_to_blocks
+from app.services.document_loader import convert_doc_to_docx, extract_text
 from app.services.text_processing import clean_body_text, preview_text, segment_document
 
 
@@ -85,9 +86,21 @@ class UnifiedPipeline:
         # 匿名用户不启用 hash 去重，避免复用到带权限限制的已有文档
         existing = None if user_id is None else self.repository.get_document_by_hash(doc_hash)
 
-        original_path = self._write_binary(
-            self.settings.upload_storage_dir, filename, content
-        )
+        # doc 文件尝试转换为 docx
+        if filename.lower().endswith(".doc"):
+            converted = convert_doc_to_docx(content, self.settings.upload_storage_dir)
+            if converted:
+                original_path = converted
+                filename = Path(converted).name
+            else:
+                original_path = self._write_binary(
+                    self.settings.upload_storage_dir, filename, content
+                )
+        else:
+            original_path = self._write_binary(
+                self.settings.upload_storage_dir, filename, content
+            )
+
         cleaned_path = self._write_text(
             self.settings.cleaned_storage_dir, filename, cleaned_text
         )
@@ -104,6 +117,25 @@ class UnifiedPipeline:
             original_file_path=original_path,
             cleaned_text_path=cleaned_path,
         )
+
+        # 解析并持久化 document blocks（ graceful fallback ）
+        try:
+            source_type = Path(filename).suffix.lower().lstrip(".")
+            if source_type not in ("docx", "pdf", "doc", "txt", "md"):
+                source_type = "txt"
+            blocks = parse_document_to_blocks(original_path, source_type)
+            if blocks and not existing:
+                self.repository.insert_document_blocks(
+                    str(document["id"]),
+                    [b.__dict__ for b in blocks],
+                )
+        except Exception:
+            # 如果 blocks 表不存在或解析失败，不影响主流程
+            import logging
+            logging.getLogger(__name__).warning(
+                "Failed to parse blocks for document %s", document["id"], exc_info=True
+            )
+
         return UploadResult(document=document, reused_existing=existing is not None)
 
     def analyze_document(self, document_id: str, force: bool = False) -> dict[str, Any]:
@@ -241,6 +273,27 @@ class UnifiedPipeline:
             self.repository.insert_section_scores(
                 run["id"], ai_scores + duplication_scores
             )
+
+            # 将 AIGC 分数同步写回 document_blocks（新架构）
+            try:
+                doc_blocks = self.repository.list_document_blocks(document_id)
+                if doc_blocks:
+                    block_by_para_idx = {
+                        b.get("paragraph_index"): b
+                        for b in doc_blocks
+                        if b.get("paragraph_index") is not None
+                    }
+                    for item in ai_report.segment_reports:
+                        if item.paragraph_index is not None and item.paragraph_index in block_by_para_idx:
+                            block = block_by_para_idx[item.paragraph_index]
+                            self.repository.update_block_risk_score(
+                                document_id, block["block_id"], item.ai_like_score * 100
+                            )
+            except Exception:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Failed to update block risk scores for document %s", document_id, exc_info=True
+                )
 
             similarity_matches = [
                 {

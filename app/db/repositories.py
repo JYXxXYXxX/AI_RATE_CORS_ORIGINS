@@ -1216,6 +1216,179 @@ class UnifiedRepository:
                 cur.execute(query, params)
             conn.commit()
 
+    # ------------------------------------------------------------------
+    # Document Blocks
+    # ------------------------------------------------------------------
+
+    def insert_document_blocks(
+        self, document_id: str, blocks: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        if not blocks:
+            return []
+        query = """
+            INSERT INTO document_blocks (
+                document_id,
+                block_id,
+                block_type,
+                text,
+                html,
+                source_type,
+                source_map,
+                section_index,
+                paragraph_index,
+                section_title,
+                section_type,
+                char_count,
+                display_order
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
+        """
+        params_list = [
+            (
+                document_id,
+                b["block_id"],
+                b["block_type"],
+                b["text"],
+                b.get("html"),
+                b["source_type"],
+                Jsonb(b.get("source_map") or {}),
+                b.get("section_index"),
+                b.get("paragraph_index"),
+                b.get("section_title"),
+                b.get("section_type"),
+                b.get("char_count", 0),
+                b["display_order"],
+            )
+            for b in blocks
+        ]
+        created: list[dict[str, Any]] = []
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.executemany(query, params_list, returning=True)
+                while True:
+                    row = cur.fetchone()
+                    if row is not None:
+                        created.append(row)
+                    if not cur.nextset():
+                        break
+            conn.commit()
+        return created
+
+    def list_document_blocks(self, document_id: str) -> list[dict[str, Any]]:
+        return self._fetchall(
+            """
+            SELECT *
+            FROM document_blocks
+            WHERE document_id = %s
+            ORDER BY display_order
+            """,
+            (document_id,),
+        )
+
+    def get_document_block(self, document_id: str, block_id: str) -> dict[str, Any] | None:
+        return self._fetchone(
+            """
+            SELECT * FROM document_blocks
+            WHERE document_id = %s AND block_id = %s
+            """,
+            (document_id, block_id),
+        )
+
+    def update_block_risk_score(
+        self, document_id: str, block_id: str, risk_score: float
+    ) -> dict[str, Any] | None:
+        return self._fetchone(
+            """
+            UPDATE document_blocks
+            SET risk_score = %s
+            WHERE document_id = %s AND block_id = %s
+            RETURNING *
+            """,
+            (risk_score, document_id, block_id),
+        )
+
+    # ------------------------------------------------------------------
+    # Document Patches
+    # ------------------------------------------------------------------
+
+    def insert_document_patch(
+        self,
+        document_id: str,
+        run_id: str | None,
+        block_id: str,
+        old_text: str,
+        new_text: str,
+        source_map: dict[str, Any] | None = None,
+        created_by: str | None = None,
+    ) -> dict[str, Any]:
+        return self._fetchone(
+            """
+            INSERT INTO document_patches (
+                document_id, run_id, block_id, old_text, new_text, source_map, created_by
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (
+                document_id,
+                run_id,
+                block_id,
+                old_text,
+                new_text,
+                Jsonb(source_map or {}),
+                created_by,
+            ),
+        )
+
+    def list_document_patches(
+        self, document_id: str, run_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        if run_id:
+            return self._fetchall(
+                """
+                SELECT * FROM document_patches
+                WHERE document_id = %s AND run_id = %s
+                ORDER BY created_at
+                """,
+                (document_id, run_id),
+            )
+        return self._fetchall(
+            """
+            SELECT * FROM document_patches
+            WHERE document_id = %s
+            ORDER BY created_at
+            """,
+            (document_id,),
+        )
+
+    def get_latest_patch_for_block(
+        self, document_id: str, block_id: str
+    ) -> dict[str, Any] | None:
+        return self._fetchone(
+            """
+            SELECT * FROM document_patches
+            WHERE document_id = %s AND block_id = %s
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (document_id, block_id),
+        )
+
+    def list_latest_patches_by_run(
+        self, document_id: str, run_id: str
+    ) -> list[dict[str, Any]]:
+        """返回每个 block 在该 run 下的最新 patch（去重）。"""
+        return self._fetchall(
+            """
+            SELECT DISTINCT ON (block_id) *
+            FROM document_patches
+            WHERE document_id = %s AND run_id = %s
+            ORDER BY block_id, created_at DESC
+            """,
+            (document_id, run_id),
+        )
+
 
 def _normalize_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
     if row is None:

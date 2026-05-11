@@ -98,9 +98,8 @@
           <div class="legend-title">风险等级说明</div>
           <div class="legend-item"><span class="legend-dot dot-red" />高风险（AIGC疑似度 ≥ 70%）</div>
           <div class="legend-item"><span class="legend-dot dot-orange" />中风险（60% ≤ AIGC疑似度 < 70%）</div>
-          <div class="legend-item"><span class="legend-dot dot-purple" />低风险（50% ≤ AIGC疑似度 < 60%）</div>
-          <div class="legend-item"><span class="legend-dot dot-normal" />正常（AIGC疑似度 < 50%）</div>
-          <div class="legend-item"><span class="legend-dot dot-gray" />未检测</div>
+          <div class="legend-item"><span class="legend-dot dot-purple" />低风险（30% ≤ AIGC疑似度 < 60%）</div>
+          <div class="legend-item"><span class="legend-dot dot-normal" />正常（AIGC疑似度 < 30%）</div>
         </div>
       </aside>
 
@@ -130,12 +129,21 @@
             </div>
           </div>
         </div>
-        <template v-else-if="originalBuffer">
+        <template v-else-if="fileType === 'docx' && originalBuffer">
           <DocxRenderer
             :array-buffer="originalBuffer"
             file-type="docx"
             @rendered="onDocxRendered"
             @error="onDocxError"
+          />
+        </template>
+        <template v-else-if="fileType === 'pdf' && originalBuffer">
+          <PdfRenderer
+            :array-buffer="originalBuffer"
+            :blocks="blocks"
+            @rendered="onPdfRendered"
+            @error="onPdfError"
+            @select-block="onPdfSelectBlock"
           />
         </template>
         <template v-else>
@@ -147,6 +155,7 @@
                 <div
                   v-for="para in group.paragraphs"
                   :key="para.paragraphIndex ?? -1"
+                  :id="'para-' + (para.paragraphIndex ?? -1)"
                   class="doc-paragraph"
                   :class="['para-' + paraRiskColor(para), { 'is-rewritten': para.rewritten }]"
                   @click="selectParagraph(para)"
@@ -291,34 +300,50 @@ import {
   ArrowLeft, ArrowRight, ArrowDown, RefreshLeft, RefreshRight,
   Download, Refresh, CircleCheck
 } from '@element-plus/icons-vue'
-import { getRun, getRunSections, getRewriteAdvice, reanalyzeRun, exportRun } from '../../api'
-import type { RunSectionItem, RewriteAdviceResponse, ReanalyzeResponse } from '../../types'
+import { getRun, getRunSections, getRunBlocks, getRewriteAdvice, reanalyzeRun, exportRun, createPatch } from '../../api'
+import type { RunSectionItem, RewriteAdviceResponse, ReanalyzeResponse, DocumentBlock, DocumentPatch } from '../../types'
+import { getRiskStyle } from './riskStyle'
 import DocxRenderer from './DocxRenderer.vue'
+import PdfRenderer from './PdfRenderer.vue'
 
 const props = defineProps<{
   runId: string
 }>()
 
+// ==================== 旧架构兼容层 ====================
 const sections = ref<RunSectionItem[]>([])
 const loading = ref(false)
 const docRef = ref<HTMLDivElement | null>(null)
 const paperTitle = ref('')
 
-// 原始 docx 渲染
+// 原始文件渲染
 const documentId = ref('')
 const originalFilename = ref('')
 const originalBuffer = ref<ArrayBuffer | null>(null)
+const fileType = ref<'docx' | 'pdf' | 'text'>('text')
 const docxLoading = ref(false)
 const docxError = ref('')
 const renderedContainer = ref<HTMLElement | null>(null)
-const paragraphMap = ref<Map<HTMLElement, number>>(new Map()) // DOM paragraph -> section_index
 
-// 改写状态
-const rewrittenMap = ref<Map<number, string>>(new Map())
+// ==================== 新架构：Blocks 驱动 ====================
+const blocks = ref<DocumentBlock[]>([])
+const patches = ref<Map<string, DocumentPatch>>(new Map())
+const activeBlockId = ref<string | null>(null)
+
+// block 级别历史栈
+interface BlockHistoryEntry {
+  blockId: string
+  previousText: string | undefined
+  newText: string
+  timestamp: number
+}
+const blockHistoryStack = ref<BlockHistoryEntry[]>([])
+const blockHistoryIndex = ref(-1)
+
+// 改写状态（兼容旧模板）
 const panelVisible = ref(false)
 const panelLoading = ref(false)
 const panelError = ref('')
-const activeSectionIndex = ref<number | null>(null)
 const rewriteAdvice = ref<RewriteAdviceResponse | null>(null)
 
 // 真实重算结果
@@ -330,7 +355,19 @@ const batchAdviceMap = ref<Map<number, RewriteAdviceResponse>>(new Map())
 const batchLoading = ref(false)
 const batchProgress = ref(0)
 
-// 历史栈（撤销/重做）
+// 初始分数
+const initialAigc = ref(0)
+const initialDup = ref(0)
+
+// 动画分数
+const animatedAigc = ref(0)
+const animatedDup = ref(0)
+
+// ==================== 旧架构兼容变量（模板仍引用） ====================
+const paragraphMap = ref<Map<HTMLElement, number>>(new Map())
+const activeSectionIndex = ref<number | null>(null)
+const rewrittenMap = ref<Map<number, string>>(new Map())
+
 interface HistoryEntry {
   sectionIndex: number
   previousText: string | undefined
@@ -340,21 +377,13 @@ interface HistoryEntry {
 const historyStack = ref<HistoryEntry[]>([])
 const historyIndex = ref(-1)
 
-// 初始分数（从 sections 计算）
-const initialAigc = ref(0)
-const initialDup = ref(0)
-
-// 动画分数
-const animatedAigc = ref(0)
-const animatedDup = ref(0)
-
 onMounted(() => {
-  loadSections()
+  loadData()
 })
 
 const baseUrl = import.meta.env.VITE_API_BASE_URL || ''
 
-async function loadOriginalDocx() {
+async function loadOriginalFile() {
   if (!documentId.value) return
   docxLoading.value = true
   docxError.value = ''
@@ -367,18 +396,30 @@ async function loadOriginalDocx() {
       throw new Error(`下载原始文件失败: ${response.status}`)
     }
     const buf = await response.arrayBuffer()
-    // 简单验证是否为 zip（docx 本质是 zip）
-    const header = new Uint8Array(buf.slice(0, 4))
-    const isZip = header[0] === 0x50 && header[1] === 0x4B && header[2] === 0x03 && header[3] === 0x04
-    if (!isZip) {
-      // 不是 docx，静默 fallback 到纯文本
-      originalBuffer.value = null
-      return
+
+    if (fileType.value === 'docx') {
+      // 验证是否为 zip（docx 本质是 zip）
+      const header = new Uint8Array(buf.slice(0, 4))
+      const isZip = header[0] === 0x50 && header[1] === 0x4B && header[2] === 0x03 && header[3] === 0x04
+      if (!isZip) {
+        originalBuffer.value = null
+        fileType.value = 'text'
+        return
+      }
+    } else if (fileType.value === 'pdf') {
+      // 验证 PDF magic bytes: %PDF
+      const header = new Uint8Array(buf.slice(0, 5))
+      const isPdf = header[0] === 0x25 && header[1] === 0x50 && header[2] === 0x44 && header[3] === 0x46
+      if (!isPdf) {
+        originalBuffer.value = null
+        fileType.value = 'text'
+        return
+      }
     }
     originalBuffer.value = buf
   } catch (err) {
-    // 下载失败也静默 fallback，不显示错误
     originalBuffer.value = null
+    fileType.value = 'text'
   } finally {
     docxLoading.value = false
   }
@@ -392,8 +433,26 @@ function onDocxRendered(container: HTMLElement) {
 function onDocxError(msg: string) {
   // mammoth 渲染失败，静默 fallback 到纯文本
   originalBuffer.value = null
+  fileType.value = 'text'
   docxError.value = ''
   console.warn('mammoth render failed, fallback to text:', msg)
+}
+
+function onPdfRendered(_container: HTMLElement) {
+  // PDF 渲染完成，canvas + textLayer 已显示
+}
+
+function onPdfError(msg: string) {
+  originalBuffer.value = null
+  fileType.value = 'text'
+  console.warn('pdf render failed, fallback to text:', msg)
+}
+
+function onPdfSelectBlock(blockId: string) {
+  const block = blocks.value.find(b => b.blockId === blockId)
+  if (block) {
+    selectBlock(block)
+  }
 }
 
 function applyHighlightsToDocx(container: HTMLElement) {
@@ -411,25 +470,50 @@ function applyHighlightsToDocx(container: HTMLElement) {
     const sec = sections.value.find(s => s.paragraph_index === paraIdx || s.section_index === paraIdx)
     if (sec) {
       paragraphMap.value.set(el, sec.section_index)
-      const level = effectiveRisk(sec)
-      el.classList.add('risk-' + (level === 'high' ? 'high' : level === 'medium' ? 'medium' : level === 'low' ? 'low' : sec.section_type === 'references' || sec.section_type === 'acknowledgement' ? 'gray' : 'normal'))
-      
-      // 如果被改写，添加标记
-      if (rewrittenMap.value.has(sec.section_index)) {
-        el.classList.add('is-rewritten')
-      }
-      
-      // 点击事件
-      el.addEventListener('click', (e) => {
-        e.stopPropagation()
-        selectSection(sec)
-        // 移除其他 active
-        paragraphs.forEach(other => other.classList.remove('is-active'))
-        el.classList.add('is-active')
-      })
+      updateParagraphRiskClass(el, sec)
     }
     paraIdx++
   })
+
+  // 使用事件委托处理点击
+  container.onclick = (e) => {
+    const target = e.target as HTMLElement
+    const para = target.closest('p.doc-paragraph') as HTMLElement | null
+    if (!para) return
+    const secIdx = paragraphMap.value.get(para)
+    if (secIdx == null) return
+    const sec = sections.value.find(s => s.section_index === secIdx)
+    if (!sec) return
+    e.stopPropagation()
+    selectSection(sec)
+    // 移除其他 active
+    paragraphs.forEach(other => other.classList.remove('is-active'))
+    para.classList.add('is-active')
+  }
+}
+
+function updateParagraphRiskClass(el: HTMLElement, sec: RunSectionItem) {
+  // 清除旧的风险 class
+  el.classList.remove('risk-high', 'risk-medium', 'risk-low', 'risk-normal', 'is-rewritten')
+  
+  const level = effectiveRisk(sec)
+  el.classList.add('risk-' + (level === 'high' ? 'high' : level === 'medium' ? 'medium' : level === 'low' ? 'low' : 'normal'))
+  
+  // 如果被改写，添加标记
+  if (rewrittenMap.value.has(sec.section_index)) {
+    el.classList.add('is-rewritten')
+  }
+}
+
+function refreshAllHighlights() {
+  if (renderedContainer.value && fileType.value === 'docx') {
+    for (const [el, secIdx] of paragraphMap.value.entries()) {
+      const sec = sections.value.find(s => s.section_index === secIdx)
+      if (sec) {
+        updateParagraphRiskClass(el, sec)
+      }
+    }
+  }
 }
 
 function replaceTextInElement(element: HTMLElement, oldText: string, newText: string) {
@@ -484,7 +568,7 @@ interface ParagraphBlock {
   sectionIndices: number[]
   aigcScore: number
   dupScore: number
-  riskLevel: 'low' | 'medium' | 'high'
+  riskLevel: 'low' | 'medium' | 'high' | 'normal'
   sectionTitle: string | null
   sectionType: string | null
   rewritten: boolean
@@ -502,7 +586,77 @@ interface ChapterGroup {
   adviceCount: number
 }
 
+// ==================== Blocks 驱动的新分组逻辑 ====================
+// 优先从 blocks 生成分组，如果 blocks 为空则回退到 sections
+
 const groupedSections = computed(() => {
+  // 如果有 blocks，用 blocks 驱动
+  if (blocks.value.length > 0) {
+    return _groupFromBlocks()
+  }
+  // 回退到旧逻辑
+  return _groupFromSections()
+})
+
+function _groupFromBlocks(): ChapterGroup[] {
+  const groups: ChapterGroup[] = []
+  let current: ChapterGroup | null = null
+
+  for (const block of blocks.value) {
+    if (block.type === 'heading' || block.type === 'title') {
+      current = {
+        title: block.text,
+        type: block.sectionType ?? null,
+        paragraphs: [],
+        totalChars: 0,
+        maxAigc: 0,
+        maxDup: 0,
+        rewrittenCount: 0,
+        adviceCount: 0
+      }
+      groups.push(current)
+      continue
+    }
+
+    if (!current) {
+      current = {
+        title: block.sectionTitle || '正文',
+        type: block.sectionType ?? null,
+        paragraphs: [],
+        totalChars: 0,
+        maxAigc: 0,
+        maxDup: 0,
+        rewrittenCount: 0,
+        adviceCount: 0
+      }
+      groups.push(current)
+    }
+
+    const score = getBlockRiskScore(block) / 100
+    const patch = patches.value.get(block.blockId)
+    const text = patch ? patch.newText : block.text
+
+    const para: ParagraphBlock = {
+      paragraphIndex: block.sourceMap?.paragraphIndex ?? block.displayOrder,
+      content: text,
+      sectionIndices: [block.displayOrder],
+      aigcScore: score,
+      dupScore: 0,
+      riskLevel: effectiveRiskFromScore(score),
+      sectionTitle: block.sectionTitle ?? null,
+      sectionType: block.sectionType ?? null,
+      rewritten: !!patch,
+      hasAdvice: false
+    }
+    current.paragraphs.push(para)
+    current.totalChars += block.charCount
+    current.maxAigc = Math.max(current.maxAigc, score)
+    if (patch) current.rewrittenCount++
+  }
+  return groups
+}
+
+function _groupFromSections(): ChapterGroup[] {
   const groups: ChapterGroup[] = []
   let current: ChapterGroup | null = null
   let currentPara: ParagraphBlock | null = null
@@ -545,7 +699,7 @@ const groupedSections = computed(() => {
     currentPara.sectionIndices.push(sec.section_index)
     currentPara.aigcScore = Math.max(currentPara.aigcScore, effectiveAigc(sec))
     currentPara.dupScore = Math.max(currentPara.dupScore, effectiveDup(sec))
-    currentPara.riskLevel = currentPara.aigcScore >= 0.70 ? 'high' : currentPara.aigcScore >= 0.50 ? 'medium' : 'low'
+    currentPara.riskLevel = effectiveRiskFromScore(currentPara.aigcScore)
     if (rewrittenMap.value.has(sec.section_index)) currentPara.rewritten = true
     if (batchAdviceMap.value.has(sec.section_index)) currentPara.hasAdvice = true
 
@@ -556,26 +710,49 @@ const groupedSections = computed(() => {
     if (batchAdviceMap.value.has(sec.section_index)) current.adviceCount++
   }
   return groups
+}
+
+const totalChars = computed(() => {
+  if (blocks.value.length > 0) {
+    return blocks.value.reduce((sum, b) => sum + b.charCount, 0)
+  }
+  return sections.value.reduce((sum, s) => sum + (s.char_count || 0), 0)
 })
 
-const totalChars = computed(() =>
-  sections.value.reduce((sum, s) => sum + (s.char_count || 0), 0)
-)
+const rewrittenCount = computed(() => {
+  if (blocks.value.length > 0) {
+    return patches.value.size
+  }
+  return rewrittenMap.value.size
+})
 
-const rewrittenCount = computed(() => rewrittenMap.value.size)
-
-const highRiskSections = computed(() =>
-  sections.value.filter(s => s.risk_level !== 'low')
-)
+const highRiskSections = computed(() => {
+  if (blocks.value.length > 0) {
+    // blocks 模式下：用 block 风险分数过滤对应的 sections（保持类型兼容）
+    return sections.value.filter(s => {
+      const block = blocks.value.find(b => b.sourceMap?.paragraphIndex === s.paragraph_index)
+      const score = block ? getBlockRiskScore(block) : s.aigc_score * 100
+      return score >= 30
+    })
+  }
+  return sections.value.filter(s => effectiveAigc(s) >= 0.30)
+})
 
 const riskCounts = computed(() => {
   const counts = { high: 0, medium: 0, low: 0, normal: 0 }
-  for (const s of sections.value) {
-    const level = effectiveRisk(s)
-    if (level === 'high') counts.high++
-    else if (level === 'medium') counts.medium++
-    else if (level === 'low') counts.low++
-    else counts.normal++
+  if (blocks.value.length > 0) {
+    for (const b of blocks.value) {
+      const style = getRiskStyle(getBlockRiskScore(b))
+      counts[style.level]++
+    }
+  } else {
+    for (const s of sections.value) {
+      const level = effectiveRisk(s)
+      if (level === 'high') counts.high++
+      else if (level === 'medium') counts.medium++
+      else if (level === 'low') counts.low++
+      else counts.normal++
+    }
   }
   return counts
 })
@@ -621,6 +798,14 @@ const activeParaIndex = computed(() => {
 })
 
 const activeRiskLevel = computed(() => {
+  // blocks 模式
+  if (activeBlockId.value && blocks.value.length > 0) {
+    const block = blocks.value.find(b => b.blockId === activeBlockId.value)
+    if (block) {
+      return effectiveRiskFromScore(getBlockRiskScore(block) / 100)
+    }
+  }
+  // 旧模式
   if (activeSectionIndex.value == null) return 'low'
   const sec = sections.value.find(s => s.section_index === activeSectionIndex.value)
   if (!sec) return 'low'
@@ -628,6 +813,14 @@ const activeRiskLevel = computed(() => {
 })
 
 const activeAigcScore = computed(() => {
+  // blocks 模式
+  if (activeBlockId.value && blocks.value.length > 0) {
+    const block = blocks.value.find(b => b.blockId === activeBlockId.value)
+    if (block) {
+      return getBlockRiskScore(block) / 100
+    }
+  }
+  // 旧模式
   if (activeSectionIndex.value == null) return 0
   const sec = sections.value.find(s => s.section_index === activeSectionIndex.value)
   if (!sec) return 0
@@ -635,6 +828,15 @@ const activeAigcScore = computed(() => {
 })
 
 const activeSectionContent = computed(() => {
+  // blocks 模式
+  if (activeBlockId.value && blocks.value.length > 0) {
+    const block = blocks.value.find(b => b.blockId === activeBlockId.value)
+    if (block) {
+      const patch = patches.value.get(activeBlockId.value)
+      return patch ? patch.newText : block.text
+    }
+  }
+  // 旧模式
   if (activeSectionIndex.value == null) return ''
   const sec = sections.value.find(s => s.section_index === activeSectionIndex.value)
   if (!sec) return ''
@@ -660,6 +862,11 @@ watch([currentAigc, currentDup], () => {
   animateScore()
 })
 
+// 改写或重算后自动刷新高亮
+watch([realScores, rewrittenMap], () => {
+  refreshAllHighlights()
+}, { deep: true })
+
 function animateScore() {
   const targetAigc = currentAigc.value
   const targetDup = currentDup.value
@@ -677,18 +884,20 @@ function animateScore() {
   requestAnimationFrame(tick)
 }
 
-async function loadSections() {
+async function loadData() {
   loading.value = true
   try {
-    const [run, secs] = await Promise.all([
+    const [run, secs, blocksRes] = await Promise.all([
       getRun(props.runId),
-      getRunSections(props.runId)
+      getRunSections(props.runId),
+      getRunBlocks(props.runId).catch(() => ({ blocks: [] }))
     ])
     sections.value = secs
+    blocks.value = blocksRes.blocks
     documentId.value = run.document_id
     originalFilename.value = run.filename || ''
     paperTitle.value = run.title || ''
-    
+
     // 计算初始分数
     const scored = sections.value.filter(s => s.section_type !== 'references' && s.section_type !== 'acknowledgement')
     const scoredChars = scored.reduce((sum, s) => sum + s.char_count, 0)
@@ -699,10 +908,17 @@ async function loadSections() {
     animatedAigc.value = initialAigc.value * 100
     animatedDup.value = initialDup.value * 100
 
-    // 只有 docx 才尝试 mammoth 渲染，其他格式直接 fallback 纯文本
-    const isDocx = originalFilename.value.toLowerCase().endsWith('.docx')
-    if (isDocx && documentId.value) {
-      await loadOriginalDocx()
+    // 根据文件扩展名选择渲染方式
+    const lowerName = originalFilename.value.toLowerCase()
+    if (lowerName.endsWith('.docx')) {
+      fileType.value = 'docx'
+    } else if (lowerName.endsWith('.pdf')) {
+      fileType.value = 'pdf'
+    } else {
+      fileType.value = 'text'
+    }
+    if (documentId.value && (fileType.value === 'docx' || fileType.value === 'pdf')) {
+      await loadOriginalFile()
     }
   } catch (err) {
     ElMessage.error(err instanceof Error ? err.message : '加载段落失败')
@@ -727,32 +943,39 @@ function effectiveDup(sec: RunSectionItem): number {
   return sec.dup_score
 }
 
-function effectiveRisk(sec: RunSectionItem): 'low' | 'medium' | 'high' {
-  if (realScores.value) {
-    const rs = realScores.value.sections.find(s => s.section_index === sec.section_index)
-    if (rs) return rs.risk_level
+function effectiveRiskFromScore(score: number): 'low' | 'medium' | 'high' | 'normal' {
+  if (score >= 0.70) return 'high'
+  if (score >= 0.60) return 'medium'
+  if (score >= 0.30) return 'low'
+  return 'normal'
+}
+
+function effectiveRisk(sec: RunSectionItem): 'low' | 'medium' | 'high' | 'normal' {
+  return effectiveRiskFromScore(effectiveAigc(sec))
+}
+
+// 从 block 获取风险分数（优先使用重算后的分数）
+function getBlockRiskScore(block: DocumentBlock): number {
+  // 先用 sections 中的对应分数（兼容旧数据）
+  const sec = sections.value.find(s => s.paragraph_index === block.sourceMap?.paragraphIndex)
+  if (sec) {
+    return effectiveAigc(sec) * 100
   }
-  return sec.risk_level
+  return block.riskScore ?? 0
 }
 
 function paraRiskColor(para: ParagraphBlock): string {
-  if (para.sectionType === 'references' || para.sectionType === 'acknowledgement') return 'gray'
-  if (para.aigcScore >= 0.70) return 'red'
-  if (para.aigcScore >= 0.60) return 'orange'
-  if (para.aigcScore >= 0.50) return 'purple'
-  return 'normal'
+  const style = getRiskStyle(para.aigcScore * 100)
+  return style.level === 'high' ? 'red' : style.level === 'medium' ? 'orange' : style.level === 'low' ? 'purple' : 'normal'
 }
 
 function groupMaxColor(group: ChapterGroup): string {
-  if (group.type === 'references' || group.type === 'acknowledgement') return 'gray'
-  if (group.maxAigc >= 0.70) return 'red'
-  if (group.maxAigc >= 0.60) return 'orange'
-  if (group.maxAigc >= 0.50) return 'purple'
-  return 'normal'
+  const style = getRiskStyle(group.maxAigc * 100)
+  return style.level === 'high' ? 'red' : style.level === 'medium' ? 'orange' : style.level === 'low' ? 'purple' : 'normal'
 }
 
 function riskText(level: string) {
-  return level === 'high' ? '高风险' : level === 'medium' ? '中风险' : '低风险'
+  return level === 'high' ? '高风险' : level === 'medium' ? '中风险' : level === 'low' ? '低风险' : '正常'
 }
 
 function paraPreview(para: ParagraphBlock): string {
@@ -775,6 +998,18 @@ function scrollToParagraph(paraIdx: number | null) {
 }
 
 async function selectParagraph(para: ParagraphBlock) {
+  // blocks 模式：通过 paragraphIndex 找 block
+  if (blocks.value.length > 0) {
+    const block = blocks.value.find(b =>
+      (b.sourceMap?.paragraphIndex ?? b.displayOrder) === para.paragraphIndex
+    )
+    if (block) {
+      activeBlockId.value = block.blockId
+      await selectBlock(block)
+      return
+    }
+  }
+  // 旧模式
   if (!para.sectionIndices.length) return
   let targetSec = sections.value.find(s => s.section_index === para.sectionIndices[0])
   for (const idx of para.sectionIndices) {
@@ -785,6 +1020,31 @@ async function selectParagraph(para: ParagraphBlock) {
   }
   if (targetSec) {
     await selectSection(targetSec)
+  }
+}
+
+async function selectBlock(block: DocumentBlock) {
+  activeBlockId.value = block.blockId
+  panelVisible.value = true
+  panelLoading.value = true
+  panelError.value = ''
+  rewriteAdvice.value = null
+
+  // 尝试通过 section_index 获取改写建议（兼容旧 API）
+  const secIdx = block.sourceMap?.paragraphIndex ?? block.displayOrder
+  const cached = batchAdviceMap.value.get(secIdx)
+  if (cached) {
+    rewriteAdvice.value = cached
+    panelLoading.value = false
+    return
+  }
+
+  try {
+    rewriteAdvice.value = await getRewriteAdvice(props.runId, secIdx)
+  } catch (err) {
+    panelError.value = err instanceof Error ? err.message : '获取改写建议失败'
+  } finally {
+    panelLoading.value = false
   }
 }
 
@@ -823,7 +1083,27 @@ function applyRewrite(sectionIndex: number, newText: string) {
   const previousText = rewrittenMap.value.get(sectionIndex)
   rewrittenMap.value.set(sectionIndex, newText)
   pushHistory(sectionIndex, previousText, newText)
-  
+
+  // 同步更新 patches（新架构）
+  if (blocks.value.length > 0 && activeBlockId.value) {
+    const block = blocks.value.find(b => b.blockId === activeBlockId.value)
+    if (block) {
+      const oldText = previousText || block.text
+      patches.value.set(activeBlockId.value, {
+        blockId: activeBlockId.value,
+        oldText,
+        newText,
+        createdAt: new Date().toISOString(),
+      })
+      // 异步保存到后端（不阻塞 UI）
+      createPatch(props.runId, {
+        block_id: activeBlockId.value,
+        old_text: oldText,
+        new_text: newText,
+      }).catch(() => { /* 静默失败，前端已保存 */ })
+    }
+  }
+
   // 同步更新 mammoth HTML 中的文本
   if (renderedContainer.value) {
     const sec = sections.value.find(s => s.section_index === sectionIndex)
@@ -841,10 +1121,23 @@ function applyRewrite(sectionIndex: number, newText: string) {
 }
 
 function applySentenceRewrite(sentenceIdx: number) {
-  if (!rewriteAdvice.value || activeSectionIndex.value === null) return
+  if (!rewriteAdvice.value) return
   const sent = rewriteAdvice.value.sentences[sentenceIdx]
   if (!sent) return
 
+  // blocks 模式
+  if (activeBlockId.value && blocks.value.length > 0) {
+    const patch = patches.value.get(activeBlockId.value)
+    const current = patch ? patch.newText : (blocks.value.find(b => b.blockId === activeBlockId.value)?.text || '')
+    const updated = current.replace(sent.original, sent.rewritten)
+    const secIdx = activeSectionIndex.value ?? 0
+    applyRewrite(secIdx, updated)
+    ElMessage.success('已应用改写')
+    return
+  }
+
+  // 旧模式
+  if (activeSectionIndex.value === null) return
   const sec = sections.value.find((s: RunSectionItem) => s.section_index === activeSectionIndex.value)
   if (!sec) return
 
@@ -855,7 +1148,18 @@ function applySentenceRewrite(sentenceIdx: number) {
 }
 
 function applyFullRewrite() {
-  if (!rewriteAdvice.value || activeSectionIndex.value === null) return
+  if (!rewriteAdvice.value) return
+
+  // blocks 模式
+  if (activeBlockId.value && blocks.value.length > 0) {
+    const secIdx = activeSectionIndex.value ?? 0
+    applyRewrite(secIdx, rewriteAdvice.value.rewritten_paragraph)
+    ElMessage.success('已替换原文')
+    return
+  }
+
+  // 旧模式
+  if (activeSectionIndex.value === null) return
   applyRewrite(activeSectionIndex.value, rewriteAdvice.value.rewritten_paragraph)
   ElMessage.success('已替换原文')
 }
@@ -914,7 +1218,8 @@ async function doExport(format: 'docx' | 'txt') {
   try {
     const payload = sections.value.map(sec => ({
       section_index: sec.section_index,
-      content: rewrittenMap.value.get(sec.section_index) || sec.content
+      content: rewrittenMap.value.get(sec.section_index) || sec.content,
+      risk_level: effectiveRisk(sec)
     }))
     const blob = await exportRun(props.runId, payload, format)
     const url = URL.createObjectURL(blob)
@@ -979,6 +1284,7 @@ img { max-width: 100%; display: block; margin: 12pt auto; }
 .risk-high { background: rgba(229,57,53,0.18); border-left-color: #E53935; }
 .risk-medium { background: rgba(251,140,0,0.18); border-left-color: #FB8C00; }
 .risk-low { background: rgba(142,36,170,0.15); border-left-color: #8E24AA; }
+.risk-normal { background: rgba(67,160,71,0.12); border-left-color: #43A047; }
 .is-rewritten { border-left-color: #2E7D5A !important; border-left-width: 4px; }
 </style>
 </head>
@@ -1179,8 +1485,7 @@ function goNext() {
 .outline-chapter.outline-risk-high { border-left-color: #E53935; background: rgba(229, 57, 53, 0.06); }
 .outline-chapter.outline-risk-medium { border-left-color: #FB8C00; background: rgba(251, 140, 0, 0.06); }
 .outline-chapter.outline-risk-low { border-left-color: #8E24AA; background: rgba(142, 36, 170, 0.05); }
-.outline-chapter.outline-risk-normal { border-left-color: #9E9E9E; }
-.outline-chapter.outline-risk-gray { border-left-color: #BDBDBD; }
+.outline-chapter.outline-risk-normal { border-left-color: #43A047; background: rgba(67, 160, 71, 0.05); }
 
 .outline-title {
   display: flex;
@@ -1217,8 +1522,7 @@ function goNext() {
 .outline-para.outline-risk-high { border-left-color: #E53935; background: rgba(229, 57, 53, 0.06); }
 .outline-para.outline-risk-medium { border-left-color: #FB8C00; background: rgba(251, 140, 0, 0.06); }
 .outline-para.outline-risk-low { border-left-color: #8E24AA; background: rgba(142, 36, 170, 0.05); }
-.outline-para.outline-risk-normal { border-left-color: transparent; }
-.outline-para.outline-risk-gray { border-left-color: #BDBDBD; }
+.outline-para.outline-risk-normal { border-left-color: #43A047; background: rgba(67, 160, 71, 0.05); }
 
 .outline-dot {
   width: 8px;
@@ -1240,8 +1544,7 @@ function goNext() {
 .dot-red { background: #E53935; }
 .dot-orange { background: #FB8C00; }
 .dot-purple { background: #8E24AA; }
-.dot-normal { background: #9E9E9E; }
-.dot-gray { background: #BDBDBD; }
+.dot-normal { background: #43A047; }
 
 .risk-legend {
   padding: 16px;
@@ -1352,13 +1655,8 @@ function goNext() {
 }
 
 .para-normal {
-  border-left-color: transparent;
-}
-
-.para-gray {
-  color: #9E9E9E;
-  background: rgba(189, 189, 189, 0.10);
-  border-left-color: #BDBDBD;
+  background: rgba(67, 160, 71, 0.12);
+  border-left-color: #43A047;
 }
 
 .doc-paragraph.is-rewritten {
@@ -1633,6 +1931,30 @@ function goNext() {
 /* ===== 加载态 ===== */
 .doc-loading {
   padding: 40px;
+}
+
+/* PDF 视图 */
+.pdf-view-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pdf-text-layer {
+  background: #fff;
+  border-radius: 4px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  padding: 20mm;
+}
+
+.pdf-text-header {
+  text-align: center;
+  font-size: 12px;
+  color: #9E9E9E;
+  padding: 8px;
+  margin: -20mm -20mm 16px -20mm;
+  background: #F5F5F5;
+  border-bottom: 1px solid #E8E6E1;
 }
 
 /* ===== 滚动条美化 ===== */

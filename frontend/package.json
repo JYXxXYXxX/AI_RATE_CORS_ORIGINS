@@ -13,6 +13,7 @@
     "echarts": "^6.0.0",
     "element-plus": "^2.7.5",
     "mammoth": "^1.12.0",
+    "pdfjs-dist": "^5.7.284",
     "pinia": "^3.0.4",
     "vue": "^3.4.27",
     "vue-echarts": "^8.0.1",

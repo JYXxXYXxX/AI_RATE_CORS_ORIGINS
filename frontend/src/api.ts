@@ -10,6 +10,8 @@ import type {
   CnkiFeedbackOcrPreviewResponse,
   CnkiFeedbackResponse,
   CnkiReportFragment,
+  DocumentBlock,
+  DocumentPatch,
   DocumentUploadResponse,
   ModelStatusResponse,
   ProviderCatalogResponse,
@@ -471,7 +473,7 @@ export async function reanalyzeRun(
 
 export async function exportRun(
   runId: string,
-  sections: { section_index: number; content: string }[],
+  sections: { section_index: number; content: string; risk_level?: string }[],
   format: 'docx' | 'txt' = 'docx'
 ): Promise<Blob> {
   const response = await fetchWithRetry(`${baseUrl}/v1/runs/${runId}/export`, {
@@ -485,6 +487,35 @@ export async function exportRun(
     throw new Error(payload.detail || `请求失败：${response.status}`)
   }
   return response.blob()
+}
+
+export async function getRunBlocks(runId: string): Promise<{ blocks: DocumentBlock[] }> {
+  const response = await fetchWithRetry(`${baseUrl}/v1/runs/${runId}/blocks`, {
+    headers: authHeaders(),
+    credentials: 'include'
+  })
+  return parseResponse<{ blocks: DocumentBlock[] }>(response)
+}
+
+export async function createPatch(
+  runId: string,
+  payload: { block_id: string; old_text: string; new_text: string }
+): Promise<DocumentPatch> {
+  const response = await fetchWithRetry(`${baseUrl}/v1/runs/${runId}/patches`, {
+    method: 'POST',
+    headers: jsonHeaders(true),
+    credentials: 'include',
+    body: JSON.stringify(payload)
+  })
+  return parseResponse<DocumentPatch>(response)
+}
+
+export async function listPatches(runId: string): Promise<DocumentPatch[]> {
+  const response = await fetchWithRetry(`${baseUrl}/v1/runs/${runId}/patches`, {
+    headers: authHeaders(),
+    credentials: 'include'
+  })
+  return parseResponse<DocumentPatch[]>(response)
 }
 
 function authHeaders() {

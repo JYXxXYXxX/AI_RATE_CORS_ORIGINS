@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -559,6 +559,50 @@ class ReanalyzeResponse(BaseModel):
     disclaimer: str
 
 
+class ExportSectionItem(BaseModel):
+    section_index: int
+    content: str
+    risk_level: Literal["low", "medium", "high", "normal"] = "normal"
+
+
 class ExportRequest(BaseModel):
-    sections: list[ReanalyzeSectionItem]
+    sections: list[ExportSectionItem]
+    format: Literal["docx", "txt"] = "docx"
+
+
+# ------------------------------------------------------------------
+# Document Blocks & Patches
+# ------------------------------------------------------------------
+
+class DocumentBlockResponse(BaseModel):
+    block_id: str
+    block_type: str
+    text: str
+    html: str | None = None
+    effective_text: str | None = None
+    risk_score: float | None = None
+    rewrite_status: str = "none"
+    source_type: str
+    source_map: dict[str, Any] | None = None
+    section_title: str | None = None
+    section_type: str | None = None
+    char_count: int = 0
+    display_order: int
+
+
+class DocumentPatchRequest(BaseModel):
+    block_id: str
+    old_text: str
+    new_text: str
+    source_map: dict[str, Any] | None = None
+
+
+class DocumentPatchResponse(BaseModel):
+    id: str
+    document_id: str
+    run_id: str | None = None
+    block_id: str
+    old_text: str
+    new_text: str
+    created_at: str
     format: Literal["docx", "txt"] = "docx"
