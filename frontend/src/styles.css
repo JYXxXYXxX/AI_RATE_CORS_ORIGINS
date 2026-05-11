@@ -300,19 +300,19 @@ h3 {
   color: #f3f4ef;
 }
 
-.comfort-line {
+.risk-score-line {
   display: flex;
   align-items: baseline;
   gap: 8px;
   margin: 6px 0 10px;
 }
 
-.comfort-line strong {
+.risk-score-line strong {
   font-size: 70px;
   line-height: 0.95;
 }
 
-.comfort-line span {
+.risk-score-line span {
   font-size: 20px;
   opacity: 0.8;
 }
@@ -668,7 +668,7 @@ h3 {
     align-items: stretch;
   }
 
-  .comfort-line strong {
+  .risk-score-line strong {
     font-size: 56px;
   }
 

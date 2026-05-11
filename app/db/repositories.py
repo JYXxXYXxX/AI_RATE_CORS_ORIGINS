@@ -1317,6 +1317,19 @@ class UnifiedRepository:
             (risk_score, document_id, block_id),
         )
 
+    def update_block_internal_risk(
+        self, document_id: str, block_id: str, internal_risk: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        return self._fetchone(
+            """
+            UPDATE document_blocks
+            SET internal_risk = %s
+            WHERE document_id = %s AND block_id = %s
+            RETURNING *
+            """,
+            (Jsonb(internal_risk), document_id, block_id),
+        )
+
     # ------------------------------------------------------------------
     # Document Patches
     # ------------------------------------------------------------------
@@ -1581,6 +1594,112 @@ class UnifiedRepository:
         self._execute(
             "UPDATE document_blocks SET report_risk = NULL WHERE document_id = %s",
             (document_id,),
+        )
+
+    # ------------------------------------------------------------------
+    # Run Unlocks
+    # ------------------------------------------------------------------
+
+    def create_run_unlock(
+        self,
+        *,
+        user_id: str,
+        run_id: str,
+        order_no: str,
+        package_code: str,
+        amount_cents: int,
+    ) -> dict[str, Any]:
+        return self._fetchone(
+            """
+            INSERT INTO user_run_unlocks (user_id, run_id, order_no, package_code, amount_cents, status)
+            VALUES (%s, %s, %s, %s, %s, 'pending_payment')
+            ON CONFLICT (user_id, run_id, package_code) DO UPDATE SET
+                order_no = EXCLUDED.order_no,
+                amount_cents = EXCLUDED.amount_cents,
+                status = CASE
+                    WHEN user_run_unlocks.status = 'rejected' THEN 'pending_payment'
+                    ELSE user_run_unlocks.status
+                END,
+                created_at = now()
+            RETURNING *
+            """,
+            (user_id, run_id, order_no, package_code, amount_cents),
+        )
+
+    def get_run_unlock_by_order_no(self, order_no: str) -> dict[str, Any] | None:
+        return self._fetchone(
+            "SELECT * FROM user_run_unlocks WHERE order_no = %s",
+            (order_no,),
+        )
+
+    def get_run_unlock(self, user_id: str, run_id: str, package_code: str) -> dict[str, Any] | None:
+        return self._fetchone(
+            "SELECT * FROM user_run_unlocks WHERE user_id = %s AND run_id = %s AND package_code = %s",
+            (user_id, run_id, package_code),
+        )
+
+    def list_run_unlocks_by_user(self, user_id: str, run_id: str | None = None) -> list[dict[str, Any]]:
+        if run_id:
+            return self._fetchall(
+                "SELECT * FROM user_run_unlocks WHERE user_id = %s AND run_id = %s ORDER BY created_at DESC",
+                (user_id, run_id),
+            )
+        return self._fetchall(
+            "SELECT * FROM user_run_unlocks WHERE user_id = %s ORDER BY created_at DESC",
+            (user_id,),
+        )
+
+    def list_pending_run_unlocks(self, limit: int = 100) -> list[dict[str, Any]]:
+        return self._fetchall(
+            """
+            SELECT u.*, r.document_id, d.title as document_title
+            FROM user_run_unlocks u
+            JOIN analysis_runs r ON r.id = u.run_id
+            JOIN documents d ON d.id = r.document_id
+            WHERE u.status IN ('pending_payment', 'pending_review')
+            ORDER BY u.created_at DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+
+    def update_run_unlock_screenshot(
+        self,
+        order_no: str,
+        payment_method: str,
+        screenshot_path: str,
+        screenshot_url: str,
+    ) -> dict[str, Any] | None:
+        return self._fetchone(
+            """
+            UPDATE user_run_unlocks
+            SET payment_method = %s, screenshot_path = %s, screenshot_url = %s, status = 'pending_review'
+            WHERE order_no = %s
+            RETURNING *
+            """,
+            (payment_method, screenshot_path, screenshot_url, order_no),
+        )
+
+    def approve_run_unlock(self, order_no: str, reviewed_by: str) -> dict[str, Any] | None:
+        return self._fetchone(
+            """
+            UPDATE user_run_unlocks
+            SET status = 'unlocked', reviewed_by = %s, reviewed_at = now(), unlocked_at = now()
+            WHERE order_no = %s
+            RETURNING *
+            """,
+            (reviewed_by, order_no),
+        )
+
+    def reject_run_unlock(self, order_no: str, reviewed_by: str) -> dict[str, Any] | None:
+        return self._fetchone(
+            """
+            UPDATE user_run_unlocks
+            SET status = 'rejected', reviewed_by = %s, reviewed_at = now()
+            WHERE order_no = %s
+            RETURNING *
+            """,
+            (reviewed_by, order_no),
         )
 
 

@@ -243,6 +243,7 @@ CREATE INDEX idx_document_blocks_doc_order ON public.document_blocks(document_id
 -- Columns added via migrations
 ALTER TABLE public.document_blocks ADD COLUMN IF NOT EXISTS risk_score float;
 ALTER TABLE public.document_blocks ADD COLUMN IF NOT EXISTS report_risk jsonb;
+ALTER TABLE public.document_blocks ADD COLUMN IF NOT EXISTS internal_risk jsonb;
 
 
 --
@@ -1151,6 +1152,89 @@ ALTER TABLE ONLY public.user_document_access
 
 ALTER TABLE ONLY public.user_sessions
     ADD CONSTRAINT user_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: user_run_unlocks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_run_unlocks (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    run_id uuid NOT NULL,
+    order_no character varying(80) NOT NULL,
+    package_code character varying(50) NOT NULL,
+    amount_cents integer NOT NULL,
+    status character varying(30) DEFAULT 'pending_payment'::character varying NOT NULL,
+    payment_method character varying(30),
+    screenshot_path character varying(500),
+    screenshot_url character varying(500),
+    reviewed_by character varying(100),
+    reviewed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    unlocked_at timestamp with time zone
+);
+
+
+--
+-- Name: user_run_unlocks user_run_unlocks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_run_unlocks
+    ADD CONSTRAINT user_run_unlocks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: user_run_unlocks user_run_unlocks_order_no_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_run_unlocks
+    ADD CONSTRAINT user_run_unlocks_order_no_key UNIQUE (order_no);
+
+
+--
+-- Name: user_run_unlocks user_run_unlocks_user_id_run_id_package_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_run_unlocks
+    ADD CONSTRAINT user_run_unlocks_user_id_run_id_package_code_key UNIQUE (user_id, run_id, package_code);
+
+
+--
+-- Name: idx_unlocks_user_run; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_unlocks_user_run ON public.user_run_unlocks USING btree (user_id, run_id, package_code);
+
+
+--
+-- Name: idx_unlocks_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_unlocks_status ON public.user_run_unlocks USING btree (status, created_at);
+
+
+--
+-- Name: idx_unlocks_run; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_unlocks_run ON public.user_run_unlocks USING btree (run_id);
+
+
+--
+-- Name: user_run_unlocks user_run_unlocks_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_run_unlocks
+    ADD CONSTRAINT user_run_unlocks_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.analysis_runs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: user_run_unlocks user_run_unlocks_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_run_unlocks
+    ADD CONSTRAINT user_run_unlocks_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_users(id) ON DELETE CASCADE;
 
 
 --

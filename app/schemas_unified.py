@@ -204,13 +204,48 @@ class ScoreBand(BaseModel):
 
 
 class ReportSummary(BaseModel):
-    comfort_score: int = Field(..., ge=0, le=100)
+    risk_score: int = Field(..., ge=0, le=100)
     overall_risk: Literal["low", "medium", "high"]
     one_line_judgement: str
     predicted_cnki_dup: ScoreBand
     predicted_cnki_aigc: ScoreBand
     confidence: float = Field(..., ge=0, le=1)
     first_fix_targets: list[str]
+
+
+class UnlockPackage(BaseModel):
+    code: str
+    title: str
+    description: str
+    amount_cents: int = Field(..., ge=0)
+    amount_yuan: str = ""
+
+
+class UnlockOrderResponse(BaseModel):
+    id: str
+    user_id: str
+    run_id: str
+    order_no: str
+    package_code: str
+    amount_cents: int = Field(..., ge=0)
+    status: Literal["pending_payment", "pending_review", "unlocked", "rejected"]
+    payment_method: str | None = None
+    screenshot_url: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+    created_at: datetime
+    unlocked_at: datetime | None = None
+
+
+class UnlockStatusResponse(BaseModel):
+    unlocked: bool
+    order: UnlockOrderResponse | None = None
+    package_code: str | None = None
+
+
+class AdminUnlockOrderListResponse(BaseModel):
+    orders: list[UnlockOrderResponse]
+    total: int = Field(..., ge=0)
 
 
 class LocalMetrics(BaseModel):

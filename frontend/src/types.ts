@@ -32,6 +32,36 @@ export interface BillingPackage {
   credits: number
 }
 
+export interface UnlockPackage {
+  code: string
+  title: string
+  description: string
+  amount_cents: number
+  amount_yuan: string
+}
+
+export interface UnlockOrder {
+  id: string
+  user_id: string
+  run_id: string
+  order_no: string
+  package_code: string
+  amount_cents: number
+  status: 'pending_payment' | 'pending_review' | 'unlocked' | 'rejected'
+  payment_method: string | null
+  screenshot_url: string | null
+  reviewed_by: string | null
+  reviewed_at: string | null
+  created_at: string
+  unlocked_at: string | null
+}
+
+export interface UnlockStatus {
+  unlocked: boolean
+  order: UnlockOrder | null
+  package_code: string | null
+}
+
 export interface BillingOrderSummary {
   id: string
   order_no: string
@@ -159,7 +189,7 @@ export interface ScoreBand {
 }
 
 export interface ReportSummary {
-  comfort_score: number
+  risk_score: number
   overall_risk: 'low' | 'medium' | 'high'
   one_line_judgement: string
   predicted_cnki_dup: ScoreBand
@@ -185,6 +215,15 @@ export interface ChapterHeatItem {
   advice: string
 }
 
+export interface SubScores {
+  ai_likelihood: number
+  template_score: number
+  semantic_empty_score: number
+  repetition_score: number
+  citation_risk: number
+  overall_risk: number
+}
+
 export interface SectionRiskItem {
   section_index: number
   title: string
@@ -197,6 +236,7 @@ export interface SectionRiskItem {
   combined_score: number
   risk_level: 'low' | 'medium' | 'high'
   reasons: string[]
+  sub_scores?: SubScores
 }
 
 export interface SimilarityMatchItem {

@@ -1,7 +1,7 @@
 <template>
   <div class="auth-page">
     <div class="auth-card">
-      <router-link to="/" class="auth-logo">论文风险预检台</router-link>
+      <router-link to="/" class="auth-logo">PataFix论文检测</router-link>
       <h1>登录</h1>
       <p class="auth-hint">登录后即可使用分析额度</p>
 

@@ -3,7 +3,7 @@
     <section class="hero">
       <div class="hero-content">
         <span class="hero-badge">论文提交前的最后一道防线</span>
-        <h1>AI 查重 & AIGC 风险<br/>预检平台</h1>
+        <h1>PataFix论文检测</h1>
         <p class="hero-desc">
           在正式送检知网之前，用本地分析快速定位高风险段落，给出修改优先级。
           回填真实知网结果后系统持续校准，让预测越来越准。
@@ -79,7 +79,7 @@
     </section>
 
     <footer class="landing-footer">
-      <p>论文风险预检台 &copy; {{ new Date().getFullYear() }}</p>
+      <p>PataFix论文检测 &copy; {{ new Date().getFullYear() }}</p>
     </footer>
   </div>
 </template>

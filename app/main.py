@@ -27,6 +27,7 @@ from app.routes import (
     legacy_router,
     models_router,
     providers_router,
+    unlocks_router,
 )
 
 
@@ -197,6 +198,7 @@ app.add_middleware(StrictRateLimitMiddleware, requests_per_minute=10)
 app.include_router(auth_router)
 app.include_router(billing_router)
 app.include_router(documents_router)
+app.include_router(unlocks_router)
 app.include_router(providers_router)
 app.include_router(feedback_router)
 app.include_router(models_router)
@@ -246,6 +248,18 @@ async def health_check() -> JSONResponse:
 async def metrics() -> PlainTextResponse:
     return PlainTextResponse(
         content=generate_latest().decode("utf-8"), media_type=CONTENT_TYPE_LATEST
+    )
+
+
+# ---------------------------------------------------------------------------
+# 截图静态文件托管
+# ---------------------------------------------------------------------------
+_screenshots_dir = Path(get_settings().upload_storage_dir) / "screenshots"
+if _screenshots_dir.is_dir():
+    app.mount(
+        "/v1/unlocks/screenshots",
+        StaticFiles(directory=str(_screenshots_dir)),
+        name="unlock-screenshots",
     )
 
 

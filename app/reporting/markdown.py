@@ -40,7 +40,7 @@ def render_report_markdown(report: dict[str, Any]) -> str:
         f"- 生成时间：{_format_datetime(report.get('generated_at'))}",
         f"- 学科：{_h(report.get('subject')) or '未填写'}",
         f"- 层级：{_h(report.get('degree_level')) or '未填写'}",
-        f"- 风险指数：{summary['comfort_score']}/100",
+        f"- 风险指数：{summary['risk_score']}/100",
         f"- 综合风险：{_risk_text(summary['overall_risk'])}",
         f"- 预测知网查重：{_band_text(summary['predicted_cnki_dup'])}",
         f"- 预测知网 AIGC：{_band_text(summary['predicted_cnki_aigc'])}",

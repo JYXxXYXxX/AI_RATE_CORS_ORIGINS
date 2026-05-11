@@ -289,6 +289,20 @@ class UnifiedPipeline:
                             self.repository.update_block_risk_score(
                                 document_id, block["block_id"], item.ai_like_score * 100
                             )
+                            if item.sub_scores:
+                                from app.schemas_unified import InternalRiskData
+                                internal_risk = InternalRiskData(
+                                    overall_risk=item.sub_scores.overall_risk,
+                                    ai_likelihood=item.sub_scores.ai_likelihood,
+                                    template_score=item.sub_scores.template_score,
+                                    semantic_empty_score=item.sub_scores.semantic_empty_score,
+                                    repetition_score=item.sub_scores.repetition_score,
+                                    citation_risk=item.sub_scores.citation_risk,
+                                    reasons=item.reasons[:4],
+                                )
+                                self.repository.update_block_internal_risk(
+                                    document_id, block["block_id"], internal_risk.model_dump(mode="json")
+                                )
             except Exception:
                 import logging
                 logging.getLogger(__name__).warning(
@@ -511,7 +525,7 @@ class UnifiedPipeline:
         scene_key = _scene_key(document.get("subject"), document.get("degree_level"))
         preview_risks = _build_preview_risk_sections(ai_report, duplication)
         preview_chapters = _build_preview_chapters(preview_risks)
-        comfort_score = _estimate_comfort_score(
+        risk_score = _estimate_risk_score(
             dup_high, aigc_high, len(ai_report.high_risk_segments)
         )
         provider_payloads = self.repository.list_provider_payloads(str(run["id"]))
@@ -520,7 +534,7 @@ class UnifiedPipeline:
             duplication_score=duplication.overall_score,
             segment_count=ai_report.segment_count,
             high_risk_segment_count=len(ai_report.high_risk_segments),
-            comfort_score=comfort_score,
+            comfort_score=risk_score,
             top_risk_sections=preview_risks,
             chapter_heatmap=preview_chapters,
             provider_payloads=provider_payloads,
@@ -637,7 +651,7 @@ def _progress_from_status(status: str) -> int:
     return mapping.get(status, 0)
 
 
-def _estimate_comfort_score(
+def _estimate_risk_score(
     dup_high: float, aigc_high: float, high_risk_segments: int
 ) -> int:
     score = 100 - dup_high * 42 - aigc_high * 38 - high_risk_segments * 3.5

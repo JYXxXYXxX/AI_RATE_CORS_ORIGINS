@@ -7,6 +7,7 @@ from app.routes.providers import router as providers_router
 from app.routes.feedback import router as feedback_router
 from app.routes.models import router as models_router
 from app.routes.legacy import router as legacy_router
+from app.routes.unlocks import router as unlocks_router
 
 __all__ = [
     "auth_router",
@@ -16,4 +17,5 @@ __all__ = [
     "feedback_router",
     "models_router",
     "legacy_router",
+    "unlocks_router",
 ]

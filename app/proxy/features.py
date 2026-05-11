@@ -65,7 +65,7 @@ def build_feature_dict_from_snapshot(
         duplication_score=float(local_metrics.get("duplication_score", 0.0)),
         segment_count=int(local_metrics.get("segment_count", 0)),
         high_risk_segment_count=int(local_metrics.get("high_risk_segment_count", 0)),
-        comfort_score=int(summary.get("comfort_score", 0)),
+        comfort_score=int(summary.get("risk_score", summary.get("comfort_score", 0))),
         top_risk_sections=list(report_json.get("top_risk_sections", [])),
         chapter_heatmap=list(report_json.get("chapter_heatmap", [])),
         provider_payloads=provider_payloads,

@@ -28,13 +28,13 @@ def compose_report(
         top_risk_sections, top_similarity_matches
     )
     first_fix_targets = [item["title"] for item in revision_plan[:3]]
-    comfort_score = _comfort_score(proxy_prediction, top_risk_sections)
+    risk_score = _risk_score(proxy_prediction, top_risk_sections)
     overall_risk = _overall_risk(proxy_prediction, top_risk_sections)
 
     summary = {
-        "comfort_score": comfort_score,
+        "risk_score": risk_score,
         "overall_risk": overall_risk,
-        "one_line_judgement": _one_line_judgement(overall_risk, comfort_score),
+        "one_line_judgement": _one_line_judgement(overall_risk, risk_score),
         "predicted_cnki_dup": _score_band(
             proxy_prediction["predicted_cnki_dup"],
             proxy_prediction["predicted_cnki_dup_low"],
@@ -87,25 +87,33 @@ def _merge_section_reports(
         combined_score = round(
             ai_segment.ai_like_score * 0.58 + duplication_score * 0.42, 4
         )
-        merged.append(
-            {
-                "section_index": ai_segment.index,
-                "title": ai_segment.section_title
-                or f"正文段落 {ai_segment.paragraph_index or ai_segment.index + 1}",
-                "section_title": ai_segment.section_title,
-                "paragraph_index": ai_segment.paragraph_index,
-                "text_preview": ai_segment.text_preview,
-                "char_count": ai_segment.char_count,
-                "aigc_score": round(ai_segment.ai_like_score, 4),
-                "duplication_score": round(duplication_score, 4),
-                "combined_score": combined_score,
-                "risk_level": _level_from_score(combined_score),
-                "reasons": (
-                    ai_segment.reasons[:2]
-                    + (duplication.reasons[:2] if duplication else [])
-                )[:4],
+        entry: dict[str, Any] = {
+            "section_index": ai_segment.index,
+            "title": ai_segment.section_title
+            or f"正文段落 {ai_segment.paragraph_index or ai_segment.index + 1}",
+            "section_title": ai_segment.section_title,
+            "paragraph_index": ai_segment.paragraph_index,
+            "text_preview": ai_segment.text_preview,
+            "char_count": ai_segment.char_count,
+            "aigc_score": round(ai_segment.ai_like_score, 4),
+            "duplication_score": round(duplication_score, 4),
+            "combined_score": combined_score,
+            "risk_level": _level_from_score(combined_score),
+            "reasons": (
+                ai_segment.reasons[:2]
+                + (duplication.reasons[:2] if duplication else [])
+            )[:4],
+        }
+        if ai_segment.sub_scores:
+            entry["sub_scores"] = {
+                "ai_likelihood": ai_segment.sub_scores.ai_likelihood,
+                "template_score": ai_segment.sub_scores.template_score,
+                "semantic_empty_score": ai_segment.sub_scores.semantic_empty_score,
+                "repetition_score": ai_segment.sub_scores.repetition_score,
+                "citation_risk": ai_segment.sub_scores.citation_risk,
+                "overall_risk": ai_segment.sub_scores.overall_risk,
             }
-        )
+        merged.append(entry)
     return merged
 
 
@@ -301,7 +309,7 @@ def _build_submission_checklist(
     ]
 
 
-def _comfort_score(
+def _risk_score(
     proxy_prediction: dict[str, Any], top_risk_sections: list[dict[str, Any]]
 ) -> int:
     dup_percent = proxy_prediction["predicted_cnki_dup_high"] * 100
@@ -329,12 +337,12 @@ def _overall_risk(
     return "low"
 
 
-def _one_line_judgement(overall_risk: str, comfort_score: int) -> str:
+def _one_line_judgement(overall_risk: str, risk_score: int) -> str:
     if overall_risk == "high":
-        return f"这版还不适合直接正式送检，但并不是推倒重来，先抓关键段改会更划算。当前风险指数 {comfort_score}/100。"
+        return f"这版还不适合直接正式送检，但并不是推倒重来，先抓关键段改会更划算。当前风险指数 {risk_score}/100。"
     if overall_risk == "medium":
-        return f"整体已经有基础，但还存在几处会拖高结果的不稳定因素。当前风险指数 {comfort_score}/100。"
-    return f"整体风险相对可控，建议做一次定向复查后再进入正式送检。当前风险指数 {comfort_score}/100。"
+        return f"整体已经有基础，但还存在几处会拖高结果的不稳定因素。当前风险指数 {risk_score}/100。"
+    return f"整体风险相对可控，建议做一次定向复查后再进入正式送检。当前风险指数 {risk_score}/100。"
 
 
 def _score_band(center: float, low: float, high: float, label: str) -> dict[str, Any]:

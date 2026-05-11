@@ -4,8 +4,8 @@
       <p class="eyebrow">
         {{ latestFeedback ? '基于知网实测的风险指数' : '风险指数' }}
       </p>
-      <div class="comfort-line">
-        <strong>{{ cnkiBasedComfortScore }}</strong>
+      <div class="risk-score-line">
+        <strong>{{ cnkiBasedRiskScore }}</strong>
         <span>/ 100</span>
       </div>
       <h2>{{ riskText(cnkiBasedRisk) }}</h2>
@@ -238,7 +238,21 @@
     </div>
   </section>
 
-  <section class="card">
+  <!-- 锁定提示横幅 -->
+  <section v-if="!reportUnlocked" class="card lock-banner">
+    <div class="lock-content">
+      <el-icon class="lock-icon"><Lock /></el-icon>
+      <div class="lock-text">
+        <h3>完整报告已锁定</h3>
+        <p>预览已结束。解锁后可查看章节热力图、风险段落详情、改写建议和导师沟通摘要。</p>
+      </div>
+      <el-button type="primary" size="large" @click="openUnlockModal('unlock_report')">
+        解锁全文检测报告 ¥29.90
+      </el-button>
+    </div>
+  </section>
+
+  <section v-if="reportUnlocked" class="card">
     <div class="card-head">
       <p class="eyebrow">章节风险热力图</p>
       <h3>先看哪一章最容易拖高整体结果</h3>
@@ -259,7 +273,7 @@
     </div>
   </section>
 
-  <section class="dual-grid">
+  <section v-if="reportUnlocked" class="dual-grid">
     <section class="card">
       <div class="card-head">
         <p class="eyebrow">Top 风险段落</p>
@@ -278,6 +292,33 @@
           <span>AIGC {{ (section.aigc_score * 100).toFixed(1) }}%</span>
           <span>重复 {{ (section.duplication_score * 100).toFixed(1) }}%</span>
           <span>综合 {{ (section.combined_score * 100).toFixed(1) }}%</span>
+        </div>
+        <div v-if="section.sub_scores" class="sub-score-bars">
+          <div class="sub-bar" title="AI 疑似度">
+            <span class="sub-label">AI</span>
+            <div class="sub-track"><div class="sub-fill sub-ai" :style="{ width: section.sub_scores.ai_likelihood + '%' }"></div></div>
+            <span class="sub-value">{{ Math.round(section.sub_scores.ai_likelihood) }}</span>
+          </div>
+          <div class="sub-bar" title="模板化">
+            <span class="sub-label">模板</span>
+            <div class="sub-track"><div class="sub-fill sub-template" :style="{ width: section.sub_scores.template_score + '%' }"></div></div>
+            <span class="sub-value">{{ Math.round(section.sub_scores.template_score) }}</span>
+          </div>
+          <div class="sub-bar" title="语义空洞">
+            <span class="sub-label">空洞</span>
+            <div class="sub-track"><div class="sub-fill sub-empty" :style="{ width: section.sub_scores.semantic_empty_score + '%' }"></div></div>
+            <span class="sub-value">{{ Math.round(section.sub_scores.semantic_empty_score) }}</span>
+          </div>
+          <div class="sub-bar" title="重复表达">
+            <span class="sub-label">重复</span>
+            <div class="sub-track"><div class="sub-fill sub-repeat" :style="{ width: section.sub_scores.repetition_score + '%' }"></div></div>
+            <span class="sub-value">{{ Math.round(section.sub_scores.repetition_score) }}</span>
+          </div>
+          <div class="sub-bar" title="引用风险">
+            <span class="sub-label">引用</span>
+            <div class="sub-track"><div class="sub-fill sub-cite" :style="{ width: section.sub_scores.citation_risk + '%' }"></div></div>
+            <span class="sub-value">{{ Math.round(section.sub_scores.citation_risk) }}</span>
+          </div>
         </div>
         <div class="reason-list">
           <el-tag v-for="reason in section.reasons" :key="reason" effect="plain">{{ reason }}</el-tag>
@@ -397,7 +438,7 @@
     </section>
   </section>
 
-  <section class="card">
+  <section v-if="reportUnlocked" class="card">
     <div class="card-head">
       <p class="eyebrow">三步提交计划</p>
       <h3>把返工压缩到最少</h3>
@@ -473,7 +514,7 @@
     </div>
   </section>
 
-  <section class="info-row">
+  <section v-if="reportUnlocked" class="info-row">
     <div class="card mentor-card">
       <div class="card-head">
         <p class="eyebrow">导师沟通摘要</p>
@@ -670,22 +711,32 @@
     </div>
   </el-dialog>
 
+  <UnlockModal
+    v-model="unlockModalVisible"
+    :run-id="runStatus?.run_id || ''"
+    :package-code="currentUnlockPackageCode"
+    :packages="unlockPackages"
+    @unlocked="onUnlocked"
+  />
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index'
-import { EditPen, Bottom, DocumentCopy, Warning, Upload } from '@element-plus/icons-vue'
-import { getRewriteAdvice, previewCnkiFeedbackOcr, submitCnkiFeedback } from '../api'
+import { EditPen, Bottom, DocumentCopy, Warning, Upload, Lock } from '@element-plus/icons-vue'
+import { getRewriteAdvice, previewCnkiFeedbackOcr, submitCnkiFeedback, getUnlockStatus, getUnlockPackages } from '../api'
 import type {
   AnalysisRunStatusResponse,
   ChecklistItem,
   ModelStatusResponse,
   RewriteAdviceResponse,
   ScoreBand,
-  UnifiedReportResponse
+  UnifiedReportResponse,
+  UnlockPackage,
+  UnlockOrder
 } from '../types'
+import UnlockModal from './UnlockModal.vue'
 
 const router = useRouter()
 
@@ -700,6 +751,43 @@ const emit = defineEmits<{
 }>()
 
 const checklist = ref<ChecklistItem[]>([])
+
+// 解锁状态
+const reportUnlocked = ref(false)
+const unlockModalVisible = ref(false)
+const unlockPackages = ref<UnlockPackage[]>([])
+const currentUnlockPackageCode = ref('unlock_report')
+const checkingUnlock = ref(false)
+
+async function checkUnlockStatus() {
+  if (!props.runStatus?.run_id) return
+  checkingUnlock.value = true
+  try {
+    const status = await getUnlockStatus(props.runStatus.run_id, 'unlock_report')
+    reportUnlocked.value = status.unlocked
+  } catch {
+    reportUnlocked.value = false
+  } finally {
+    checkingUnlock.value = false
+  }
+}
+
+onMounted(async () => {
+  unlockPackages.value = await getUnlockPackages().catch(() => [])
+  await checkUnlockStatus()
+})
+
+watch(() => props.runStatus?.run_id, checkUnlockStatus)
+
+function openUnlockModal(packageCode: string) {
+  currentUnlockPackageCode.value = packageCode
+  unlockModalVisible.value = true
+}
+
+function onUnlocked(order: UnlockOrder) {
+  reportUnlocked.value = true
+  ElMessage.success('解锁成功')
+}
 
 const rewriteDialogVisible = ref(false)
 const rewriteDialogLoading = ref(false)
@@ -787,9 +875,9 @@ const cnkiBasedRisk = computed(() => {
   return 'low'
 })
 
-const cnkiBasedComfortScore = computed(() => {
+const cnkiBasedRiskScore = computed(() => {
   const latest = latestFeedback.value
-  if (!latest) return props.report.summary.comfort_score
+  if (!latest) return props.report.summary.risk_score
   const aigc = latest.cnki_aigc_percent ?? props.report.summary.predicted_cnki_aigc.center_percent
   const dup = latest.cnki_dup_percent ?? props.report.summary.predicted_cnki_dup.center_percent
   // 基于知网数据重新计算：查重权重 42%，AIGC 权重 38%，高阈值惩罚
@@ -1059,8 +1147,75 @@ function deltaText(value: number | null | undefined) {
 </script>
 
 <style scoped>
+.lock-banner {
+  background: linear-gradient(135deg, #fff8e1, #fff3e0);
+  border: 1px dashed #ff9800;
+}
+.lock-content {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 20px;
+}
+.lock-icon {
+  font-size: 40px;
+  color: #ff9800;
+  flex-shrink: 0;
+}
+.lock-text {
+  flex: 1;
+}
+.lock-text h3 {
+  margin: 0 0 6px;
+  color: #e65100;
+  font-size: 18px;
+}
+.lock-text p {
+  margin: 0;
+  color: #666;
+  font-size: 14px;
+}
 .rewrite-btn {
   margin-top: 12px;
+}
+
+.sub-score-bars {
+  margin: 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sub-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+.sub-label {
+  width: 28px;
+  color: #888;
+  flex-shrink: 0;
+}
+.sub-track {
+  flex: 1;
+  height: 6px;
+  background: #eee;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.sub-fill {
+  height: 100%;
+  border-radius: 3px;
+}
+.sub-ai { background: #e53935; }
+.sub-template { background: #ff9800; }
+.sub-empty { background: #9c27b0; }
+.sub-repeat { background: #2196f3; }
+.sub-cite { background: #795548; }
+.sub-value {
+  width: 22px;
+  text-align: right;
+  color: #666;
 }
 .rewrite-btn .el-icon {
   margin-right: 4px;

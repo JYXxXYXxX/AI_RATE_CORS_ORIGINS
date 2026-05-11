@@ -77,6 +77,14 @@
       </div>
       <div class="topbar-actions">
         <el-button
+          size="small"
+          :type="foldNormal ? 'primary' : 'default'"
+          @click="foldNormal = !foldNormal"
+        >
+          {{ foldNormal ? '展开正常段落' : '折叠正常段落' }}
+        </el-button>
+        <el-button
+          v-if="rewriteUnlocked"
           type="primary"
           size="small"
           :loading="batchLoading"
@@ -85,14 +93,35 @@
         >
           {{ batchLoading ? `批量建议 ${batchProgress}/${highRiskSections.length}` : '一键改写' }}
         </el-button>
+        <el-button
+          v-else
+          type="warning"
+          size="small"
+          @click="openUnlockModal('unlock_rewrite')"
+        >
+          <el-icon><Lock /></el-icon> 解锁全文改写
+        </el-button>
         <el-button size="small" :disabled="!canUndo" @click="undo">
           <el-icon><RefreshLeft /></el-icon>撤销
         </el-button>
         <el-button size="small" :disabled="!canRedo" @click="redo">
           <el-icon><RefreshRight /></el-icon>重做
         </el-button>
-        <el-button size="small" @click="doSave">
+        <el-button
+          v-if="exportUnlocked"
+          size="small"
+          @click="doSave"
+        >
           <el-icon><Download /></el-icon>保存
+        </el-button>
+        <el-button
+          v-else
+          size="small"
+          type="warning"
+          plain
+          @click="openUnlockModal('export_docx')"
+        >
+          <el-icon><Lock /></el-icon>导出改写稿
         </el-button>
       </div>
     </div>
@@ -180,10 +209,11 @@
                   v-for="para in group.paragraphs"
                   :key="para.paragraphIndex ?? -1"
                   class="doc-paragraph"
-                  :class="['para-' + paraRiskColor(para), { 'is-rewritten': para.rewritten }]"
+                  :class="['para-' + paraRiskColor(para), { 'is-rewritten': para.rewritten, 'folded': foldNormal && paraRiskColor(para) === 'normal' }]"
                   @click="selectParagraph(para)"
                 >
                   <div class="doc-paragraph-content">{{ para.content }}</div>
+                  <div v-if="foldNormal && paraRiskColor(para) === 'normal'" class="fold-hint">正常段落（点击展开）</div>
                 </div>
               </div>
             </div>
@@ -217,10 +247,11 @@
                   :key="para.paragraphIndex ?? -1"
                   :id="'para-' + (para.paragraphIndex ?? -1)"
                   class="doc-paragraph"
-                  :class="['para-' + paraRiskColor(para), { 'is-rewritten': para.rewritten }]"
+                  :class="['para-' + paraRiskColor(para), { 'is-rewritten': para.rewritten, 'folded': foldNormal && paraRiskColor(para) === 'normal' }]"
                   @click="selectParagraph(para)"
                 >
                   <div class="doc-paragraph-content">{{ para.content }}</div>
+                  <div v-if="foldNormal && paraRiskColor(para) === 'normal'" class="fold-hint">正常段落（点击展开）</div>
                 </div>
               </div>
             </div>
@@ -237,6 +268,15 @@
 
         <div v-if="!panelVisible" class="panel-empty">
           <div class="empty-hint">点击正文中带颜色标记的句子，查看风险诊断与改写建议</div>
+        </div>
+
+        <div v-else-if="panelVisible && !rewriteUnlocked" class="panel-lock">
+          <el-icon class="lock-icon"><Lock /></el-icon>
+          <h4>改写建议已锁定</h4>
+          <p>解锁后可查看完整 AI 改写建议、句子级润色和一键替换功能。</p>
+          <el-button type="primary" @click="openUnlockModal('unlock_rewrite')">
+            解锁全文改写 ¥39.90
+          </el-button>
         </div>
 
         <template v-else>
@@ -287,6 +327,34 @@
                   <el-tag size="small" type="info">系统预估</el-tag>
                   <span style="color: #999; font-size: 12px; margin-left: 8px;">不等同于知网结果</span>
                 </p>
+              </div>
+
+              <!-- 子分数详情 -->
+              <div v-if="activeBlock?.internalRisk" class="card-section sub-scores">
+                <div class="section-title">风险细分</div>
+                <div class="sub-score-item">
+                  <span>AI 疑似度</span>
+                  <el-progress :percentage="Math.round(activeBlock.internalRisk.aiLikelihood ?? 0)" :color="'#e53935'" :stroke-width="10" />
+                </div>
+                <div class="sub-score-item">
+                  <span>模板化</span>
+                  <el-progress :percentage="Math.round(activeBlock.internalRisk.templateScore ?? 0)" :color="'#ff9800'" :stroke-width="10" />
+                </div>
+                <div class="sub-score-item">
+                  <span>语义空洞</span>
+                  <el-progress :percentage="Math.round(activeBlock.internalRisk.semanticEmptyScore ?? 0)" :color="'#9c27b0'" :stroke-width="10" />
+                </div>
+                <div class="sub-score-item">
+                  <span>重复表达</span>
+                  <el-progress :percentage="Math.round(activeBlock.internalRisk.repetitionScore ?? 0)" :color="'#2196f3'" :stroke-width="10" />
+                </div>
+                <div class="sub-score-item">
+                  <span>引用风险</span>
+                  <el-progress :percentage="Math.round(activeBlock.internalRisk.citationRisk ?? 0)" :color="'#795548'" :stroke-width="10" />
+                </div>
+                <div class="sub-score-overall">
+                  <strong>综合风险: {{ Math.round(activeBlock.internalRisk.overallRisk ?? 0) }}/100</strong>
+                </div>
               </div>
 
               <div class="card-section">
@@ -388,6 +456,14 @@
       </div>
     </div>
   </div>
+
+  <UnlockModal
+    v-model="unlockModalVisible"
+    :run-id="runId"
+    :package-code="currentUnlockPackageCode"
+    :packages="unlockPackages"
+    @unlocked="onUnlocked"
+  />
 </template>
 
 <script setup lang="ts">
@@ -395,13 +471,14 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   ArrowLeft, ArrowRight, ArrowDown, RefreshLeft, RefreshRight,
-  Download, Refresh, CircleCheck
+  Download, Refresh, CircleCheck, Lock
 } from '@element-plus/icons-vue'
-import { getRun, getRunSections, getRunBlocks, getRewriteAdvice, reanalyzeRun, exportRun, createPatch } from '../../api'
-import type { RunSectionItem, RewriteAdviceResponse, ReanalyzeResponse, DocumentBlock, DocumentPatch } from '../../types'
+import { getRun, getRunSections, getRunBlocks, getRewriteAdvice, reanalyzeRun, exportRun, createPatch, getUnlockStatus, getUnlockPackages } from '../../api'
+import type { RunSectionItem, RewriteAdviceResponse, ReanalyzeResponse, DocumentBlock, DocumentPatch, UnlockPackage, UnlockOrder } from '../../types'
 import { getRiskStyle, getEffectiveRiskStyle, getEffectiveRiskLevel } from './riskStyle'
 import DocxRenderer from './DocxRenderer.vue'
 import PdfRenderer from './PdfRenderer.vue'
+import UnlockModal from '../UnlockModal.vue'
 
 const props = defineProps<{
   runId: string
@@ -436,6 +513,39 @@ interface BlockHistoryEntry {
 }
 const blockHistoryStack = ref<BlockHistoryEntry[]>([])
 const blockHistoryIndex = ref(-1)
+
+// 折叠正常段落
+const foldNormal = ref(true)
+
+// 解锁状态
+const rewriteUnlocked = ref(false)
+const exportUnlocked = ref(false)
+const unlockModalVisible = ref(false)
+const currentUnlockPackageCode = ref('unlock_rewrite')
+const unlockPackages = ref<UnlockPackage[]>([])
+
+async function checkUnlockStatus() {
+  try {
+    const rewriteStatus = await getUnlockStatus(props.runId, 'unlock_rewrite')
+    rewriteUnlocked.value = rewriteStatus.unlocked
+    const exportStatus = await getUnlockStatus(props.runId, 'export_docx')
+    exportUnlocked.value = exportStatus.unlocked
+  } catch {
+    rewriteUnlocked.value = false
+    exportUnlocked.value = false
+  }
+}
+
+function openUnlockModal(packageCode: string) {
+  currentUnlockPackageCode.value = packageCode
+  unlockModalVisible.value = true
+}
+
+function onUnlocked() {
+  rewriteUnlocked.value = true
+  exportUnlocked.value = true
+  ElMessage.success('解锁成功')
+}
 
 // 改写状态（兼容旧模板）
 const panelVisible = ref(false)
@@ -499,6 +609,8 @@ const historyIndex = ref(-1)
 
 onMounted(() => {
   loadData()
+  getUnlockPackages().then(pkgs => { unlockPackages.value = pkgs }).catch(() => {})
+  checkUnlockStatus()
 })
 
 const baseUrl = import.meta.env.VITE_API_BASE_URL || ''
@@ -1525,6 +1637,85 @@ function goNext() {
 </script>
 
 <style scoped>
+/* ===== 锁定覆盖 ===== */
+.panel-lock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+  text-align: center;
+  gap: 12px;
+}
+.panel-lock .lock-icon {
+  font-size: 48px;
+  color: #ff9800;
+}
+.panel-lock h4 {
+  margin: 0;
+  color: #e65100;
+  font-size: 18px;
+}
+.panel-lock p {
+  margin: 0;
+  color: #666;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* ===== 折叠正常段落 ===== */
+.doc-paragraph.folded {
+  max-height: 32px;
+  overflow: hidden;
+  opacity: 0.6;
+  cursor: pointer;
+  position: relative;
+}
+.doc-paragraph.folded .doc-paragraph-content {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.doc-paragraph.folded .fold-hint {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  color: #999;
+  background: rgba(255,255,255,0.9);
+  padding: 2px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+}
+.doc-paragraph.folded:hover {
+  opacity: 0.9;
+  background: #f0f0f0;
+}
+
+/* ===== 子分数展示 ===== */
+.sub-scores .sub-score-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+.sub-scores .sub-score-item span {
+  width: 64px;
+  flex-shrink: 0;
+  color: #666;
+}
+.sub-scores .sub-score-item .el-progress {
+  flex: 1;
+}
+.sub-scores .sub-score-overall {
+  text-align: right;
+  margin-top: 8px;
+  font-size: 13px;
+  color: #333;
+}
+
 /* ===== 编辑器根 ===== */
 .patafix-editor {
   display: flex;

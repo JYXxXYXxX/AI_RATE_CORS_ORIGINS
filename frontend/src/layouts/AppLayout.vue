@@ -3,11 +3,8 @@
     <header class="app-header">
       <div class="app-header-left">
         <router-link to="/app" class="app-logo">
-          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-            <rect x="2" y="2" width="24" height="24" rx="6" stroke="#2E7D5A" stroke-width="2.5"/>
-            <path d="M8 20V8h5.5c2.5 0 4 1.5 4 3.5 0 2-1.5 3.5-4 3.5H10.5v5H8zm2.5-7h3c1.2 0 2-.8 2-1.8s-.8-1.7-2-1.7h-3v3.5z" fill="#2E7D5A"/>
-          </svg>
-          <span>PataFix</span>
+          <img src="/logo-icon.png" width="28" height="28" alt="PataFix" />
+          <span>PataFix论文检测</span>
         </router-link>
         <nav class="app-nav">
           <router-link to="/app" class="nav-link" exact-active-class="active">

@@ -45,6 +45,7 @@ from app.schemas_unified import (
     DocumentPatchResponse,
     DocumentUploadResponse,
     ExportRequest,
+    InternalRiskData,
     ReanalyzeRequest,
     ReanalyzeResponse,
     ReanalyzeSectionResult,
@@ -868,6 +869,12 @@ async def export_rewritten_document(
         document_id=str(db_run["document_id"]), auth=auth, repository=repository
     )
 
+    # 检查导出解锁状态
+    if auth.user:
+        unlock = repository.get_run_unlock(str(auth.user["id"]), run_id, "export_docx")
+        if not unlock or unlock.get("status") != "unlocked":
+            raise HTTPException(status_code=402, detail="export_docx not unlocked")
+
     original_sections = repository.list_document_sections(str(db_run["document_id"]))
     rewritten_map = {s.section_index: s.content for s in payload.sections}
 
@@ -1009,6 +1016,12 @@ async def get_section_rewrite_advice(
         document_id=str(run["document_id"]), auth=auth, repository=get_repository()
     )
 
+    # 检查改写解锁状态
+    if auth.user:
+        unlock = get_repository().get_run_unlock(str(auth.user["id"]), run_id, "unlock_rewrite")
+        if not unlock or unlock.get("status") != "unlocked":
+            raise HTTPException(status_code=402, detail="unlock_rewrite not unlocked")
+
     report = pipeline.get_report(run_id)
     if report is None:
         raise HTTPException(status_code=404, detail="report not found")
@@ -1140,6 +1153,19 @@ def _build_block_response(
             span_id=rr.get("span_id", ""),
             match_confidence=rr.get("match_confidence", 0.0),
         )
+    internal_risk = None
+    if block.get("internal_risk"):
+        ir = block["internal_risk"]
+        internal_risk = InternalRiskData(
+            overall_risk=ir.get("overall_risk", 0.0),
+            ai_likelihood=ir.get("ai_likelihood"),
+            template_score=ir.get("template_score"),
+            semantic_empty_score=ir.get("semantic_empty_score"),
+            repetition_score=ir.get("repetition_score"),
+            citation_risk=ir.get("citation_risk"),
+            reasons=ir.get("reasons", []),
+        )
+
     return DocumentBlockResponse(
         block_id=block["block_id"],
         block_type=block["block_type"],
@@ -1147,6 +1173,7 @@ def _build_block_response(
         effective_text=effective_text,
         risk_score=block.get("risk_score"),
         report_risk=report_risk,
+        internal_risk=internal_risk,
         rewrite_status="rewritten" if patch else "none",
         source_type=block["source_type"],
         source_map=block.get("source_map"),

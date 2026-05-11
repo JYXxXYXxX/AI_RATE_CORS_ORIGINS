@@ -19,6 +19,15 @@ class DetectorSignal(BaseModel):
     reasons: list[str] = Field(default_factory=list)
 
 
+class SubScores(BaseModel):
+    ai_likelihood: float = Field(..., ge=0, le=100)
+    template_score: float = Field(..., ge=0, le=100)
+    semantic_empty_score: float = Field(..., ge=0, le=100)
+    repetition_score: float = Field(..., ge=0, le=100)
+    citation_risk: float = Field(..., ge=0, le=100)
+    overall_risk: float = Field(..., ge=0, le=100)
+
+
 class SegmentReport(BaseModel):
     index: int
     section_title: str | None = None
@@ -31,6 +40,7 @@ class SegmentReport(BaseModel):
     risk_level: str
     reasons: list[str] = Field(default_factory=list)
     signals: list[DetectorSignal] = Field(default_factory=list)
+    sub_scores: SubScores | None = None
 
 
 class CnkiRiskRange(BaseModel):

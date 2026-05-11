@@ -24,6 +24,9 @@ import type {
   RewriteAdviceResponse,
   RunSectionItem,
   UnifiedReportResponse,
+  UnlockOrder,
+  UnlockPackage,
+  UnlockStatus,
   UserSummary
 } from './types'
 
@@ -640,6 +643,56 @@ export async function listPatches(runId: string): Promise<DocumentPatch[]> {
     credentials: 'include'
   })
   return parseResponse<DocumentPatch[]>(response)
+}
+
+export async function getUnlockPackages(): Promise<UnlockPackage[]> {
+  const response = await fetchWithRetry(`${baseUrl}/v1/unlocks/packages`, {
+    headers: authHeaders(),
+    credentials: 'include'
+  })
+  return parseResponse<UnlockPackage[]>(response)
+}
+
+export async function createUnlockOrder(runId: string, packageCode: string): Promise<UnlockOrder> {
+  const formData = new FormData()
+  formData.append('package_code', packageCode)
+  const response = await fetchWithRetry(`${baseUrl}/v1/unlocks/runs/${runId}/orders`, {
+    method: 'POST',
+    headers: authHeaders(),
+    credentials: 'include',
+    body: formData
+  })
+  return parseResponse<UnlockOrder>(response)
+}
+
+export async function getUnlockStatus(runId: string, packageCode?: string): Promise<UnlockStatus> {
+  const params = packageCode ? `?package_code=${encodeURIComponent(packageCode)}` : ''
+  const response = await fetchWithRetry(`${baseUrl}/v1/unlocks/runs/${runId}/status${params}`, {
+    headers: authHeaders(),
+    credentials: 'include'
+  })
+  return parseResponse<UnlockStatus>(response)
+}
+
+export async function uploadUnlockScreenshot(
+  runId: string,
+  orderNo: string,
+  file: File,
+  paymentMethod: 'alipay' | 'wechat'
+): Promise<UnlockOrder> {
+  const formData = new FormData()
+  formData.append('payment_method', paymentMethod)
+  formData.append('screenshot', file)
+  const response = await fetchWithRetry(
+    `${baseUrl}/v1/unlocks/runs/${runId}/orders/${orderNo}/screenshot`,
+    {
+      method: 'POST',
+      headers: authHeaders(),
+      credentials: 'include',
+      body: formData
+    }
+  )
+  return parseResponse<UnlockOrder>(response)
 }
 
 function authHeaders() {
