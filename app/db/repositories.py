@@ -497,14 +497,23 @@ class UnifiedRepository:
         run_type: str = "full_analysis",
         provider: str = "local",
         provider_version: str | None = None,
+        mode: str = "estimate",
     ) -> dict[str, Any]:
         query = """
-            INSERT INTO analysis_runs (document_id, run_type, provider, provider_version, status)
-            VALUES (%s, %s, %s, %s, 'queued')
+            INSERT INTO analysis_runs (document_id, run_type, provider, provider_version, status, mode)
+            VALUES (%s, %s, %s, %s, 'queued', %s)
             RETURNING *
         """
         return self._fetchone(
-            query, (document_id, run_type, provider, provider_version)
+            query, (document_id, run_type, provider, provider_version, mode)
+        )
+
+    def update_run_mode(self, run_id: str, mode: str) -> dict[str, Any] | None:
+        return self._fetchone(
+            """
+            UPDATE analysis_runs SET mode = %s WHERE id = %s RETURNING *
+            """,
+            (mode, run_id),
         )
 
     def mark_document_status(
@@ -1387,6 +1396,191 @@ class UnifiedRepository:
             ORDER BY block_id, created_at DESC
             """,
             (document_id, run_id),
+        )
+
+    # ------------------------------------------------------------------
+    # CNKI Reports
+    # ------------------------------------------------------------------
+
+    def insert_cnki_report(
+        self,
+        *,
+        document_id: str,
+        run_id: str | None = None,
+        report_type: str,
+        filename: str | None = None,
+        raw_format: str | None = None,
+        total_copy_ratio: float | None = None,
+        aigc_ratio: float | None = None,
+        generated_at: str | None = None,
+        raw_data: dict[str, Any] | None = None,
+        status: str = "parsed",
+    ) -> dict[str, Any]:
+        return self._fetchone(
+            """
+            INSERT INTO cnki_reports (
+                document_id, run_id, report_type, filename, raw_format,
+                total_copy_ratio, aigc_ratio, generated_at, raw_data, status
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (
+                document_id,
+                run_id,
+                report_type,
+                filename,
+                raw_format,
+                total_copy_ratio,
+                aigc_ratio,
+                generated_at,
+                Jsonb(raw_data or {}),
+                status,
+            ),
+        )
+
+    def get_cnki_report(self, report_id: str) -> dict[str, Any] | None:
+        return self._fetchone(
+            "SELECT * FROM cnki_reports WHERE id = %s",
+            (report_id,),
+        )
+
+    def list_cnki_reports_by_document(self, document_id: str) -> list[dict[str, Any]]:
+        return self._fetchall(
+            "SELECT * FROM cnki_reports WHERE document_id = %s ORDER BY parsed_at DESC",
+            (document_id,),
+        )
+
+    # ------------------------------------------------------------------
+    # CNKI Report Spans
+    # ------------------------------------------------------------------
+
+    def insert_cnki_report_spans(
+        self, report_id: str, spans: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        if not spans:
+            return []
+        query = """
+            INSERT INTO cnki_report_spans (
+                report_id, span_id, text, risk_type, risk_level,
+                similarity, aigc_score, matched_source, page_number, raw_meta
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
+        """
+        results: list[dict[str, Any]] = []
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                for span in spans:
+                    cur.execute(
+                        query,
+                        (
+                            report_id,
+                            span["span_id"],
+                            span["text"],
+                            span["risk_type"],
+                            span["risk_level"],
+                            span.get("similarity"),
+                            span.get("aigc_score"),
+                            span.get("matched_source"),
+                            span.get("page_number"),
+                            Jsonb(span.get("raw_meta") or {}),
+                        ),
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        results.append(row)
+            conn.commit()
+        return results
+
+    def list_cnki_report_spans(self, report_id: str) -> list[dict[str, Any]]:
+        return self._fetchall(
+            "SELECT * FROM cnki_report_spans WHERE report_id = %s ORDER BY id",
+            (report_id,),
+        )
+
+    # ------------------------------------------------------------------
+    # Block Report Mappings
+    # ------------------------------------------------------------------
+
+    def insert_block_report_mapping(
+        self,
+        *,
+        document_id: str,
+        block_id: str,
+        span_id: str,
+        report_id: str,
+        match_method: str,
+        match_confidence: float,
+        matched_text: str | None = None,
+    ) -> dict[str, Any]:
+        return self._fetchone(
+            """
+            INSERT INTO block_report_mappings (
+                document_id, block_id, span_id, report_id,
+                match_method, match_confidence, matched_text
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (document_id, block_id, span_id) DO UPDATE
+            SET match_method = EXCLUDED.match_method,
+                match_confidence = EXCLUDED.match_confidence,
+                matched_text = EXCLUDED.matched_text,
+                report_id = EXCLUDED.report_id
+            RETURNING *
+            """,
+            (
+                document_id,
+                block_id,
+                span_id,
+                report_id,
+                match_method,
+                match_confidence,
+                matched_text,
+            ),
+        )
+
+    def list_block_report_mappings(
+        self, document_id: str
+    ) -> list[dict[str, Any]]:
+        return self._fetchall(
+            """
+            SELECT m.*, s.text as span_text, s.risk_type, s.risk_level,
+                   s.similarity, s.aigc_score, s.matched_source
+            FROM block_report_mappings m
+            JOIN cnki_report_spans s ON s.span_id = m.span_id AND s.report_id = m.report_id
+            WHERE m.document_id = %s
+            ORDER BY m.created_at DESC
+            """,
+            (document_id,),
+        )
+
+    def delete_block_report_mappings_by_report(self, report_id: str) -> None:
+        self._execute(
+            "DELETE FROM block_report_mappings WHERE report_id = %s",
+            (report_id,),
+        )
+
+    # ------------------------------------------------------------------
+    # Document Blocks — report risk
+    # ------------------------------------------------------------------
+
+    def update_block_report_risk(
+        self, document_id: str, block_id: str, report_risk: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        return self._fetchone(
+            """
+            UPDATE document_blocks
+            SET report_risk = %s
+            WHERE document_id = %s AND block_id = %s
+            RETURNING *
+            """,
+            (Jsonb(report_risk), document_id, block_id),
+        )
+
+    def clear_block_report_risks(self, document_id: str) -> None:
+        self._execute(
+            "UPDATE document_blocks SET report_risk = NULL WHERE document_id = %s",
+            (document_id,),
         )
 
 

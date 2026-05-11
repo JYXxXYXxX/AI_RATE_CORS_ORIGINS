@@ -497,6 +497,130 @@ export async function getRunBlocks(runId: string): Promise<{ blocks: DocumentBlo
   return parseResponse<{ blocks: DocumentBlock[] }>(response)
 }
 
+export async function uploadDocumentWithReport(payload: {
+  file: File
+  reportFile: File
+  title?: string
+  subject?: string
+  degreeLevel?: string
+  onProgress?: (percent: number) => void
+}): Promise<{
+  fileId: string
+  runId: string
+  reportMode: boolean
+  reportSummary: {
+    reportId: string
+    reportType: 'similarity' | 'aigc' | 'mixed'
+    totalCopyRatio?: number
+    aigcRatio?: number
+    highRiskCount: number
+    mediumRiskCount: number
+    lowRiskCount: number
+    unmatchedCount: number
+  }
+  blocks: DocumentBlock[]
+  unmatchedRiskSpans: Array<{
+    spanId: string
+    text: string
+    riskType: 'similarity' | 'aigc'
+    riskLevel: 'high' | 'medium' | 'low'
+    similarity?: number
+    aigcScore?: number
+    matchedSource?: string
+    pageNumber?: number
+  }>
+}> {
+  const formData = new FormData()
+  formData.append('file', payload.file)
+  formData.append('report_file', payload.reportFile)
+  if (payload.title) formData.append('title', payload.title)
+  if (payload.subject) formData.append('subject', payload.subject)
+  if (payload.degreeLevel) formData.append('degree_level', payload.degreeLevel)
+
+  if (payload.onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', `${baseUrl}/v1/documents/upload-with-report`)
+      xhr.withCredentials = true
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          payload.onProgress!(Math.round((event.loaded / event.total) * 100))
+        }
+      }
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(JSON.parse(xhr.responseText))
+        } else {
+          let detail = `请求失败：${xhr.status}`
+          try {
+            const body = JSON.parse(xhr.responseText)
+            detail = body.detail || detail
+          } catch { /* ignore */ }
+          reject(new Error(detail))
+        }
+      }
+      xhr.onerror = () => reject(new Error('网络请求失败'))
+      xhr.send(formData)
+    })
+  }
+
+  const response = await fetchWithRetry(`${baseUrl}/v1/documents/upload-with-report`, {
+    method: 'POST',
+    headers: authHeaders(),
+    credentials: 'include',
+    body: formData
+  })
+  return parseResponse(response)
+}
+
+export async function attachReportToDocument(documentId: string, reportFile: File): Promise<{
+  reportId: string
+  mappedCount: number
+  unmatchedCount: number
+  unmatchedSpans: Array<{
+    spanId: string
+    text: string
+    riskType: 'similarity' | 'aigc'
+    riskLevel: 'high' | 'medium' | 'low'
+    similarity?: number
+    aigcScore?: number
+    matchedSource?: string
+    pageNumber?: number
+  }>
+}> {
+  const formData = new FormData()
+  formData.append('report_file', reportFile)
+  const response = await fetchWithRetry(`${baseUrl}/v1/documents/${documentId}/report`, {
+    method: 'POST',
+    headers: authHeaders(),
+    credentials: 'include',
+    body: formData
+  })
+  return parseResponse(response)
+}
+
+export async function remapReport(documentId: string): Promise<{
+  mappedCount: number
+  unmatchedCount: number
+  unmatchedSpans: Array<{
+    spanId: string
+    text: string
+    riskType: 'similarity' | 'aigc'
+    riskLevel: 'high' | 'medium' | 'low'
+    similarity?: number
+    aigcScore?: number
+    matchedSource?: string
+    pageNumber?: number
+  }>
+}> {
+  const response = await fetchWithRetry(`${baseUrl}/v1/documents/${documentId}/remap-report`, {
+    method: 'POST',
+    headers: authHeaders(),
+    credentials: 'include'
+  })
+  return parseResponse(response)
+}
+
 export async function createPatch(
   runId: string,
   payload: { block_id: string; old_text: string; new_text: string }

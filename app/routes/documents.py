@@ -37,6 +37,9 @@ from app.schemas_unified import (
     AnalysisTaskCreateResponse,
     AnalysisTaskStatusResponse,
     AnalyzeDocumentResponse,
+    AttachReportResponse,
+    CnkiReportSummary,
+    CnkiRiskSpanResponse,
     DocumentBlockResponse,
     DocumentPatchRequest,
     DocumentPatchResponse,
@@ -45,10 +48,15 @@ from app.schemas_unified import (
     ReanalyzeRequest,
     ReanalyzeResponse,
     ReanalyzeSectionResult,
+    ReportRiskData,
     RewriteAdviceResponse,
     UnifiedReportResponse,
+    UploadWithReportResponse,
 )
 from app.services.analyzer import PaperAnalyzer, risk_level
+from app.services.block_matcher import match_spans_to_blocks
+from app.services.cnki_report_parser import parse_cnki_report_bytes
+from app.services.document_blocks import parse_document_to_blocks
 from app.services.text_processing import preview_text, segment_document
 from app.task_queue import dispatch_analysis_task
 
@@ -90,6 +98,395 @@ async def upload_document(
         status=document["status"],
         reused_existing=result.reused_existing,
         created_at=document["created_at"],
+    )
+
+
+@router.post("/documents/upload-with-report", response_model=UploadWithReportResponse)
+async def upload_document_with_report(
+    file: UploadFile = File(...),
+    report_file: UploadFile = File(...),
+    title: str | None = Form(default=None),
+    subject: str | None = Form(default=None),
+    degree_level: str | None = Form(default=None),
+    settings: Settings = Depends(get_settings),
+    auth: AuthContext = Depends(get_auth_context),
+) -> UploadWithReportResponse:
+    """上传论文 + 知网检测报告，启用报告驱动模式。"""
+    repository = get_repository()
+
+    # 1. 上传论文（复用 pipeline 逻辑）
+    pipeline = get_unified_pipeline()
+    try:
+        result = await pipeline.upload_document(
+            file=file,
+            title=title,
+            subject=subject,
+            degree_level=degree_level,
+            user_id=str(auth.user["id"]) if auth.user is not None else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    document = result.document
+    document_id = str(document["id"])
+    if auth.user is not None:
+        repository.grant_document_access(
+            user_id=str(auth.user["id"]), document_id=document_id
+        )
+
+    # 2. 保存并解析知网报告
+    report_content = await report_file.read()
+    if not report_content:
+        raise HTTPException(status_code=400, detail="报告文件为空")
+
+    report_path = pipeline._write_binary(
+        settings.upload_storage_dir, report_file.filename or "report.pdf", report_content
+    )
+
+    try:
+        cnki_report = parse_cnki_report_bytes(
+            report_file.filename or "report.pdf", report_content
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"报告解析失败: {exc}") from exc
+
+    # 3. 获取论文 blocks
+    blocks = parse_document_to_blocks(
+        document["original_file_path"], document.get("source_type", "upload")
+    )
+    if blocks:
+        repository.insert_document_blocks(document_id, [b.to_dict() for b in blocks])
+
+    # 4. 三级匹配
+    block_list = blocks if blocks else []
+    mappings, unmatched = match_spans_to_blocks(cnki_report.risky_spans, block_list)
+
+    # 5. 保存报告和 spans
+    db_report = repository.insert_cnki_report(
+        document_id=document_id,
+        report_type=cnki_report.report_type,
+        filename=report_file.filename,
+        raw_format=Path(report_file.filename or "").suffix.lower().lstrip("."),
+        total_copy_ratio=cnki_report.total_copy_ratio,
+        aigc_ratio=cnki_report.aigc_ratio,
+        generated_at=cnki_report.generated_at,
+        raw_data=cnki_report.raw_meta,
+        status="mapped" if mappings else "parsed",
+    )
+    report_id = str(db_report["id"])
+
+    if cnki_report.risky_spans:
+        repository.insert_cnki_report_spans(
+            report_id,
+            [
+                {
+                    "span_id": s.span_id,
+                    "text": s.text,
+                    "risk_type": s.risk_type,
+                    "risk_level": s.risk_level,
+                    "similarity": s.similarity,
+                    "aigc_score": s.aigc_score,
+                    "matched_source": s.matched_source,
+                    "page_number": s.page_number,
+                    "raw_meta": s.raw_meta,
+                }
+                for s in cnki_report.risky_spans
+            ],
+        )
+
+    # 6. 保存映射并更新 block report_risk
+    for mapping in mappings:
+        repository.insert_block_report_mapping(
+            document_id=document_id,
+            block_id=mapping.block_id,
+            span_id=mapping.span_id,
+            report_id=report_id,
+            match_method=mapping.match_method,
+            match_confidence=mapping.match_confidence,
+            matched_text=mapping.matched_text,
+        )
+        # 找到对应的 span 获取风险详情
+        span = next((s for s in cnki_report.risky_spans if s.span_id == mapping.span_id), None)
+        if span:
+            repository.update_block_report_risk(
+                document_id=document_id,
+                block_id=mapping.block_id,
+                report_risk={
+                    "source": "cnki",
+                    "risk_type": span.risk_type,
+                    "risk_level": span.risk_level,
+                    "similarity": span.similarity,
+                    "aigc_score": span.aigc_score,
+                    "matched_source": span.matched_source,
+                    "span_id": span.span_id,
+                    "match_confidence": mapping.match_confidence,
+                },
+            )
+
+    # 7. 创建 report mode 的 analysis_run
+    db_run = repository.create_analysis_run(
+        document_id=document_id,
+        run_type="report_driven",
+        mode="report",
+    )
+    run_id = str(db_run["id"])
+    repository.mark_run_completed(run_id)
+    repository.mark_document_status(document_id, "completed")
+
+    # 8. 组装响应
+    db_blocks = repository.list_document_blocks(document_id)
+    block_responses = [_build_block_response(b, None) for b in db_blocks]
+
+    risk_counts = {"high": 0, "medium": 0, "low": 0}
+    for span in cnki_report.risky_spans:
+        risk_counts[span.risk_level] = risk_counts.get(span.risk_level, 0) + 1
+
+    return UploadWithReportResponse(
+        file_id=document_id,
+        run_id=run_id,
+        report_mode=True,
+        report_summary=CnkiReportSummary(
+            report_id=report_id,
+            report_type=cnki_report.report_type,
+            total_copy_ratio=cnki_report.total_copy_ratio,
+            aigc_ratio=cnki_report.aigc_ratio,
+            high_risk_count=risk_counts.get("high", 0),
+            medium_risk_count=risk_counts.get("medium", 0),
+            low_risk_count=risk_counts.get("low", 0),
+            unmatched_count=len(unmatched),
+        ),
+        blocks=block_responses,
+        unmatched_risk_spans=[
+            CnkiRiskSpanResponse(
+                span_id=s.span_id,
+                text=s.text,
+                risk_type=s.risk_type,
+                risk_level=s.risk_level,
+                similarity=s.similarity,
+                aigc_score=s.aigc_score,
+                matched_source=s.matched_source,
+                page_number=s.page_number,
+            )
+            for s in unmatched
+        ],
+    )
+
+
+@router.post("/documents/{document_id}/report", response_model=AttachReportResponse)
+async def attach_report_to_document(
+    document_id: str,
+    report_file: UploadFile = File(...),
+    settings: Settings = Depends(get_settings),
+    auth: AuthContext = Depends(get_auth_context),
+) -> AttachReportResponse:
+    """为已有论文上传知网报告并执行匹配。"""
+    repository = get_repository()
+    document = repository.get_document(document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="document not found")
+    ensure_document_access(document_id=document_id, auth=auth, repository=repository)
+
+    report_content = await report_file.read()
+    if not report_content:
+        raise HTTPException(status_code=400, detail="报告文件为空")
+
+    try:
+        cnki_report = parse_cnki_report_bytes(
+            report_file.filename or "report.pdf", report_content
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"报告解析失败: {exc}") from exc
+
+    # 获取 blocks
+    blocks = repository.list_document_blocks(document_id)
+    if not blocks:
+        # 尝试从原始文件重新解析
+        from app.services.document_blocks import parse_document_to_blocks
+        block_objs = parse_document_to_blocks(
+            document["original_file_path"], document.get("source_type", "upload")
+        )
+        if block_objs:
+            repository.insert_document_blocks(document_id, [b.to_dict() for b in block_objs])
+            blocks = repository.list_document_blocks(document_id)
+
+    block_list = blocks if blocks else []
+    mappings, unmatched = match_spans_to_blocks(cnki_report.risky_spans, block_list)
+
+    # 清除旧映射
+    repository.clear_block_report_risks(document_id)
+    old_reports = repository.list_cnki_reports_by_document(document_id)
+    for old in old_reports:
+        repository.delete_block_report_mappings_by_report(str(old["id"]))
+
+    # 保存新报告
+    db_report = repository.insert_cnki_report(
+        document_id=document_id,
+        report_type=cnki_report.report_type,
+        filename=report_file.filename,
+        raw_format=Path(report_file.filename or "").suffix.lower().lstrip("."),
+        total_copy_ratio=cnki_report.total_copy_ratio,
+        aigc_ratio=cnki_report.aigc_ratio,
+        generated_at=cnki_report.generated_at,
+        raw_data=cnki_report.raw_meta,
+        status="mapped" if mappings else "parsed",
+    )
+    report_id = str(db_report["id"])
+
+    if cnki_report.risky_spans:
+        repository.insert_cnki_report_spans(
+            report_id,
+            [
+                {
+                    "span_id": s.span_id,
+                    "text": s.text,
+                    "risk_type": s.risk_type,
+                    "risk_level": s.risk_level,
+                    "similarity": s.similarity,
+                    "aigc_score": s.aigc_score,
+                    "matched_source": s.matched_source,
+                    "page_number": s.page_number,
+                    "raw_meta": s.raw_meta,
+                }
+                for s in cnki_report.risky_spans
+            ],
+        )
+
+    for mapping in mappings:
+        repository.insert_block_report_mapping(
+            document_id=document_id,
+            block_id=mapping.block_id,
+            span_id=mapping.span_id,
+            report_id=report_id,
+            match_method=mapping.match_method,
+            match_confidence=mapping.match_confidence,
+            matched_text=mapping.matched_text,
+        )
+        span = next((s for s in cnki_report.risky_spans if s.span_id == mapping.span_id), None)
+        if span:
+            repository.update_block_report_risk(
+                document_id=document_id,
+                block_id=mapping.block_id,
+                report_risk={
+                    "source": "cnki",
+                    "risk_type": span.risk_type,
+                    "risk_level": span.risk_level,
+                    "similarity": span.similarity,
+                    "aigc_score": span.aigc_score,
+                    "matched_source": span.matched_source,
+                    "span_id": span.span_id,
+                    "match_confidence": mapping.match_confidence,
+                },
+            )
+
+    return AttachReportResponse(
+        report_id=report_id,
+        mapped_count=len(mappings),
+        unmatched_count=len(unmatched),
+        unmatched_spans=[
+            CnkiRiskSpanResponse(
+                span_id=s.span_id,
+                text=s.text,
+                risk_type=s.risk_type,
+                risk_level=s.risk_level,
+                similarity=s.similarity,
+                aigc_score=s.aigc_score,
+                matched_source=s.matched_source,
+                page_number=s.page_number,
+            )
+            for s in unmatched
+        ],
+    )
+
+
+@router.post("/documents/{document_id}/remap-report")
+async def remap_report(
+    document_id: str,
+    auth: AuthContext = Depends(get_auth_context),
+) -> AttachReportResponse:
+    """重新执行报告与 blocks 的匹配（blocks 可能已修改）。"""
+    repository = get_repository()
+    document = repository.get_document(document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="document not found")
+    ensure_document_access(document_id=document_id, auth=auth, repository=repository)
+
+    reports = repository.list_cnki_reports_by_document(document_id)
+    if not reports:
+        raise HTTPException(status_code=404, detail="该文档没有关联的知网报告")
+
+    latest_report = reports[0]
+    report_id = str(latest_report["id"])
+    spans = repository.list_cnki_report_spans(report_id)
+
+    blocks = repository.list_document_blocks(document_id)
+    if not blocks:
+        raise HTTPException(status_code=400, detail="文档没有解析出 blocks，无法重新匹配")
+
+    from app.services.cnki_report_parser import CnkiRiskSpan
+    cnki_spans = [
+        CnkiRiskSpan(
+            span_id=s["span_id"],
+            text=s["text"],
+            risk_type=s["risk_type"],
+            risk_level=s["risk_level"],
+            similarity=s.get("similarity"),
+            aigc_score=s.get("aigc_score"),
+            matched_source=s.get("matched_source"),
+            page_number=s.get("page_number"),
+        )
+        for s in spans
+    ]
+
+    mappings, unmatched = match_spans_to_blocks(cnki_spans, blocks)
+
+    # 清除旧映射
+    repository.clear_block_report_risks(document_id)
+    repository.delete_block_report_mappings_by_report(report_id)
+
+    for mapping in mappings:
+        repository.insert_block_report_mapping(
+            document_id=document_id,
+            block_id=mapping.block_id,
+            span_id=mapping.span_id,
+            report_id=report_id,
+            match_method=mapping.match_method,
+            match_confidence=mapping.match_confidence,
+            matched_text=mapping.matched_text,
+        )
+        span = next((s for s in cnki_spans if s.span_id == mapping.span_id), None)
+        if span:
+            repository.update_block_report_risk(
+                document_id=document_id,
+                block_id=mapping.block_id,
+                report_risk={
+                    "source": "cnki",
+                    "risk_type": span.risk_type,
+                    "risk_level": span.risk_level,
+                    "similarity": span.similarity,
+                    "aigc_score": span.aigc_score,
+                    "matched_source": span.matched_source,
+                    "span_id": span.span_id,
+                    "match_confidence": mapping.match_confidence,
+                },
+            )
+
+    return AttachReportResponse(
+        report_id=report_id,
+        mapped_count=len(mappings),
+        unmatched_count=len(unmatched),
+        unmatched_spans=[
+            CnkiRiskSpanResponse(
+                span_id=s.span_id,
+                text=s.text,
+                risk_type=s.risk_type,
+                risk_level=s.risk_level,
+                similarity=s.similarity,
+                aigc_score=s.aigc_score,
+                matched_source=s.matched_source,
+                page_number=s.page_number,
+            )
+            for s in unmatched
+        ],
     )
 
 
@@ -725,6 +1122,41 @@ async def get_section_rewrite_advice(
 # Document Blocks
 # ------------------------------------------------------------------
 
+def _build_block_response(
+    block: dict[str, Any], patch: dict[str, Any] | None
+) -> DocumentBlockResponse:
+    """辅助函数：从数据库行构建 DocumentBlockResponse。"""
+    effective_text = patch["new_text"] if patch else block["text"]
+    report_risk = None
+    if block.get("report_risk"):
+        rr = block["report_risk"]
+        report_risk = ReportRiskData(
+            source=rr.get("source", "cnki"),
+            risk_type=rr.get("risk_type", "similarity"),
+            risk_level=rr.get("risk_level", "medium"),
+            similarity=rr.get("similarity"),
+            aigc_score=rr.get("aigc_score"),
+            matched_source=rr.get("matched_source"),
+            span_id=rr.get("span_id", ""),
+            match_confidence=rr.get("match_confidence", 0.0),
+        )
+    return DocumentBlockResponse(
+        block_id=block["block_id"],
+        block_type=block["block_type"],
+        text=block["text"],
+        effective_text=effective_text,
+        risk_score=block.get("risk_score"),
+        report_risk=report_risk,
+        rewrite_status="rewritten" if patch else "none",
+        source_type=block["source_type"],
+        source_map=block.get("source_map"),
+        section_title=block.get("section_title"),
+        section_type=block.get("section_type"),
+        char_count=block.get("char_count", 0),
+        display_order=block["display_order"],
+    )
+
+
 @router.get("/runs/{run_id}/blocks")
 async def get_run_blocks(
     run_id: str,
@@ -745,27 +1177,7 @@ async def get_run_blocks(
     )
     patch_map = {p["block_id"]: p for p in patches}
 
-    result = []
-    for b in blocks:
-        patch = patch_map.get(b["block_id"])
-        effective_text = patch["new_text"] if patch else b["text"]
-        result.append(
-            DocumentBlockResponse(
-                block_id=b["block_id"],
-                block_type=b["block_type"],
-                text=b["text"],
-                effective_text=effective_text,
-                risk_score=b.get("risk_score"),
-                rewrite_status="rewritten" if patch else "none",
-                source_type=b["source_type"],
-                source_map=b.get("source_map"),
-                section_title=b.get("section_title"),
-                section_type=b.get("section_type"),
-                char_count=b.get("char_count", 0),
-                display_order=b["display_order"],
-            )
-        )
-
+    result = [_build_block_response(b, patch_map.get(b["block_id"])) for b in blocks]
     return {"blocks": result}
 
 

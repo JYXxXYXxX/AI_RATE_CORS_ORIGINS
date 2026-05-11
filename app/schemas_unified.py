@@ -163,6 +163,7 @@ class AnalysisRunStatusResponse(BaseModel):
     status: Literal["queued", "processing", "completed", "failed"]
     stage: str
     progress: int = Field(..., ge=0, le=100)
+    mode: Literal["estimate", "report"] = "estimate"
     created_at: datetime
     started_at: datetime | None = None
     finished_at: datetime | None = None
@@ -574,13 +575,36 @@ class ExportRequest(BaseModel):
 # Document Blocks & Patches
 # ------------------------------------------------------------------
 
+class ReportRiskData(BaseModel):
+    source: Literal["cnki"]
+    risk_type: Literal["similarity", "aigc"]
+    risk_level: Literal["high", "medium", "low"]
+    similarity: float | None = Field(default=None, ge=0, le=100)
+    aigc_score: float | None = Field(default=None, ge=0, le=100)
+    matched_source: str | None = None
+    span_id: str
+    match_confidence: float = Field(..., ge=0, le=1)
+
+
+class InternalRiskData(BaseModel):
+    overall_risk: float = Field(..., ge=0, le=100)
+    ai_likelihood: float | None = Field(default=None, ge=0, le=100)
+    template_score: float | None = Field(default=None, ge=0, le=100)
+    semantic_empty_score: float | None = Field(default=None, ge=0, le=100)
+    repetition_score: float | None = Field(default=None, ge=0, le=100)
+    citation_risk: float | None = Field(default=None, ge=0, le=100)
+    reasons: list[str] = Field(default_factory=list)
+
+
 class DocumentBlockResponse(BaseModel):
     block_id: str
     block_type: str
     text: str
     html: str | None = None
     effective_text: str | None = None
-    risk_score: float | None = None
+    risk_score: float | None = None  # 系统自检风险 0-100
+    report_risk: ReportRiskData | None = None  # 知网报告风险（优先）
+    internal_risk: InternalRiskData | None = None  # 系统自检详细数据
     rewrite_status: str = "none"
     source_type: str
     source_map: dict[str, Any] | None = None
@@ -606,3 +630,41 @@ class DocumentPatchResponse(BaseModel):
     new_text: str
     created_at: str
     format: Literal["docx", "txt"] = "docx"
+
+
+class CnkiReportSummary(BaseModel):
+    report_id: str
+    report_type: Literal["similarity", "aigc", "mixed"]
+    total_copy_ratio: float | None = Field(default=None, ge=0, le=100)
+    aigc_ratio: float | None = Field(default=None, ge=0, le=100)
+    high_risk_count: int = 0
+    medium_risk_count: int = 0
+    low_risk_count: int = 0
+    unmatched_count: int = 0
+
+
+class CnkiRiskSpanResponse(BaseModel):
+    span_id: str
+    text: str
+    risk_type: Literal["similarity", "aigc"]
+    risk_level: Literal["high", "medium", "low"]
+    similarity: float | None = Field(default=None, ge=0, le=100)
+    aigc_score: float | None = Field(default=None, ge=0, le=100)
+    matched_source: str | None = None
+    page_number: int | None = None
+
+
+class UploadWithReportResponse(BaseModel):
+    file_id: str
+    run_id: str
+    report_mode: bool = True
+    report_summary: CnkiReportSummary
+    blocks: list[DocumentBlockResponse]
+    unmatched_risk_spans: list[CnkiRiskSpanResponse]
+
+
+class AttachReportResponse(BaseModel):
+    report_id: str
+    mapped_count: int
+    unmatched_count: int
+    unmatched_spans: list[CnkiRiskSpanResponse]

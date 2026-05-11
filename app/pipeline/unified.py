@@ -439,6 +439,7 @@ class UnifiedPipeline:
             status=run["status"],
             stage=stage,
             progress=_progress_from_status(run["status"]),
+            mode=run.get("mode") or "estimate",
             created_at=run["created_at"],
             started_at=run.get("started_at"),
             finished_at=run.get("finished_at"),

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import {
   uploadDocument,
+  uploadDocumentWithReport,
   analyzeDocumentAsync,
   getAnalysisTask,
   getRun,
@@ -62,8 +63,29 @@ export const useAnalysisStore = defineStore('analysis', () => {
 
     try {
       uploadProgress.value = 0
+
+      // 如果用户上传了知网报告，走报告驱动模式
+      if (payload.cnkiReport?.file) {
+        const result = await uploadDocumentWithReport({
+          file: payload.file,
+          reportFile: payload.cnkiReport.file,
+          title: payload.title,
+          subject: payload.subject,
+          degreeLevel: payload.degreeLevel,
+          onProgress: (percent) => { uploadProgress.value = percent }
+        })
+        uploadProgress.value = 100
+        runStatus.value = await getRun(result.runId)
+        await refreshHistory()
+        return result.runId
+      }
+
+      // 否则走系统自检模式
       const uploadResult = await uploadDocument({
-        ...payload,
+        file: payload.file,
+        title: payload.title,
+        subject: payload.subject,
+        degreeLevel: payload.degreeLevel,
         onProgress: (percent) => { uploadProgress.value = percent }
       })
       uploadProgress.value = 100
@@ -71,28 +93,6 @@ export const useAnalysisStore = defineStore('analysis', () => {
       const finished = await pollTask(task.task_id)
 
       if (!finished.run_id) throw new Error('分析完成但未返回 run_id')
-
-      // 如果用户上传了知网报告，自动关联为 feedback
-      if (payload.cnkiReport) {
-        try {
-          await submitCnkiFeedback({
-            documentId: uploadResult.document_id,
-            predictedRunId: finished.run_id,
-            cnkiDupPercent: payload.cnkiReport.cnkiDupPercent,
-            cnkiAigcPercent: payload.cnkiReport.cnkiAigcPercent,
-            reportDate: payload.cnkiReport.reportDate || undefined,
-            notes: payload.cnkiReport.notes || undefined,
-            removeReferenceDupPercent: payload.cnkiReport.removeReferenceDupPercent ?? null,
-            singleMaxDupPercent: payload.cnkiReport.singleMaxDupPercent ?? null,
-            suspectedPlagiarism: payload.cnkiReport.suspectedPlagiarism ?? null,
-            fragments: payload.cnkiReport.fragments ?? null,
-            evidenceFile: payload.cnkiReport.file
-          })
-        } catch (feedbackErr) {
-          // feedback 提交失败不应阻塞主流程，静默记录
-          console.warn('知网报告自动关联失败:', feedbackErr)
-        }
-      }
 
       runStatus.value = await getRun(finished.run_id)
       report.value = await getUnifiedReport(finished.run_id)

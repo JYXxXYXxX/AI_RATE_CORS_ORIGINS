@@ -33,6 +33,21 @@ class DocumentBlock:
     char_count: int
     display_order: int
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "block_id": self.block_id,
+            "block_type": self.block_type,
+            "text": self.text,
+            "html": self.html,
+            "source_type": self.source_type,
+            "source_map": self.source_map or {},
+            "paragraph_index": self.paragraph_index,
+            "section_title": self.section_title,
+            "section_type": self.section_type,
+            "char_count": self.char_count,
+            "display_order": self.display_order,
+        }
+
 
 def parse_document_to_blocks(
     file_path: str,

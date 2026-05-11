@@ -69,6 +69,8 @@ CREATE TABLE public.analysis_runs (
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+ALTER TABLE ONLY public.analysis_runs ADD COLUMN IF NOT EXISTS mode character varying(20) DEFAULT 'estimate'::character varying;
+
 
 --
 -- Name: analysis_tasks; Type: TABLE; Schema: public; Owner: -
@@ -238,6 +240,10 @@ CREATE TABLE public.document_blocks (
 CREATE UNIQUE INDEX idx_document_blocks_doc_block ON public.document_blocks(document_id, block_id);
 CREATE INDEX idx_document_blocks_doc_order ON public.document_blocks(document_id, display_order);
 
+-- Columns added via migrations
+ALTER TABLE public.document_blocks ADD COLUMN IF NOT EXISTS risk_score float;
+ALTER TABLE public.document_blocks ADD COLUMN IF NOT EXISTS report_risk jsonb;
+
 
 --
 -- Name: document_patches; Type: TABLE; Schema: public; Owner: -
@@ -257,6 +263,81 @@ CREATE TABLE public.document_patches (
 
 CREATE INDEX idx_document_patches_doc_block ON public.document_patches(document_id, block_id);
 CREATE INDEX idx_document_patches_run ON public.document_patches(run_id);
+
+
+--
+-- Name: cnki_reports; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cnki_reports (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    document_id uuid NOT NULL,
+    run_id uuid,
+    report_type character varying(30) NOT NULL,
+    filename character varying(500),
+    raw_format character varying(20),
+    total_copy_ratio float,
+    aigc_ratio float,
+    generated_at timestamp with time zone,
+    parsed_at timestamp with time zone DEFAULT now(),
+    raw_data jsonb DEFAULT '{}'::jsonb,
+    status character varying(20) DEFAULT 'parsed'::character varying
+);
+
+ALTER TABLE ONLY public.cnki_reports ADD CONSTRAINT cnki_reports_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.cnki_reports ADD CONSTRAINT cnki_reports_document_id_fkey FOREIGN KEY (document_id) REFERENCES public.documents(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.cnki_reports ADD CONSTRAINT cnki_reports_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.analysis_runs(id) ON DELETE SET NULL;
+CREATE INDEX idx_cnki_reports_doc ON public.cnki_reports(document_id);
+CREATE INDEX idx_cnki_reports_run ON public.cnki_reports(run_id);
+
+
+--
+-- Name: cnki_report_spans; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cnki_report_spans (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    report_id uuid NOT NULL,
+    span_id character varying(64) NOT NULL,
+    text text NOT NULL,
+    risk_type character varying(30) NOT NULL,
+    risk_level character varying(20) NOT NULL,
+    similarity float,
+    aigc_score float,
+    matched_source text,
+    page_number integer,
+    raw_meta jsonb DEFAULT '{}'::jsonb
+);
+
+ALTER TABLE ONLY public.cnki_report_spans ADD CONSTRAINT cnki_report_spans_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.cnki_report_spans ADD CONSTRAINT cnki_report_spans_report_id_span_id_key UNIQUE (report_id, span_id);
+ALTER TABLE ONLY public.cnki_report_spans ADD CONSTRAINT cnki_report_spans_report_id_fkey FOREIGN KEY (report_id) REFERENCES public.cnki_reports(id) ON DELETE CASCADE;
+CREATE INDEX idx_cnki_spans_report ON public.cnki_report_spans(report_id);
+CREATE INDEX idx_cnki_spans_risk ON public.cnki_report_spans(report_id, risk_level);
+
+
+--
+-- Name: block_report_mappings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.block_report_mappings (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    document_id uuid NOT NULL,
+    block_id character varying(64) NOT NULL,
+    span_id character varying(64) NOT NULL,
+    report_id uuid NOT NULL,
+    match_method character varying(20) NOT NULL,
+    match_confidence float NOT NULL,
+    matched_text text,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+ALTER TABLE ONLY public.block_report_mappings ADD CONSTRAINT block_report_mappings_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.block_report_mappings ADD CONSTRAINT block_report_mappings_doc_block_span_key UNIQUE (document_id, block_id, span_id);
+ALTER TABLE ONLY public.block_report_mappings ADD CONSTRAINT block_report_mappings_document_id_fkey FOREIGN KEY (document_id) REFERENCES public.documents(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.block_report_mappings ADD CONSTRAINT block_report_mappings_report_id_fkey FOREIGN KEY (report_id) REFERENCES public.cnki_reports(id) ON DELETE CASCADE;
+CREATE INDEX idx_block_mappings_doc ON public.block_report_mappings(document_id, block_id);
+CREATE INDEX idx_block_mappings_span ON public.block_report_mappings(report_id, span_id);
 
 
 --

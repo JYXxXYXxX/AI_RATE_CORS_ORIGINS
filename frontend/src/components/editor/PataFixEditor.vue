@@ -8,35 +8,72 @@
         </el-button>
       </div>
       <div class="topbar-metrics">
-        <div class="metric-item">
-          <span class="metric-label">AIGC 疑似度</span>
-          <span class="metric-value" :class="'color-' + aigcColor">{{ animatedAigc.toFixed(2) }}%</span>
-          <span v-if="aigcDelta !== 0" class="metric-delta" :class="aigcDelta < 0 ? 'delta-down' : 'delta-up'">
-            {{ aigcDelta > 0 ? '+' : '' }}{{ aigcDelta.toFixed(2) }}%
-          </span>
-        </div>
-        <div class="metric-item">
-          <span class="metric-label">重复率</span>
-          <span class="metric-value" :class="'color-' + dupColor">{{ animatedDup.toFixed(2) }}%</span>
-          <span v-if="dupDelta !== 0" class="metric-delta" :class="dupDelta < 0 ? 'delta-down' : 'delta-up'">
-            {{ dupDelta > 0 ? '+' : '' }}{{ dupDelta.toFixed(2) }}%
-          </span>
-        </div>
-        <div class="metric-item">
-          <span class="metric-label">优化后预计</span>
-          <span class="metric-value color-predicted">{{ predictedAigc.toFixed(2) }}%</span>
-          <span class="metric-delta delta-down">预计下降 {{ predictedDrop.toFixed(2) }}%</span>
-        </div>
-        <div class="metric-item">
-          <span class="metric-label">已改写</span>
-          <span class="metric-value color-accent">{{ rewrittenCount }} / {{ sections.length }}</span>
-          <span class="metric-sub">句子</span>
-        </div>
-        <div class="metric-item">
-          <span class="metric-label">字数</span>
-          <span class="metric-value">{{ totalChars }}</span>
-          <span class="metric-sub">全文</span>
-        </div>
+        <!-- Report Mode 摘要 -->
+        <template v-if="runMode === 'report' && reportSummary">
+          <div class="metric-item">
+            <span class="metric-label">总复制比</span>
+            <span class="metric-value color-high">{{ reportSummary.totalCopyRatio?.toFixed(1) ?? '--' }}%</span>
+            <span class="metric-sub">知网报告</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">AIGC率</span>
+            <span class="metric-value color-high">{{ reportSummary.aigcRatio?.toFixed(1) ?? '--' }}%</span>
+            <span class="metric-sub">知网报告</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">高风险</span>
+            <span class="metric-value color-high">{{ reportSummary.highRiskCount }}</span>
+            <span class="metric-sub">段落</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">中风险</span>
+            <span class="metric-value color-medium">{{ reportSummary.mediumRiskCount }}</span>
+            <span class="metric-sub">段落</span>
+          </div>
+          <div v-if="reportSummary.unmatchedCount > 0" class="metric-item">
+            <span class="metric-label">未匹配</span>
+            <span class="metric-value color-warning">{{ reportSummary.unmatchedCount }}</span>
+            <span class="metric-sub">片段</span>
+          </div>
+          <div class="metric-item">
+            <el-tag size="small" type="danger">知网报告驱动</el-tag>
+          </div>
+        </template>
+        <!-- Estimate Mode 系统预估 -->
+        <template v-else>
+          <div class="metric-item">
+            <span class="metric-label">AIGC 疑似度</span>
+            <span class="metric-value" :class="'color-' + aigcColor">{{ animatedAigc.toFixed(2) }}%</span>
+            <span v-if="aigcDelta !== 0" class="metric-delta" :class="aigcDelta < 0 ? 'delta-down' : 'delta-up'">
+              {{ aigcDelta > 0 ? '+' : '' }}{{ aigcDelta.toFixed(2) }}%
+            </span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">重复率</span>
+            <span class="metric-value" :class="'color-' + dupColor">{{ animatedDup.toFixed(2) }}%</span>
+            <span v-if="dupDelta !== 0" class="metric-delta" :class="dupDelta < 0 ? 'delta-down' : 'delta-up'">
+              {{ dupDelta > 0 ? '+' : '' }}{{ dupDelta.toFixed(2) }}%
+            </span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">优化后预计</span>
+            <span class="metric-value color-predicted">{{ predictedAigc.toFixed(2) }}%</span>
+            <span class="metric-delta delta-down">预计下降 {{ predictedDrop.toFixed(2) }}%</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">已改写</span>
+            <span class="metric-value color-accent">{{ rewrittenCount }} / {{ sections.length }}</span>
+            <span class="metric-sub">句子</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">字数</span>
+            <span class="metric-value">{{ totalChars }}</span>
+            <span class="metric-sub">全文</span>
+          </div>
+          <div class="metric-item">
+            <el-tag size="small" type="info">系统预估</el-tag>
+          </div>
+        </template>
       </div>
       <div class="topbar-actions">
         <el-button
@@ -100,6 +137,29 @@
           <div class="legend-item"><span class="legend-dot dot-orange" />中风险（60% ≤ AIGC疑似度 < 70%）</div>
           <div class="legend-item"><span class="legend-dot dot-purple" />低风险（30% ≤ AIGC疑似度 < 60%）</div>
           <div class="legend-item"><span class="legend-dot dot-normal" />正常（AIGC疑似度 < 30%）</div>
+        </div>
+
+        <!-- 未匹配风险段落（Report Mode） -->
+        <div v-if="runMode === 'report' && unmatchedSpans.length > 0" class="unmatched-panel">
+          <div class="unmatched-header" @click="showUnmatchedPanel = !showUnmatchedPanel">
+            <span class="unmatched-title">⚠️ 未匹配风险段落 ({{ unmatchedSpans.length }})</span>
+            <span class="unmatched-toggle">{{ showUnmatchedPanel ? '收起' : '展开' }}</span>
+          </div>
+          <div v-if="showUnmatchedPanel" class="unmatched-list">
+            <div
+              v-for="(span, idx) in unmatchedSpans"
+              :key="idx"
+              class="unmatched-item"
+            >
+              <div class="unmatched-risk">
+                <span class="risk-badge-small" :class="'badge-' + span.riskLevel">
+                  {{ span.riskLevel === 'high' ? '高' : span.riskLevel === 'medium' ? '中' : '低' }}
+                </span>
+                <span class="risk-type">{{ span.riskType === 'similarity' ? '复制' : 'AIGC' }}</span>
+              </div>
+              <p class="unmatched-text">{{ span.text.slice(0, 60) }}{{ span.text.length > 60 ? '…' : '' }}</p>
+            </div>
+          </div>
         </div>
       </aside>
 
@@ -199,7 +259,34 @@
             <div class="advice-card">
               <div class="card-header">
                 <span class="risk-badge" :class="'badge-' + activeRiskLevel">{{ riskText(activeRiskLevel) }}</span>
-                <span class="aigc-score">AIGC疑似度 {{ (activeAigcScore * 100).toFixed(0) }}%</span>
+                <span v-if="activeReportRisk" class="aigc-score">
+                  {{ activeReportRisk.riskType === 'similarity' ? '相似度' : 'AIGC' }} {{ activeReportRisk.similarity ?? activeReportRisk.aigcScore ?? '--' }}%
+                </span>
+                <span v-else class="aigc-score">AIGC疑似度 {{ (activeAigcScore * 100).toFixed(0) }}%</span>
+              </div>
+
+              <!-- 知网报告风险详情 -->
+              <div v-if="activeReportRisk" class="card-section report-risk-info">
+                <div class="section-title">风险来源</div>
+                <p class="section-text">
+                  <el-tag size="small" type="danger">知网报告</el-tag>
+                  <span class="risk-type-label">
+                    {{ activeReportRisk.riskType === 'similarity' ? '文字复制' : 'AIGC疑似' }}
+                  </span>
+                </p>
+                <p v-if="activeReportRisk.matchedSource" class="section-text">
+                  <strong>相似来源：</strong>{{ activeReportRisk.matchedSource }}
+                </p>
+                <p class="section-text">
+                  <strong>匹配置信度：</strong>{{ (activeReportRisk.matchConfidence * 100).toFixed(0) }}%
+                </p>
+              </div>
+              <div v-else-if="runMode === 'estimate'" class="card-section">
+                <div class="section-title">风险来源</div>
+                <p class="section-text">
+                  <el-tag size="small" type="info">系统预估</el-tag>
+                  <span style="color: #999; font-size: 12px; margin-left: 8px;">不等同于知网结果</span>
+                </p>
               </div>
 
               <div class="card-section">
@@ -225,6 +312,16 @@
               <div class="card-actions">
                 <el-button type="primary" size="small" @click="applyFullRewrite">替换原文</el-button>
                 <el-button size="small" plain @click="ignoreActive">忽略</el-button>
+              </div>
+
+              <!-- Report Mode 改写提示 -->
+              <div v-if="runMode === 'report' && activeReportRisk" class="card-section rewrite-notice">
+                <el-alert
+                  title="改写后请重新上传知网复检确认"
+                  type="warning"
+                  :closable="false"
+                  show-icon
+                />
               </div>
             </div>
 
@@ -302,7 +399,7 @@ import {
 } from '@element-plus/icons-vue'
 import { getRun, getRunSections, getRunBlocks, getRewriteAdvice, reanalyzeRun, exportRun, createPatch } from '../../api'
 import type { RunSectionItem, RewriteAdviceResponse, ReanalyzeResponse, DocumentBlock, DocumentPatch } from '../../types'
-import { getRiskStyle } from './riskStyle'
+import { getRiskStyle, getEffectiveRiskStyle, getEffectiveRiskLevel } from './riskStyle'
 import DocxRenderer from './DocxRenderer.vue'
 import PdfRenderer from './PdfRenderer.vue'
 
@@ -345,6 +442,29 @@ const panelVisible = ref(false)
 const panelLoading = ref(false)
 const panelError = ref('')
 const rewriteAdvice = ref<RewriteAdviceResponse | null>(null)
+
+// ==================== 知网报告驱动模式 ====================
+const runMode = ref<'estimate' | 'report'>('estimate')
+const reportSummary = ref<{
+  reportId?: string
+  reportType?: 'similarity' | 'aigc' | 'mixed'
+  totalCopyRatio?: number
+  aigcRatio?: number
+  highRiskCount: number
+  mediumRiskCount: number
+  lowRiskCount: number
+  unmatchedCount: number
+} | null>(null)
+const unmatchedSpans = ref<Array<{
+  spanId: string
+  text: string
+  riskType: 'similarity' | 'aigc'
+  riskLevel: 'high' | 'medium' | 'low'
+  similarity?: number
+  aigcScore?: number
+  matchedSource?: string
+}>>([])
+const showUnmatchedPanel = ref(false)
 
 // 真实重算结果
 const realScores = ref<ReanalyzeResponse | null>(null)
@@ -642,7 +762,7 @@ function _groupFromBlocks(): ChapterGroup[] {
       sectionIndices: [block.displayOrder],
       aigcScore: score,
       dupScore: 0,
-      riskLevel: effectiveRiskFromScore(score),
+      riskLevel: getEffectiveRiskLevel(block),
       sectionTitle: block.sectionTitle ?? null,
       sectionType: block.sectionType ?? null,
       rewritten: !!patch,
@@ -742,8 +862,8 @@ const riskCounts = computed(() => {
   const counts = { high: 0, medium: 0, low: 0, normal: 0 }
   if (blocks.value.length > 0) {
     for (const b of blocks.value) {
-      const style = getRiskStyle(getBlockRiskScore(b))
-      counts[style.level]++
+      const level = getEffectiveRiskLevel(b)
+      counts[level]++
     }
   } else {
     for (const s of sections.value) {
@@ -802,7 +922,7 @@ const activeRiskLevel = computed(() => {
   if (activeBlockId.value && blocks.value.length > 0) {
     const block = blocks.value.find(b => b.blockId === activeBlockId.value)
     if (block) {
-      return effectiveRiskFromScore(getBlockRiskScore(block) / 100)
+      return getEffectiveRiskLevel(block)
     }
   }
   // 旧模式
@@ -826,6 +946,13 @@ const activeAigcScore = computed(() => {
   if (!sec) return 0
   return effectiveAigc(sec)
 })
+
+const activeBlock = computed(() => {
+  if (!activeBlockId.value || blocks.value.length === 0) return null
+  return blocks.value.find(b => b.blockId === activeBlockId.value) || null
+})
+
+const activeReportRisk = computed(() => activeBlock.value?.reportRisk || null)
 
 const activeSectionContent = computed(() => {
   // blocks 模式
@@ -897,6 +1024,26 @@ async function loadData() {
     documentId.value = run.document_id
     originalFilename.value = run.filename || ''
     paperTitle.value = run.title || ''
+    runMode.value = run.mode || 'estimate'
+
+    // 如果是 report mode，从 blocks 中统计报告摘要
+    if (runMode.value === 'report') {
+      const counts = { high: 0, medium: 0, low: 0, unmatched: 0 }
+      for (const b of blocksRes.blocks) {
+        if (b.reportRisk) {
+          counts[b.reportRisk.riskLevel]++
+        }
+      }
+      reportSummary.value = {
+        reportType: 'mixed',
+        highRiskCount: counts.high,
+        mediumRiskCount: counts.medium,
+        lowRiskCount: counts.low,
+        unmatchedCount: counts.unmatched,
+      }
+    } else {
+      reportSummary.value = null
+    }
 
     // 计算初始分数
     const scored = sections.value.filter(s => s.section_type !== 'references' && s.section_type !== 'acknowledgement')
@@ -956,6 +1103,13 @@ function effectiveRisk(sec: RunSectionItem): 'low' | 'medium' | 'high' | 'normal
 
 // 从 block 获取风险分数（优先使用重算后的分数）
 function getBlockRiskScore(block: DocumentBlock): number {
+  // reportRisk 存在时，直接返回对应分数用于排序/统计
+  if (block.reportRisk) {
+    if (block.reportRisk.riskLevel === 'high') return 75
+    if (block.reportRisk.riskLevel === 'medium') return 65
+    if (block.reportRisk.riskLevel === 'low') return 45
+    return 20
+  }
   // 先用 sections 中的对应分数（兼容旧数据）
   const sec = sections.value.find(s => s.paragraph_index === block.sourceMap?.paragraphIndex)
   if (sec) {
@@ -965,11 +1119,38 @@ function getBlockRiskScore(block: DocumentBlock): number {
 }
 
 function paraRiskColor(para: ParagraphBlock): string {
+  // 查找对应的 block，优先使用 reportRisk
+  if (blocks.value.length > 0) {
+    const block = blocks.value.find(b =>
+      (b.sourceMap?.paragraphIndex ?? b.displayOrder) === para.paragraphIndex
+    )
+    if (block) {
+      const level = getEffectiveRiskLevel(block)
+      return level === 'high' ? 'red' : level === 'medium' ? 'orange' : level === 'low' ? 'purple' : 'normal'
+    }
+  }
   const style = getRiskStyle(para.aigcScore * 100)
   return style.level === 'high' ? 'red' : style.level === 'medium' ? 'orange' : style.level === 'low' ? 'purple' : 'normal'
 }
 
 function groupMaxColor(group: ChapterGroup): string {
+  // 如果 group 内的 paragraphs 有 reportRisk，优先使用
+  if (blocks.value.length > 0 && group.paragraphs.length > 0) {
+    let maxLevel = 'normal'
+    const levelOrder = { high: 3, medium: 2, low: 1, normal: 0 }
+    for (const para of group.paragraphs) {
+      const block = blocks.value.find(b =>
+        (b.sourceMap?.paragraphIndex ?? b.displayOrder) === para.paragraphIndex
+      )
+      if (block) {
+        const level = getEffectiveRiskLevel(block)
+        if (levelOrder[level as keyof typeof levelOrder] > levelOrder[maxLevel as keyof typeof levelOrder]) {
+          maxLevel = level
+        }
+      }
+    }
+    return maxLevel === 'high' ? 'red' : maxLevel === 'medium' ? 'orange' : maxLevel === 'low' ? 'purple' : 'normal'
+  }
   const style = getRiskStyle(group.maxAigc * 100)
   return style.level === 'high' ? 'red' : style.level === 'medium' ? 'orange' : style.level === 'low' ? 'purple' : 'normal'
 }

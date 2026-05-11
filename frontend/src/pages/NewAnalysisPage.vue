@@ -46,7 +46,7 @@
         <div class="cnki-header" @click="cnkiExpanded = !cnkiExpanded">
           <div class="cnki-title">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-            <span>上传知网检测报告（可选）</span>
+            <span>上传知网检测报告（可选，启用报告驱动模式）</span>
             <el-tag v-if="cnkiReportFile" type="success" size="small" effect="dark">已上传</el-tag>
           </div>
           <svg
@@ -56,7 +56,7 @@
         </div>
 
         <div v-show="cnkiExpanded" class="cnki-body">
-          <p class="cnki-hint">如果你已经有知网的查重/AIGC检测报告，上传后系统会将其与本地预测对比，给出更精准的改写优先级建议。</p>
+          <p class="cnki-hint">上传知网查重报告或 AIGC 检测报告后，系统会以知网结果为最高优先级风险来源，直接定位需要改写的段落。支持 PDF、HTML、Word 格式。</p>
 
           <div
             v-if="!cnkiReportFile"
@@ -70,13 +70,13 @@
             <input
               ref="cnkiInputRef"
               type="file"
-              accept=".pdf,.png,.jpg,.jpeg,.bmp"
+              accept=".pdf,.html,.htm,.docx"
               class="file-input-hidden"
               @change="handleCnkiSelect"
             />
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <p class="drop-text">拖入知网报告截图或 PDF</p>
-            <p class="drop-hint">支持 .pdf、.png、.jpg，最大 10MB</p>
+            <p class="drop-text">拖入知网检测报告</p>
+            <p class="drop-hint">支持 .pdf、.html、.docx，最大 10MB</p>
           </div>
 
           <div v-else class="cnki-preview">
@@ -301,35 +301,21 @@ function handleCnkiDrop(e: DragEvent) {
 }
 
 async function setCnkiFile(file: File) {
-  if (file.size > MAX_SIZE) {
-    alert('文件大小不能超过 20MB')
+  if (file.size > 10 * 1024 * 1024) {
+    alert('文件大小不能超过 10MB')
     return
   }
   const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
-  const allowed = ['.pdf', '.png', '.jpg', '.jpeg', '.bmp']
+  const allowed = ['.pdf', '.html', '.htm', '.docx']
   if (!allowed.includes(ext)) {
-    alert('不支持的文件格式：' + ext + '\n请上传 .pdf、.png、.jpg 格式')
+    alert('不支持的文件格式：' + ext + '\n请上传 .pdf、.html、.docx 格式')
     return
   }
   cnkiReportFile.value = file
   cnkiPreview.value = null
   cnkiOcrError.value = ''
-  cnkiOcrLoading.value = true
-  try {
-    const preview = await previewCnkiFeedbackOcr(file)
-    cnkiPreview.value = preview
-    if (preview.cnki_dup_percent != null) cnkiForm.cnkiDupPercent = preview.cnki_dup_percent
-    if (preview.cnki_aigc_percent != null) cnkiForm.cnkiAigcPercent = preview.cnki_aigc_percent
-    if (preview.report_date) cnkiForm.reportDate = preview.report_date
-    if (preview.remove_reference_dup_percent != null) cnkiForm.removeReferenceDupPercent = preview.remove_reference_dup_percent
-    if (preview.single_max_dup_percent != null) cnkiForm.singleMaxDupPercent = preview.single_max_dup_percent
-    if (preview.suspected_plagiarism) cnkiForm.suspectedPlagiarism = preview.suspected_plagiarism
-    if (preview.fragments && preview.fragments.length > 0) cnkiForm.fragments = preview.fragments
-  } catch (err) {
-    cnkiOcrError.value = err instanceof Error ? err.message : 'OCR 识别失败'
-  } finally {
-    cnkiOcrLoading.value = false
-  }
+  cnkiOcrLoading.value = false
+  // 新流程：直接上传文件，不需要 OCR 预览
 }
 
 function removeCnkiFile() {
@@ -395,7 +381,12 @@ async function handleSubmit() {
       : undefined
   })
   if (runId) {
-    router.push(`/app/report/${runId}`)
+    // Report Mode 直接跳到改写编辑器，Estimate Mode 先跳到报告页
+    if (cnkiReportFile.value) {
+      router.push(`/app/rewrite/${runId}`)
+    } else {
+      router.push(`/app/report/${runId}`)
+    }
   }
 }
 </script>

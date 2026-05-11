@@ -141,6 +141,7 @@ export interface AnalysisRunStatusResponse {
   status: 'queued' | 'processing' | 'completed' | 'failed'
   stage: string
   progress: number
+  mode: 'estimate' | 'report'
   created_at: string
   started_at?: string | null
   finished_at?: string | null
@@ -357,13 +358,36 @@ export interface RunSectionItem {
 // Document Blocks & Patches（新架构）
 // ------------------------------------------------------------------
 
+export interface ReportRiskData {
+  source: 'cnki'
+  riskType: 'similarity' | 'aigc'
+  riskLevel: 'high' | 'medium' | 'low'
+  similarity?: number
+  aigcScore?: number
+  matchedSource?: string
+  spanId: string
+  matchConfidence: number
+}
+
+export interface InternalRiskData {
+  overallRisk: number
+  aiLikelihood?: number
+  templateScore?: number
+  semanticEmptyScore?: number
+  repetitionScore?: number
+  citationRisk?: number
+  reasons?: string[]
+}
+
 export interface DocumentBlock {
   blockId: string
   type: 'title' | 'heading' | 'paragraph' | 'table' | 'list' | 'image' | 'unknown'
   text: string
   html?: string
   effectiveText?: string
-  riskScore?: number
+  riskScore?: number        // 系统自检分数 (0-100)
+  reportRisk?: ReportRiskData  // 知网报告风险（优先）
+  internalRisk?: InternalRiskData  // 系统自检详细数据
   rewriteStatus?: 'none' | 'rewritten'
   sourceType: 'docx' | 'pdf' | 'doc' | 'txt'
   sourceMap?: {
