@@ -3,7 +3,7 @@
     <header class="app-header">
       <div class="app-header-left">
         <router-link to="/app" class="app-logo">
-          <img src="/logo-icon.png" width="28" height="28" alt="PataFix" />
+          <img src="/logo-icon.png?v=2" width="28" height="28" alt="PataFix" />
           <span>PataFix论文检测</span>
         </router-link>
         <nav class="app-nav">
