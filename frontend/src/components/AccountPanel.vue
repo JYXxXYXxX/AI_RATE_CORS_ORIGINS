@@ -2,7 +2,7 @@
   <section class="feedback-card account-card">
     <div class="card-head">
       <p class="eyebrow">账户与额度</p>
-      <h3>{{ user ? '已登录，可直接走充值与预检闭环' : '先登录，再用额度跑正式预检流程' }}</h3>
+      <h3>{{ user ? '已登录' : '先登录，再使用正式预检流程' }}</h3>
     </div>
 
     <template v-if="user && billing">
@@ -12,98 +12,15 @@
           <strong>{{ user.display_name || user.email }}</strong>
           <small>{{ user.email }}</small>
         </div>
-        <div class="status-tile soft-card">
+        <!-- 付费功能已隐藏 -->
+        <!-- <div class="status-tile soft-card">
           <span>剩余额度</span>
           <strong>{{ billing.user.credits_balance }}</strong>
           <small>每次分析默认消耗 1 次</small>
-        </div>
+        </div> -->
       </div>
 
-      <div class="payment-channel-section">
-        <div class="section-title-row">
-          <p class="helper-text">支付通道</p>
-          <span class="helper-text">当前推荐：{{ selectedChannel?.title || '模拟支付' }}</span>
-        </div>
-        <div class="payment-channel-grid">
-          <button
-            v-for="channel in paymentChannels"
-            :key="channel.code"
-            type="button"
-            class="payment-channel-card"
-            :class="{ active: selectedProvider === channel.code, muted: !channel.ready }"
-            @click="selectedProvider = channel.code"
-          >
-            <strong>{{ channel.title }}</strong>
-            <span>{{ channel.ready ? '已就绪' : '已预留接入位' }}</span>
-            <small>{{ channel.description }}</small>
-          </button>
-        </div>
-      </div>
-
-      <div class="package-list">
-        <article v-for="item in billing.packages" :key="item.code" class="train-card package-card">
-          <strong>{{ item.title }}</strong>
-          <p>{{ item.description }}</p>
-          <p>{{ item.credits }} 次 / ¥{{ (item.amount_cents / 100).toFixed(2) }}</p>
-          <el-button type="primary" plain :loading="creatingOrder === item.code" @click="createOrder(item.code)">
-            用{{ selectedChannel?.title || '模拟支付' }}创建订单
-          </el-button>
-        </article>
-      </div>
-
-      <div v-if="pendingOrder" class="recent-list">
-        <p class="helper-text">当前待支付订单</p>
-        <article class="mini-record pending-order-card">
-          <strong>{{ pendingOrder.order.order_no }}</strong>
-          <span>{{ pendingOrder.provider_label }}</span>
-          <span>{{ orderStatusLabel(pendingOrder.order.status) }}</span>
-          <span>¥{{ (pendingOrder.order.amount_cents / 100).toFixed(2) }}</span>
-        </article>
-        <p class="helper-text">{{ pendingOrder.pay_hint }}</p>
-        <p v-if="pendingOrder.qr_content" class="helper-text">支付口令：{{ pendingOrder.qr_content }}</p>
-        <p v-if="!pendingOrder.provider_ready" class="helper-text warning-text">
-          这个通道现在还是预留接入位，适合先把订单、额度和支付页链路联调跑通。
-        </p>
-        <div class="inline-actions">
-          <el-button
-            v-if="pendingOrder.mock_pay_supported"
-            type="success"
-            :loading="payingOrder === pendingOrder.order.order_no"
-            @click="payOrder(pendingOrder.order.order_no)"
-          >
-            模拟支付入账
-          </el-button>
-          <el-button
-            v-else-if="pendingOrder.payment_url"
-            type="primary"
-            plain
-            @click="openPaymentLink(pendingOrder.payment_url)"
-          >
-            前往支付
-          </el-button>
-        </div>
-      </div>
-
-      <div class="recent-list">
-        <p class="helper-text">最近订单</p>
-        <article v-for="order in billing.recent_orders.slice(0, 3)" :key="order.id" class="mini-record">
-          <strong>{{ order.package_code }}</strong>
-          <span>{{ providerTitle(order.provider) }}</span>
-          <span>{{ orderStatusLabel(order.status) }}</span>
-          <button
-            v-if="order.status === 'pending'"
-            type="button"
-            class="inline-link"
-            @click="resumeOrder(order.order_no)"
-          >
-            继续支付
-          </button>
-          <span v-else>+{{ order.credits }} 次</span>
-        </article>
-        <p v-if="!billing.recent_orders.length" class="helper-text">
-          还没有订单记录，先创建一个订单把充值和额度链路跑通。
-        </p>
-      </div>
+      <!-- 付费功能已隐藏 -->
 
       <div class="recent-list">
         <p class="helper-text">最近检测</p>

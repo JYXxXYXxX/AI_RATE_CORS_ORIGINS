@@ -29,145 +29,31 @@
         </div>
       </section>
 
-      <!-- 额度卡 -->
-      <section class="card">
+      <!-- 付费功能已隐藏 -->
+      <!-- <section class="card">
         <h2>额度</h2>
         <div class="credits-display">
           <strong>{{ auth.credits }}</strong>
           <span>次分析额度</span>
         </div>
         <p class="card-hint">每次分析消耗 1 次额度</p>
-      </section>
+      </section> -->
     </div>
 
-    <!-- 充值区 -->
-    <section class="card" v-if="auth.billing">
-      <h2>充值</h2>
-      <p class="card-hint">选择套餐进行充值</p>
-
-      <!-- 支付通道 -->
-      <div class="channel-row" v-if="auth.billing.payment_channels.length">
-        <span class="channel-label">支付方式：</span>
-        <div class="channel-options">
-          <button
-            v-for="ch in auth.billing.payment_channels"
-            :key="ch.code"
-            type="button"
-            class="channel-btn"
-            :class="{ active: selectedChannel === ch.code, muted: !ch.ready }"
-            @click="selectedChannel = ch.code"
-          >
-            <strong>{{ ch.title }}</strong>
-            <small>{{ ch.ready ? '可用' : '即将接入' }}</small>
-          </button>
-        </div>
-      </div>
-
-      <div class="package-grid">
-        <article v-for="pkg in auth.billing.packages" :key="pkg.code" class="package-card">
-          <h3>{{ pkg.title }}</h3>
-          <p class="package-desc">{{ pkg.description }}</p>
-          <div class="package-price">
-            <strong>&yen;{{ (pkg.amount_cents / 100).toFixed(2) }}</strong>
-            <span>/ {{ pkg.credits }} 次</span>
-          </div>
-          <button
-            class="btn btn-primary btn-full"
-            :disabled="creatingOrder === pkg.code"
-            @click="createOrder(pkg.code)"
-          >
-            {{ creatingOrder === pkg.code ? '创建中...' : '购买' }}
-          </button>
-        </article>
-      </div>
-
-      <!-- 待支付订单 -->
-      <div v-if="pendingOrder" class="pending-section">
-        <h3>待支付订单</h3>
-        <div class="pending-card">
-          <div class="pending-info">
-            <span>单号：{{ pendingOrder.order.order_no }}</span>
-            <span>&yen;{{ (pendingOrder.order.amount_cents / 100).toFixed(2) }}</span>
-          </div>
-          <p class="card-hint" v-if="pendingOrder.pay_hint">{{ pendingOrder.pay_hint }}</p>
-          <button
-            v-if="pendingOrder.mock_pay_supported"
-            class="btn btn-primary"
-            :disabled="paying"
-            @click="payOrder"
-          >{{ paying ? '支付中...' : '模拟支付' }}</button>
-          <a
-            v-else-if="pendingOrder.payment_url"
-            :href="pendingOrder.payment_url"
-            target="_blank"
-            class="btn btn-primary"
-          >前往支付</a>
-        </div>
-      </div>
-    </section>
-
-    <!-- 最近订单 -->
-    <section class="card" v-if="auth.billing?.recent_orders.length">
-      <h2>最近订单</h2>
-      <div class="order-list">
-        <div v-for="order in auth.billing.recent_orders" :key="order.id" class="order-row">
-          <span class="order-no">{{ order.order_no }}</span>
-          <span>{{ order.package_code }}</span>
-          <span>&yen;{{ (order.amount_cents / 100).toFixed(2) }}</span>
-          <span class="order-status" :class="order.status">{{ statusLabel(order.status) }}</span>
-          <span class="order-time">{{ formatDate(order.created_at) }}</span>
-        </div>
-      </div>
-    </section>
+    <!-- 付费功能已隐藏 -->
+    <!-- <section class="card" v-if="auth.billing">
+      <h2>充值</h2>...（充值区内容）...</n    </section> -->
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
-import { createBillingOrder, getBillingOrder, mockPayBillingOrder } from '../api'
-import type { BillingOrderDetailResponse } from '../types'
 
 const auth = useAuthStore()
-const selectedChannel = ref<string>('mock_qr')
-const creatingOrder = ref('')
-const pendingOrder = ref<BillingOrderDetailResponse | null>(null)
-const paying = ref(false)
 
 function formatDate(iso: string | undefined) {
   if (!iso) return '-'
   return new Date(iso).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
-}
-
-function statusLabel(status: string) {
-  const map: Record<string, string> = { pending: '待支付', paid: '已支付', completed: '已完成', cancelled: '已取消' }
-  return map[status] || status
-}
-
-async function createOrder(packageCode: string) {
-  creatingOrder.value = packageCode
-  try {
-    const detail = await createBillingOrder({ packageCode, provider: selectedChannel.value as 'mock_qr' | 'alipay' | 'wechat' })
-    pendingOrder.value = detail
-  } catch (err) {
-    alert(err instanceof Error ? err.message : '创建订单失败')
-  } finally {
-    creatingOrder.value = ''
-  }
-}
-
-async function payOrder() {
-  if (!pendingOrder.value) return
-  paying.value = true
-  try {
-    await mockPayBillingOrder(pendingOrder.value.order.order_no)
-    pendingOrder.value = null
-    await auth.refreshBilling()
-  } catch (err) {
-    alert(err instanceof Error ? err.message : '支付失败')
-  } finally {
-    paying.value = false
-  }
 }
 </script>
 

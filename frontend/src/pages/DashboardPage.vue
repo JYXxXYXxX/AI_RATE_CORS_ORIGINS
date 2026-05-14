@@ -17,10 +17,11 @@
         <span class="stat-label">分析总数</span>
         <strong class="stat-value">{{ analysis.history.length }}</strong>
       </div>
-      <div class="stat-card">
+      <!-- 付费功能已隐藏 -->
+      <!-- <div class="stat-card">
         <span class="stat-label">剩余额度</span>
         <strong class="stat-value accent">{{ auth.credits }}</strong>
-      </div>
+      </div> -->
       <div class="stat-card">
         <span class="stat-label">账户状态</span>
         <strong class="stat-value">{{ auth.user?.status || '正常' }}</strong>

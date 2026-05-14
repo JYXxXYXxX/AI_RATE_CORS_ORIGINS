@@ -22,11 +22,12 @@
         </nav>
       </div>
       <div class="app-header-right">
-        <div class="credits-badge" v-if="auth.billing">
+        <!-- 付费功能已隐藏 -->
+        <!-- <div class="credits-badge" v-if="auth.billing">
           <el-icon><Coin /></el-icon>
           <span class="credits-num">{{ auth.credits }}</span>
           <span class="credits-label">剩余次数</span>
-        </div>
+        </div> -->
         <div class="user-info">
           <el-avatar :size="28" class="user-avatar">{{ userInitial }}</el-avatar>
           <span class="user-name">{{ auth.user?.display_name || auth.user?.email }}</span>

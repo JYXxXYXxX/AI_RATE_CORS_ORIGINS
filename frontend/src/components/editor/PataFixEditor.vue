@@ -93,14 +93,7 @@
         >
           {{ batchLoading ? `批量建议 ${batchProgress}/${highRiskSections.length}` : '一键改写' }}
         </el-button>
-        <el-button
-          v-else
-          type="warning"
-          size="small"
-          @click="openUnlockModal('unlock_rewrite')"
-        >
-          <el-icon><Lock /></el-icon> 解锁全文改写
-        </el-button>
+        <!-- 付费功能已隐藏：改写始终可用 -->
         <el-button size="small" :disabled="!canUndo" @click="undo">
           <el-icon><RefreshLeft /></el-icon>撤销
         </el-button>
@@ -108,20 +101,10 @@
           <el-icon><RefreshRight /></el-icon>重做
         </el-button>
         <el-button
-          v-if="exportUnlocked"
           size="small"
           @click="doSave"
         >
           <el-icon><Download /></el-icon>保存
-        </el-button>
-        <el-button
-          v-else
-          size="small"
-          type="warning"
-          plain
-          @click="openUnlockModal('export_docx')"
-        >
-          <el-icon><Lock /></el-icon>导出改写稿
         </el-button>
       </div>
     </div>
@@ -270,14 +253,7 @@
           <div class="empty-hint">点击正文中带颜色标记的句子，查看风险诊断与改写建议</div>
         </div>
 
-        <div v-else-if="panelVisible && !rewriteUnlocked" class="panel-lock">
-          <el-icon class="lock-icon"><Lock /></el-icon>
-          <h4>改写建议已锁定</h4>
-          <p>解锁后可查看完整 AI 改写建议、句子级润色和一键替换功能。</p>
-          <el-button type="primary" @click="openUnlockModal('unlock_rewrite')">
-            解锁全文改写 ¥39.90
-          </el-button>
-        </div>
+        <!-- 付费功能已隐藏：改写建议始终可用 -->
 
         <template v-else>
           <div class="risk-filter-bar">
@@ -457,13 +433,7 @@
     </div>
   </div>
 
-  <UnlockModal
-    v-model="unlockModalVisible"
-    :run-id="runId"
-    :package-code="currentUnlockPackageCode"
-    :packages="unlockPackages"
-    @unlocked="onUnlocked"
-  />
+  <!-- 付费功能已隐藏：UnlockModal 已移除 -->
 </template>
 
 <script setup lang="ts">
@@ -517,28 +487,13 @@ const blockHistoryIndex = ref(-1)
 // 折叠正常段落
 const foldNormal = ref(true)
 
-// 解锁状态
-const rewriteUnlocked = ref(false)
-const exportUnlocked = ref(false)
-const unlockModalVisible = ref(false)
-const currentUnlockPackageCode = ref('unlock_rewrite')
-const unlockPackages = ref<UnlockPackage[]>([])
+// 解锁状态（付费功能已隐藏，始终开放）
+const rewriteUnlocked = ref(true)
+const exportUnlocked = ref(true)
 
 async function checkUnlockStatus() {
-  try {
-    const rewriteStatus = await getUnlockStatus(props.runId, 'unlock_rewrite')
-    rewriteUnlocked.value = rewriteStatus.unlocked
-    const exportStatus = await getUnlockStatus(props.runId, 'export_docx')
-    exportUnlocked.value = exportStatus.unlocked
-  } catch {
-    rewriteUnlocked.value = false
-    exportUnlocked.value = false
-  }
-}
-
-function openUnlockModal(packageCode: string) {
-  currentUnlockPackageCode.value = packageCode
-  unlockModalVisible.value = true
+  rewriteUnlocked.value = true
+  exportUnlocked.value = true
 }
 
 function onUnlocked() {
@@ -609,7 +564,6 @@ const historyIndex = ref(-1)
 
 onMounted(() => {
   loadData()
-  getUnlockPackages().then(pkgs => { unlockPackages.value = pkgs }).catch(() => {})
   checkUnlockStatus()
 })
 

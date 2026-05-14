@@ -238,21 +238,8 @@
     </div>
   </section>
 
-  <!-- 锁定提示横幅 -->
-  <section v-if="!reportUnlocked" class="card lock-banner">
-    <div class="lock-content">
-      <el-icon class="lock-icon"><Lock /></el-icon>
-      <div class="lock-text">
-        <h3>完整报告已锁定</h3>
-        <p>预览已结束。解锁后可查看章节热力图、风险段落详情、改写建议和导师沟通摘要。</p>
-      </div>
-      <el-button type="primary" size="large" @click="openUnlockModal('unlock_report')">
-        解锁全文检测报告 ¥29.90
-      </el-button>
-    </div>
-  </section>
-
-  <section v-if="reportUnlocked" class="card">
+  <!-- 付费功能已隐藏：报告始终开放 -->
+  <section class="card">
     <div class="card-head">
       <p class="eyebrow">章节风险热力图</p>
       <h3>先看哪一章最容易拖高整体结果</h3>
@@ -711,13 +698,7 @@
     </div>
   </el-dialog>
 
-  <UnlockModal
-    v-model="unlockModalVisible"
-    :run-id="runStatus?.run_id || ''"
-    :package-code="currentUnlockPackageCode"
-    :packages="unlockPackages"
-    @unlocked="onUnlocked"
-  />
+  <!-- 付费功能已隐藏：UnlockModal 已移除 -->
 </template>
 
 <script setup lang="ts">
@@ -752,39 +733,21 @@ const emit = defineEmits<{
 
 const checklist = ref<ChecklistItem[]>([])
 
-// 解锁状态
-const reportUnlocked = ref(false)
-const unlockModalVisible = ref(false)
-const unlockPackages = ref<UnlockPackage[]>([])
-const currentUnlockPackageCode = ref('unlock_report')
+// 解锁状态（付费功能已隐藏，始终开放）
+const reportUnlocked = ref(true)
 const checkingUnlock = ref(false)
 
 async function checkUnlockStatus() {
-  if (!props.runStatus?.run_id) return
-  checkingUnlock.value = true
-  try {
-    const status = await getUnlockStatus(props.runStatus.run_id, 'unlock_report')
-    reportUnlocked.value = status.unlocked
-  } catch {
-    reportUnlocked.value = false
-  } finally {
-    checkingUnlock.value = false
-  }
+  reportUnlocked.value = true
 }
 
 onMounted(async () => {
-  unlockPackages.value = await getUnlockPackages().catch(() => [])
-  await checkUnlockStatus()
+  reportUnlocked.value = true
 })
 
 watch(() => props.runStatus?.run_id, checkUnlockStatus)
 
-function openUnlockModal(packageCode: string) {
-  currentUnlockPackageCode.value = packageCode
-  unlockModalVisible.value = true
-}
-
-function onUnlocked(order: UnlockOrder) {
+function onUnlocked() {
   reportUnlocked.value = true
   ElMessage.success('解锁成功')
 }
