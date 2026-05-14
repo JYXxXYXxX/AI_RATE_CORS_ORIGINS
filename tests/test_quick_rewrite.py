@@ -1,10 +1,7 @@
 from fastapi.testclient import TestClient
 
-from app.routes.quick_rewrite import _usage_by_day
-
 
 def test_quick_rewrite_returns_structured_phrase_marks(client: TestClient) -> None:
-    _usage_by_day.clear()
     response = client.post(
         "/api/quick-rewrite",
         json={
@@ -31,21 +28,17 @@ def test_quick_rewrite_returns_structured_phrase_marks(client: TestClient) -> No
     assert "<" not in payload["rewrittenText"]
 
 
-def test_quick_rewrite_enforces_free_limits(client: TestClient) -> None:
-    _usage_by_day.clear()
-    long_text = "这是一段用于测试免费短句优化字数限制的论文内容。" * 30
+def test_quick_rewrite_allows_unlimited_trial_usage(client: TestClient) -> None:
+    long_text = "这是一段用于测试短句优化不限字数策略的论文内容。" * 80
     response = client.post(
         "/api/quick-rewrite",
         json={"text": long_text, "mode": "polish"},
     )
 
-    assert response.status_code == 400
-    assert "免费试用每次最多 300 字" in response.json()["detail"]
+    assert response.status_code == 200
+    assert response.json()["remainingFreeUses"] is None
 
     sample = "首先分析理论基础，其次讨论现实问题，最后提出优化路径。该研究具有重要意义。"
-    for _ in range(3):
+    for _ in range(6):
         ok = client.post("/api/quick-rewrite", json={"text": sample, "mode": "aigc"})
         assert ok.status_code == 200
-
-    limited = client.post("/api/quick-rewrite", json={"text": sample, "mode": "aigc"})
-    assert limited.status_code == 429

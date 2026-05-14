@@ -609,7 +609,7 @@ class ReanalyzeResponse(BaseModel):
 
 
 class QuickRewriteRequest(BaseModel):
-    text: str = Field(..., min_length=1, max_length=3000)
+    text: str = Field(..., min_length=1)
     mode: Literal["auto", "aigc", "similarity", "polish"] = "auto"
 
 

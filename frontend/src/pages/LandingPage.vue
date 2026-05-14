@@ -40,7 +40,7 @@
 
             <label class="quick-label" for="quick-rewrite-input">
               输入论文段落
-              <span>{{ quickInput.length }}/300</span>
+              <span>{{ quickInput.length }} 字</span>
             </label>
             <textarea
               id="quick-rewrite-input"
@@ -63,7 +63,7 @@
               <button type="button" class="btn btn-outline" @click="fillExample">填入示例</button>
             </div>
 
-            <p class="quick-limit">免费用户每天试用 3 次，每次最多 300 字；付费用户支持更长文本和更多候选版本。</p>
+            <p class="quick-limit">当前体验期不限次数、不限字数；建议先用 50～300 字短段查看标记和改写逻辑。</p>
             <p v-if="quickError" class="quick-error">{{ quickError }}</p>
           </div>
 
