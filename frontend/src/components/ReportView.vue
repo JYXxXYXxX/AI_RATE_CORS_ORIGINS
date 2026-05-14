@@ -113,6 +113,17 @@
     </div>
   </section>
 
+  <!-- 优先优化摘要 -->
+  <section v-if="report.summary.priority_summary" class="priority-summary-card">
+    <div class="priority-summary-content">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <div>
+        <strong>优化建议</strong>
+        <p>{{ report.summary.priority_summary }}</p>
+      </div>
+    </div>
+  </section>
+
   <section v-if="report.workflow_overview || report.calibration_insight" class="dual-grid">
     <section v-if="report.workflow_overview" class="card soft-card">
       <div class="card-head">
@@ -239,6 +250,73 @@
   </section>
 
   <!-- 付费功能已隐藏：报告始终开放 -->
+
+  <!-- 建议优化段落 -->
+  <section class="card">
+    <div class="card-head">
+      <p class="eyebrow">建议优化段落</p>
+      <h3>这几段最该先改</h3>
+    </div>
+    <div v-if="!report.priority_sections?.length" class="helper-text">
+      暂无优先优化建议，整体风险相对可控。
+    </div>
+    <article v-for="section in report.priority_sections" :key="section.section_index" class="segment-card priority-card">
+      <div class="segment-head">
+        <div class="priority-rank">
+          <span class="rank-num">#{{ section.priority_rank }}</span>
+          <strong>{{ section.title }}</strong>
+        </div>
+        <el-tag :type="tagType(section.risk_level)">{{ riskText(section.risk_level) }}</el-tag>
+      </div>
+      <p class="preview">{{ section.text_preview }}</p>
+      <div class="mini-metrics">
+        <span>综合风险 {{ (section.combined_score * 100).toFixed(1) }}%</span>
+        <span v-if="section.sub_scores" class="dominant-risk">主要问题：{{ dominantRiskLabel(section.sub_scores) }}</span>
+      </div>
+      <div v-if="section.sub_scores" class="sub-score-bars">
+        <div class="sub-bar" title="AI 疑似度">
+          <span class="sub-label">AI</span>
+          <div class="sub-track"><div class="sub-fill sub-ai" :style="{ width: section.sub_scores.ai_likelihood + '%' }"></div></div>
+          <span class="sub-value">{{ Math.round(section.sub_scores.ai_likelihood) }}</span>
+        </div>
+        <div class="sub-bar" title="模板化">
+          <span class="sub-label">模板</span>
+          <div class="sub-track"><div class="sub-fill sub-template" :style="{ width: section.sub_scores.template_score + '%' }"></div></div>
+          <span class="sub-value">{{ Math.round(section.sub_scores.template_score) }}</span>
+        </div>
+        <div class="sub-bar" title="语义空洞">
+          <span class="sub-label">空洞</span>
+          <div class="sub-track"><div class="sub-fill sub-empty" :style="{ width: section.sub_scores.semantic_empty_score + '%' }"></div></div>
+          <span class="sub-value">{{ Math.round(section.sub_scores.semantic_empty_score) }}</span>
+        </div>
+        <div class="sub-bar" title="重复表达">
+          <span class="sub-label">重复</span>
+          <div class="sub-track"><div class="sub-fill sub-repeat" :style="{ width: section.sub_scores.repetition_score + '%' }"></div></div>
+          <span class="sub-value">{{ Math.round(section.sub_scores.repetition_score) }}</span>
+        </div>
+        <div class="sub-bar" title="引用风险">
+          <span class="sub-label">引用</span>
+          <div class="sub-track"><div class="sub-fill sub-cite" :style="{ width: section.sub_scores.citation_risk + '%' }"></div></div>
+          <span class="sub-value">{{ Math.round(section.sub_scores.citation_risk) }}</span>
+        </div>
+      </div>
+      <div class="reason-list">
+        <el-tag v-for="reason in section.reasons" :key="reason" effect="plain">{{ reason }}</el-tag>
+      </div>
+      <el-button
+        class="rewrite-btn"
+        type="primary"
+        plain
+        size="small"
+        :loading="rewriteLoadingMap[section.section_index]"
+        @click="openRewriteAdvice(section.section_index)"
+      >
+        <el-icon><EditPen /></el-icon>
+        <span>查看 AI 改写建议</span>
+      </el-button>
+    </article>
+  </section>
+
   <section class="card">
     <div class="card-head">
       <p class="eyebrow">章节风险热力图</p>
@@ -713,6 +791,7 @@ import type {
   ModelStatusResponse,
   RewriteAdviceResponse,
   ScoreBand,
+  SubScores,
   UnifiedReportResponse,
   UnlockPackage,
   UnlockOrder
@@ -1065,6 +1144,18 @@ async function copyText(text: string, successMessage: string) {
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '复制失败')
   }
+}
+
+function dominantRiskLabel(subScores: SubScores): string {
+  const dims: [string, number][] = [
+    ['AI疑似表达', subScores.ai_likelihood],
+    ['套话模板化', subScores.template_score],
+    ['表达空泛', subScores.semantic_empty_score],
+    ['重复句式', subScores.repetition_score],
+    ['引用不规范', subScores.citation_risk],
+  ]
+  dims.sort((a, b) => b[1] - a[1])
+  return dims[0][0]
 }
 
 function riskText(level: 'low' | 'medium' | 'high') {

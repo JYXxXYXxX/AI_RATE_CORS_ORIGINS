@@ -203,6 +203,15 @@ class ScoreBand(BaseModel):
     high_percent: float = Field(..., ge=0, le=100)
 
 
+class SubScores(BaseModel):
+    ai_likelihood: float = Field(..., ge=0, le=100)
+    template_score: float = Field(..., ge=0, le=100)
+    semantic_empty_score: float = Field(..., ge=0, le=100)
+    repetition_score: float = Field(..., ge=0, le=100)
+    citation_risk: float = Field(..., ge=0, le=100)
+    overall_risk: float = Field(..., ge=0, le=100)
+
+
 class ReportSummary(BaseModel):
     risk_score: int = Field(..., ge=0, le=100)
     overall_risk: Literal["low", "medium", "high"]
@@ -211,6 +220,7 @@ class ReportSummary(BaseModel):
     predicted_cnki_aigc: ScoreBand
     confidence: float = Field(..., ge=0, le=1)
     first_fix_targets: list[str]
+    priority_summary: str | None = None
 
 
 class UnlockPackage(BaseModel):
@@ -277,6 +287,8 @@ class SectionRiskItem(BaseModel):
     combined_score: float = Field(..., ge=0, le=1)
     risk_level: Literal["low", "medium", "high"]
     reasons: list[str]
+    sub_scores: SubScores | None = None
+    priority_rank: int | None = None
 
 
 class SimilarityMatchItem(BaseModel):
@@ -381,6 +393,7 @@ class UnifiedReportResponse(BaseModel):
     local_metrics: LocalMetrics
     chapter_heatmap: list[ChapterHeatItem]
     top_risk_sections: list[SectionRiskItem]
+    priority_sections: list[SectionRiskItem] = Field(default_factory=list)
     top_similarity_matches: list[SimilarityMatchItem]
     revision_plan: list[RevisionPlanItem]
     mentor_brief: MentorBrief

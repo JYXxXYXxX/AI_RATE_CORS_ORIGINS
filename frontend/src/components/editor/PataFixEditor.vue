@@ -117,6 +117,23 @@
           <div class="sidebar-tab active">目录</div>
           <div class="sidebar-tab">风险分布</div>
         </div>
+
+        <!-- 建议优化快速导航 -->
+        <div v-if="prioritySections.length" class="priority-nav">
+          <div class="priority-nav-header">
+            <strong>建议优先优化 {{ prioritySections.length }} 段</strong>
+          </div>
+          <div
+            v-for="sec in prioritySections"
+            :key="sec.section_index"
+            class="priority-nav-item"
+            @click="scrollToParagraph(sec.paragraph_index ?? sec.section_index)"
+          >
+            <span class="priority-rank">#{{ sec.priorityRank }}</span>
+            <span class="priority-preview truncate">{{ sec.section_title || '正文' }} — {{ sec.content.slice(0, 18) }}{{ sec.content.length > 18 ? '…' : '' }}</span>
+          </div>
+        </div>
+
         <div class="outline-tree">
           <div
             v-for="(group, gIdx) in groupedSections"
@@ -256,6 +273,14 @@
         <!-- 付费功能已隐藏：改写建议始终可用 -->
 
         <template v-else>
+          <div v-if="prioritySections.length" class="priority-hint">
+            <el-alert
+              :title="`建议优先优化 ${prioritySections.length} 段，点击左侧列表快速定位`"
+              type="warning"
+              :closable="false"
+              show-icon
+            />
+          </div>
           <div class="risk-filter-bar">
             <span class="filter-tag filter-high">高风险 {{ riskCounts.high }}</span>
             <span class="filter-tag filter-medium">中风险 {{ riskCounts.medium }}</span>
@@ -922,6 +947,25 @@ const highRiskSections = computed(() => {
     })
   }
   return sections.value.filter(s => effectiveAigc(s) >= 0.30)
+})
+
+interface PrioritySection extends RunSectionItem {
+  combinedScore: number
+  priorityRank: number
+}
+
+const prioritySections = computed<PrioritySection[]>(() => {
+  const scored = sections.value.filter(
+    s => s.section_type !== 'references' && s.section_type !== 'acknowledgement'
+  )
+  const withScore = scored.map(s => ({
+    ...s,
+    combinedScore: s.aigc_score * 0.58 + s.dup_score * 0.42,
+    priorityRank: 0,
+  }))
+  withScore.sort((a, b) => b.combinedScore - a.combinedScore)
+  const count = Math.max(5, Math.ceil(withScore.length * 0.15))
+  return withScore.slice(0, count).map((s, i) => ({ ...s, priorityRank: i + 1 }))
 })
 
 const riskCounts = computed(() => {

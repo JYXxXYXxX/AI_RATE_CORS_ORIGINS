@@ -196,6 +196,7 @@ export interface ReportSummary {
   predicted_cnki_aigc: ScoreBand
   confidence: number
   first_fix_targets: string[]
+  priority_summary?: string
 }
 
 export interface LocalMetrics {
@@ -237,6 +238,7 @@ export interface SectionRiskItem {
   risk_level: 'low' | 'medium' | 'high'
   reasons: string[]
   sub_scores?: SubScores
+  priority_rank?: number
 }
 
 export interface SimilarityMatchItem {
@@ -342,6 +344,7 @@ export interface UnifiedReportResponse {
   local_metrics: LocalMetrics
   chapter_heatmap: ChapterHeatItem[]
   top_risk_sections: SectionRiskItem[]
+  priority_sections?: SectionRiskItem[]
   top_similarity_matches: SimilarityMatchItem[]
   revision_plan: RevisionPlanItem[]
   mentor_brief: MentorBrief

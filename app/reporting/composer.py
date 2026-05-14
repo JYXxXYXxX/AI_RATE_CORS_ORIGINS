@@ -1,7 +1,52 @@
 from __future__ import annotations
 
+import math
+import re
 from collections import defaultdict
 from typing import Any
+
+
+_SECTION_TYPE_MAP: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"摘要|abstract", re.IGNORECASE), "abstract"),
+    (re.compile(r"引言|绪论|introduction", re.IGNORECASE), "introduction"),
+    (re.compile(r"综述|文献回顾|review", re.IGNORECASE), "review"),
+    (re.compile(r"方法|研究设计|method", re.IGNORECASE), "method"),
+    (re.compile(r"结果|实验|result", re.IGNORECASE), "result"),
+    (re.compile(r"讨论|discussion", re.IGNORECASE), "discussion"),
+    (re.compile(r"结论|总结|conclusion", re.IGNORECASE), "conclusion"),
+    (re.compile(r"参考文献|references", re.IGNORECASE), "references"),
+    (re.compile(r"致谢|acknowledg", re.IGNORECASE), "acknowledgement"),
+]
+
+
+def _infer_section_type(section_title: str | None) -> str:
+    if not section_title:
+        return "body"
+    for pattern, label in _SECTION_TYPE_MAP:
+        if pattern.search(section_title):
+            return label
+    return "other"
+
+
+_TYPE_NAMES: dict[str, str] = {
+    "abstract": "摘要",
+    "introduction": "绪论",
+    "review": "文献综述",
+    "method": "研究方法",
+    "result": "实验结果",
+    "discussion": "讨论",
+    "conclusion": "结论",
+    "body": "正文主体",
+    "other": "其他部分",
+}
+
+_DIM_NAMES: dict[str, str] = {
+    "ai_likelihood": "AI疑似表达",
+    "template_score": "套话模板化",
+    "semantic_empty_score": "表达空泛",
+    "repetition_score": "重复句式",
+    "citation_risk": "引用不规范",
+}
 
 
 def compose_report(
@@ -19,6 +64,8 @@ def compose_report(
     top_risk_sections = sorted(
         section_reports, key=lambda item: item["combined_score"], reverse=True
     )[:8]
+    priority_sections = _build_priority_sections(section_reports)
+    priority_summary = _build_priority_summary(priority_sections)
     top_similarity_matches = _serialize_matches(duplication.matches, section_reports)[
         :10
     ]
@@ -49,6 +96,7 @@ def compose_report(
         ),
         "confidence": round(float(proxy_prediction["confidence"]), 4),
         "first_fix_targets": first_fix_targets,
+        "priority_summary": priority_summary,
     }
 
     return {
@@ -67,6 +115,7 @@ def compose_report(
         },
         "chapter_heatmap": chapter_heatmap,
         "top_risk_sections": [_strip_combined(item) for item in top_risk_sections],
+        "priority_sections": [_strip_combined(item) for item in priority_sections],
         "top_similarity_matches": top_similarity_matches,
         "revision_plan": revision_plan,
         "mentor_brief": mentor_brief,
@@ -357,6 +406,64 @@ def _score_band(center: float, low: float, high: float, label: str) -> dict[str,
     }
 
 
+def _build_priority_sections(
+    section_reports: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    scored = [
+        dict(s)
+        for s in section_reports
+        if _infer_section_type(s.get("section_title")) not in ("references", "acknowledgement")
+    ]
+    if not scored:
+        scored = [dict(s) for s in section_reports]
+
+    count = max(5, math.ceil(len(scored) * 0.15))
+    sorted_sections = sorted(scored, key=lambda item: item["combined_score"], reverse=True)
+    priority = sorted_sections[:count]
+
+    for rank, section in enumerate(priority, start=1):
+        section["priority_rank"] = rank
+
+    return priority
+
+
+def _build_priority_summary(
+    priority_sections: list[dict[str, Any]],
+) -> str:
+    if not priority_sections:
+        return "暂未检测到需要优先优化的段落。"
+
+    type_counts: dict[str, int] = defaultdict(int)
+    for s in priority_sections:
+        st = _infer_section_type(s.get("section_title"))
+        type_counts[st] += 1
+
+    top_type = max(type_counts, key=lambda k: type_counts[k])
+
+    dim_keys = ["ai_likelihood", "template_score", "semantic_empty_score", "repetition_score", "citation_risk"]
+    dim_scores: dict[str, float] = {}
+    for key in dim_keys:
+        values = [
+            s.get("sub_scores", {}).get(key, 0)
+            for s in priority_sections
+        ]
+        if values:
+            dim_scores[key] = sum(values) / len(values)
+
+    top_dims = sorted(dim_scores.items(), key=lambda x: -x[1])[:2]
+
+    parts = [f"本文建议优先优化 {len(priority_sections)} 段"]
+    type_name = _TYPE_NAMES.get(top_type, "正文")
+    parts.append(f"主要问题集中在{type_name}部分")
+
+    if top_dims:
+        parts.append(f"{_DIM_NAMES.get(top_dims[0][0], top_dims[0][0])}较明显")
+        if len(top_dims) > 1 and top_dims[1][1] > 20:
+            parts.append(f"同时存在{_DIM_NAMES.get(top_dims[1][0], top_dims[1][0])}问题")
+
+    return "，".join(parts) + "。"
+
+
 def _chapter_advice(title: str, combined: float) -> str:
     if combined >= 0.58:
         return f"{title} 当前风险最高，建议优先补充个性化分析、真实数据和研究过程。"
@@ -374,7 +481,7 @@ def _level_from_score(score: float) -> str:
 
 
 def _strip_combined(item: dict[str, Any]) -> dict[str, Any]:
-    return {
+    result: dict[str, Any] = {
         "section_index": item["section_index"],
         "title": item["title"],
         "section_title": item["section_title"],
@@ -387,3 +494,8 @@ def _strip_combined(item: dict[str, Any]) -> dict[str, Any]:
         "risk_level": item["risk_level"],
         "reasons": item["reasons"],
     }
+    if "sub_scores" in item:
+        result["sub_scores"] = item["sub_scores"]
+    if "priority_rank" in item:
+        result["priority_rank"] = item["priority_rank"]
+    return result
