@@ -64,6 +64,11 @@
             </div>
 
             <p class="quick-limit">当前体验期不限次数、不限字数；建议先用 50～300 字短段查看标记和改写逻辑。</p>
+            <div class="quick-input-tips">
+              <strong>适合粘贴</strong>
+              <p>摘要段落、绪论背景、研究意义、结论、系统介绍段落。</p>
+              <p>建议输入 50-300 字，过短文本检测结果可能不稳定。</p>
+            </div>
             <p v-if="quickError" class="quick-error">{{ quickError }}</p>
           </div>
 
@@ -81,7 +86,8 @@
                 </div>
                 <div>
                   <span>优化后预估风险指数</span>
-                  <strong>{{ quickResult.afterRisk.score }}</strong>
+                  <strong>{{ afterRiskDisplay }}</strong>
+                  <small>{{ afterRiskLevelLabel }}</small>
                 </div>
               </div>
               <p class="quick-disclaimer">该结果为系统预估，不等同于知网检测结果。</p>
@@ -92,7 +98,7 @@
                   <h3>原文风险标记</h3>
                   <p class="marked-text">
                     <template v-for="(seg, idx) in originalSegments" :key="`o-${idx}`">
-                      <mark v-if="seg.mark" class="risk-mark" :title="seg.reason">{{ seg.text }}</mark>
+                      <mark v-if="seg.mark" class="risk-mark" :title="seg.reason" :data-reason="seg.reason">{{ seg.text }}</mark>
                       <span v-else>{{ seg.text }}</span>
                     </template>
                   </p>
@@ -105,7 +111,7 @@
                   <h3>改写结果</h3>
                   <p class="marked-text">
                     <template v-for="(seg, idx) in rewrittenSegments" :key="`r-${idx}`">
-                      <mark v-if="seg.mark" class="improve-mark" :title="seg.reason">{{ seg.text }}</mark>
+                      <mark v-if="seg.mark" class="improve-mark" :title="seg.reason" :data-reason="seg.reason">{{ seg.text }}</mark>
                       <span v-else>{{ seg.text }}</span>
                     </template>
                   </p>
@@ -114,9 +120,11 @@
                 <article class="result-panel">
                   <h3>修改对照</h3>
                   <div class="compare-list">
-                    <div v-for="row in comparisonRows" :key="row.key" class="compare-row">
-                      <span class="before">{{ row.before || '原句整体节奏' }}</span>
-                      <span class="after">{{ row.after || '补充具体细节' }}</span>
+                    <div v-for="row in comparisonRows" :key="row.key" class="compare-card">
+                      <div class="compare-phrase before">{{ row.before || '原句整体节奏' }}</div>
+                      <div class="compare-arrow">→</div>
+                      <div class="compare-phrase after">{{ row.after || '补充具体细节' }}</div>
+                      <p>{{ row.reason }}</p>
                     </div>
                   </div>
                 </article>
@@ -143,6 +151,9 @@
                   上传全文检测
                 </button>
               </div>
+              <p class="quick-conversion">
+                想定位整篇论文的高风险段落？上传全文后可查看完整风险分布、逐段改写建议和导出改写稿。
+              </p>
             </template>
           </div>
         </div>
@@ -247,17 +258,35 @@ const originalSegments = computed(() =>
 const rewrittenSegments = computed(() =>
   quickResult.value ? buildMarkedSegments(quickResult.value.rewrittenText, quickResult.value.improvedPhrases) : []
 )
+const afterRiskDisplay = computed(() => {
+  if (!quickResult.value) return '--'
+  const score = quickResult.value.afterRisk.score
+  const low = Math.max(0, score - 6)
+  const high = Math.min(100, score + 8)
+  return `${low}-${high}`
+})
+const afterRiskLevelLabel = computed(() => {
+  if (!quickResult.value) return ''
+  const map = {
+    high: '仍需重点优化',
+    medium: '中等风险',
+    low: '低风险',
+    normal: '低风险'
+  }
+  return map[quickResult.value.afterRisk.level]
+})
 const riskReasons = computed(() => {
   if (!quickResult.value) return []
   return [...new Set(quickResult.value.riskyPhrases.map((item) => item.reason))].slice(0, 4)
 })
 const comparisonRows = computed(() => {
   if (!quickResult.value) return []
-  const count = Math.max(quickResult.value.riskyPhrases.length, quickResult.value.improvedPhrases.length, 1)
+  const count = Math.max(quickResult.value.riskyPhrases.length, quickResult.value.improvedPhrases.length)
   return Array.from({ length: count }).map((_, index) => ({
     key: `${index}-${quickResult.value?.riskyPhrases[index]?.text || 'risk'}-${quickResult.value?.improvedPhrases[index]?.text || 'improve'}`,
     before: quickResult.value?.riskyPhrases[index]?.text || '',
-    after: quickResult.value?.improvedPhrases[index]?.text || ''
+    after: quickResult.value?.improvedPhrases[index]?.text || '',
+    reason: quickResult.value?.improvedPhrases[index]?.reason || quickResult.value?.riskyPhrases[index]?.reason || '保留原意，降低模板化表达。'
   }))
 })
 
@@ -517,6 +546,22 @@ function locateRanges(text: string, phrases: QuickRewritePhrase[]) {
   font-size: 13px;
 }
 
+.quick-input-tips {
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: rgba(47, 125, 103, 0.08);
+  color: #53606f;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.quick-input-tips strong {
+  color: #236451;
+}
+
 .quick-error {
   margin-top: 10px;
   color: #c94044;
@@ -566,6 +611,13 @@ function locateRanges(text: string, phrases: QuickRewritePhrase[]) {
   line-height: 1;
 }
 
+.risk-strip small {
+  display: block;
+  margin-top: 6px;
+  color: #627083;
+  font-size: 12px;
+}
+
 .quick-disclaimer {
   margin-bottom: 8px;
   font-size: 13px;
@@ -603,8 +655,10 @@ function locateRanges(text: string, phrases: QuickRewritePhrase[]) {
 
 .risk-mark,
 .improve-mark {
+  position: relative;
   border-radius: 4px;
   padding: 1px 3px;
+  cursor: help;
 }
 
 .risk-mark {
@@ -615,6 +669,25 @@ function locateRanges(text: string, phrases: QuickRewritePhrase[]) {
 .improve-mark {
   color: #236451;
   background: rgba(47, 125, 103, 0.16);
+}
+
+.risk-mark:hover::after,
+.improve-mark:hover::after {
+  position: absolute;
+  z-index: 8;
+  left: 0;
+  bottom: calc(100% + 8px);
+  width: max-content;
+  max-width: 260px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #172033;
+  color: #fff;
+  content: attr(data-reason);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: normal;
+  box-shadow: 0 10px 24px rgba(23, 32, 51, 0.2);
 }
 
 .reason-list-mini,
@@ -628,16 +701,21 @@ function locateRanges(text: string, phrases: QuickRewritePhrase[]) {
 
 .compare-list {
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
-.compare-row {
+.compare-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
   gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #f9fbf9;
+  border: 1px solid rgba(31, 54, 73, 0.06);
 }
 
-.compare-row span {
+.compare-phrase {
   border-radius: 8px;
   padding: 9px 10px;
   line-height: 1.6;
@@ -645,14 +723,36 @@ function locateRanges(text: string, phrases: QuickRewritePhrase[]) {
   word-break: break-word;
 }
 
-.compare-row .before {
+.compare-card p {
+  grid-column: 1 / -1;
+  color: #627083;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.compare-arrow {
+  color: #8b95a2;
+  font-weight: 700;
+}
+
+.compare-phrase.before {
   color: #9e2f38;
   background: rgba(200, 75, 82, 0.1);
 }
 
-.compare-row .after {
+.compare-phrase.after {
   color: #236451;
   background: rgba(47, 125, 103, 0.1);
+}
+
+.quick-conversion {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: rgba(32, 69, 90, 0.08);
+  color: #344150;
+  line-height: 1.7;
+  font-size: 14px;
 }
 
 /* Buttons */
@@ -875,8 +975,13 @@ function locateRanges(text: string, phrases: QuickRewritePhrase[]) {
   }
 
   .risk-strip,
-  .compare-row {
+  .compare-card {
     grid-template-columns: 1fr;
+  }
+
+  .compare-arrow {
+    transform: rotate(90deg);
+    justify-self: start;
   }
 
   .feature-grid {

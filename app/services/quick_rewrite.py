@@ -55,148 +55,86 @@ class RiskRule:
 RISK_RULES: list[RiskRule] = [
     RiskRule(
         re.compile(r"随着[^，。；！？\n]{2,28}的发展"),
-        "属于常见论文模板化开头，容易让段落显得过于可预测。",
+        "模板化开头：属于常见论文开场句，容易让段落显得过于可预测。",
         16,
         "template",
     ),
     RiskRule(
         re.compile(r"(?:首先|其次|最后|综上所述|此外|与此同时|值得注意的是|不难发现)"),
-        "属于 AI 写作中高频连接词或概括词，连续出现会削弱自然节奏。",
+        "论文常见套话：高频连接词或概括词连续出现，会削弱自然节奏。",
         10,
         "connector",
     ),
     RiskRule(
+        re.compile(r"(?:并能够)?为相关实践提供参考价值"),
+        "表达空泛：没有说明参考价值具体服务于哪个对象或业务环节。",
+        16,
+        "vague",
+    ),
+    RiskRule(
         re.compile(r"(?:具有重要意义|具有积极作用|具有参考价值|提供参考价值|发挥重要作用)"),
-        "表达信息量不足，没有说明具体价值落在什么场景或环节。",
+        "表达空泛：没有说明具体价值落在什么对象、场景或环节。",
         15,
         "vague",
     ),
     RiskRule(
         re.compile(r"(?:理论基础|优化路径|相关实践|实践提供参考|现实问题|应用价值)"),
-        "属于论文中常见的空泛概括，需要替换为更具体的对象、流程或功能。",
+        "缺少具体对象或数据：需要替换为更明确的对象、流程或业务功能。",
         10,
         "vague",
     ),
     RiskRule(
         re.compile(r"(?:有利于|有助于|促进了|提高了|增强了)[^。；！？\n]{0,30}(?:有利于|有助于|促进了|提高了|增强了)"),
-        "重复使用同类动词形成排比句式，容易呈现模板化论述。",
+        "重复句式：同类动词形成排比，容易呈现模板化论述。",
         14,
         "repetition",
     ),
     RiskRule(
         re.compile(r"[^。；！？\n]{58,}"),
-        "单句过长且缺少停顿，建议拆成短句并补充明确的逻辑节点。",
+        "句式节奏单一：单句过长且缺少停顿，建议拆成短句并补充逻辑节点。",
         11,
         "repetition",
     ),
     RiskRule(
         re.compile(r"(?:显著|明显|大幅度)(?:提升|增长|改善|降低|优化)"),
-        "定性评价较强但缺少数据、范围或限定条件。",
+        "表达空泛：定性评价较强，但缺少数据、范围或限定条件。",
         13,
         "vague",
     ),
 ]
 
 
-REWRITE_RULES: list[tuple[re.Pattern[str], str, str]] = [
-    (
-        re.compile(r"随着([^，。；！？\n]{2,28})的发展"),
-        r"近几年，\1在具体场景中的应用逐渐增多",
-        "用具体时间感和场景描述替代模板化开头。",
-    ),
-    (
-        re.compile(r"具有重要意义"),
-        "能为后续研究设计和实践调整提供可操作依据",
-        "把空泛价值判断改成可落地的研究或实践作用。",
-    ),
-    (
-        re.compile(r"具有积极作用"),
-        "能够在具体执行环节中形成直接支撑",
-        "把抽象评价落到执行环节。",
-    ),
-    (
-        re.compile(r"提供参考价值"),
-        "提供可复用的分析依据",
-        "将泛化价值改成更明确的输出形态。",
-    ),
-    (
-        re.compile(r"理论基础"),
-        "核心概念和研究依据",
-        "把套话式章节表述换成更具体的分析对象。",
-    ),
-    (
-        re.compile(r"优化路径"),
-        "可落地的调整方案",
-        "把抽象路径改成可执行方案。",
-    ),
-    (
-        re.compile(r"相关实践"),
-        "具体教学、管理或系统实施场景",
-        "补足应用场景，降低空泛感。",
-    ),
-    (
-        re.compile(r"现实问题"),
-        "实际执行中暴露出的约束",
-        "用更贴近研究过程的表达替代宽泛概括。",
-    ),
-    (
-        re.compile(r"首先"),
-        "先从研究对象入手",
-        "打破机械枚举，增加论述视角。",
-    ),
-    (
-        re.compile(r"其次"),
-        "再结合材料来源",
-        "让句间衔接更像真实写作过程。",
-    ),
-    (
-        re.compile(r"最后"),
-        "在此基础上",
-        "弱化模板化收束，保留逻辑推进。",
-    ),
-    (
-        re.compile(r"综上所述"),
-        "结合上述分析",
-        "把公式化总结改为承接式表达。",
-    ),
-    (
-        re.compile(r"此外"),
-        "另一个需要说明的点是",
-        "将高频连接词改为更自然的转入。",
-    ),
-    (
-        re.compile(r"与此同时"),
-        "同一过程中",
-        "减少 AI 味较强的并列连接词。",
-    ),
-]
-
-
 DEFAULT_PRINCIPLES = [
-    "删除或弱化模板化连接词。",
-    "调整句式节奏，避免长句和机械枚举连续出现。",
-    "将空泛概括替换为具体业务描述。",
-    "增加项目场景、材料来源或实现细节。",
-    "避免简单同义词替换，优先采用语义重构。",
+    "删除高频模板化开头。",
+    "将空泛表达替换成具体作用。",
+    "保留原文研究对象和业务场景。",
+    "调整长短句节奏。",
+    "避免只做同义词替换，采用语义重构。",
 ]
 
 
 MODE_PRINCIPLES: dict[QuickRewriteMode, list[str]] = {
     "auto": DEFAULT_PRINCIPLES,
     "aigc": [
-        "优先处理模板化开头、万能套话和过度工整的连接词。",
-        "加入研究对象、项目场景或执行环节，让表达更像人工写作。",
-        "避免只换近义词，改用语义重构和句式拆分。",
+        "删除高频模板化开头。",
+        "将空泛表达替换成具体作用。",
+        "保留原文研究对象和业务场景。",
+        "调整长短句节奏。",
+        "避免只做同义词替换，采用语义重构。",
     ],
     "similarity": [
-        "保留原意，但调整句子骨架和主语位置。",
-        "减少重复句式和高频论文固定搭配。",
-        "用限定条件、场景描述替代原句中的通用表达。",
+        "保留原文研究对象和业务场景。",
+        "调整句子骨架和主语位置。",
+        "将重复句式改成递进或因果表达。",
+        "用具体作用替代通用固定搭配。",
+        "避免只做同义词替换，采用语义重构。",
     ],
     "polish": [
-        "保留原段落核心意思，主要优化语序和衔接。",
-        "补足必要的对象、过程或结果描述。",
-        "控制改动幅度，避免改变学生原本的论述方向。",
+        "保留原文研究对象和业务场景。",
+        "优化语序和句间衔接。",
+        "将空泛表达替换成具体作用。",
+        "调整长短句节奏。",
+        "控制改动幅度，避免改变原文论述方向。",
     ],
 }
 
@@ -212,11 +150,7 @@ def quick_rewrite(text: str, mode: QuickRewriteMode = "auto") -> QuickRewriteOut
 
     before_score = _risk_score(normalized, hits)
     after_hits = _detect_risky_phrases(rewritten)
-    after_score = max(4, min(95, _risk_score(rewritten, after_hits) - len(improved) * 4))
-    if before_score > after_score:
-        after_score = min(after_score, max(4, before_score - 12))
-    else:
-        after_score = max(4, before_score - 8)
+    after_score = _estimate_after_score(before_score, _risk_score(rewritten, after_hits), len(improved))
 
     return QuickRewriteOutput(
         original_text=normalized,
@@ -281,18 +215,18 @@ def _recommend_mode(hits: list[PhraseHit]) -> QuickRewriteMode:
 def _rewrite_text(
     text: str, mode: QuickRewriteMode
 ) -> tuple[str, list[ImprovedPhrase]]:
+    context = _infer_context(text)
     rewritten = text
     reasons_by_phrase: dict[str, str] = {}
-    for pattern, replacement, reason in REWRITE_RULES:
-        if mode == "polish" and pattern.pattern in {"首先", "其次", "最后"}:
+
+    for hit in _detect_risky_phrases(text):
+        replacement, reason = _replacement_for_hit(hit, context, mode)
+        if not replacement or replacement == hit.text:
             continue
-        before = rewritten
-        rewritten = pattern.sub(replacement, rewritten, count=1)
-        if rewritten != before:
-            for match in pattern.finditer(before):
-                replacement_text = pattern.sub(replacement, match.group(0), count=1)
-                reasons_by_phrase[replacement_text] = reason
-                break
+        if hit.text not in rewritten:
+            continue
+        rewritten = rewritten.replace(hit.text, replacement, 1)
+        reasons_by_phrase[replacement] = reason
 
     rewritten = _split_overlong_sentences(rewritten)
     improved = _locate_improved_phrases(rewritten, reasons_by_phrase)
@@ -302,12 +236,13 @@ def _rewrite_text(
 def _fallback_polish(
     text: str, mode: QuickRewriteMode
 ) -> tuple[str, list[ImprovedPhrase]]:
+    context = _infer_context(text)
     rewritten = _split_overlong_sentences(text)
     if rewritten == text:
-        suffix = "后续可结合研究对象补充样本范围、项目功能或实现细节。"
+        suffix = f"后续可结合{context['actor']}的{context['focus']}补充更具体的材料或案例。"
         rewritten = f"{text.rstrip('。') if text.endswith('。') else text}。{suffix}"
-    phrase = "样本范围、项目功能或实现细节"
-    reason = "补充可验证的研究或项目细节，避免段落停留在泛泛概括。"
+    phrase = f"{context['actor']}的{context['focus']}"
+    reason = "补充业务对象：围绕原文对象增加可验证的场景细节，避免偏离主题。"
     start = rewritten.find(phrase)
     improved = []
     if start >= 0:
@@ -320,6 +255,111 @@ def _fallback_polish(
             )
         )
     return rewritten, improved
+
+
+def _infer_context(text: str) -> dict[str, str]:
+    actor = "研究对象"
+    scene = "原文场景"
+    focus = "具体作用"
+
+    if "旅游企业" in text:
+        actor = "旅游企业"
+        scene = "旅游服务与营销场景"
+    elif "旅游" in text:
+        actor = "旅游行业主体"
+        scene = "旅游服务场景"
+    elif "企业" in text:
+        actor = "企业"
+        scene = "企业实践场景"
+    elif "系统" in text or "平台" in text:
+        actor = "系统"
+        scene = "系统应用场景"
+    elif "学生" in text or "教学" in text or "教育" in text:
+        actor = "教育实践主体"
+        scene = "教学应用场景"
+
+    if "营销" in text and "服务" in text:
+        focus = "服务内容与营销策略"
+    elif "营销" in text:
+        focus = "营销策略"
+    elif "服务" in text:
+        focus = "服务内容"
+    elif "系统" in text or "功能" in text:
+        focus = "功能设计"
+    elif "教学" in text or "教育" in text:
+        focus = "教学实践"
+
+    return {"actor": actor, "scene": scene, "focus": focus}
+
+
+def _replacement_for_hit(
+    hit: PhraseHit, context: dict[str, str], mode: QuickRewriteMode
+) -> tuple[str, str]:
+    text = hit.text
+    actor = context["actor"]
+    scene = context["scene"]
+    focus = context["focus"]
+
+    template_match = re.fullmatch(r"随着(.+)的发展", text)
+    if template_match:
+        subject = template_match.group(1)
+        return (
+            f"近年来，{subject}在{scene}中的应用逐渐增多",
+            "增加具体场景：保留原文对象，降低'随着……的发展'的模板化痕迹。",
+        )
+
+    if text in {"具有重要意义", "具有积极作用", "发挥重要作用"}:
+        return (
+            f"能为{actor}优化{focus}提供依据",
+            "保留原意但降低模板化表达：把空泛价值改成面向原文对象的具体作用。",
+        )
+    if text in {"具有参考价值", "提供参考价值"}:
+        return (
+            f"可为{actor}后续调整{focus}提供参考",
+            "补充业务对象：说明参考价值具体服务于谁、作用于什么环节。",
+        )
+    if text in {"为相关实践提供参考价值", "并能够为相关实践提供参考价值"}:
+        return (
+            f"可为{actor}后续调整{focus}提供参考",
+            "补充业务对象：将泛泛的'相关实践'落到原文对象和业务环节。",
+        )
+    if text == "相关实践" or text == "实践提供参考":
+        return (
+            f"{actor}在{scene}中的具体实践",
+            "补充业务对象：沿用原文行业场景，不引入无关领域。",
+        )
+    if text == "理论基础":
+        return (
+            f"{focus}相关概念和研究依据",
+            "保留原意但降低模板化表达：把抽象章节套话改成具体分析对象。",
+        )
+    if text == "优化路径":
+        return (
+            f"{actor}优化{focus}的具体路径",
+            "补充业务对象：明确谁在优化、优化什么。",
+        )
+    if text == "现实问题":
+        return (
+            f"{actor}在{scene}中遇到的实际问题",
+            "增加具体场景：把宽泛问题落回原文业务场景。",
+        )
+    if text in {"首先", "其次", "最后"} and mode != "polish":
+        replacement_map = {
+            "首先": "先从原文研究对象入手",
+            "其次": "再结合具体场景",
+            "最后": "在此基础上",
+        }
+        return (
+            replacement_map[text],
+            "调整句式节奏：减少机械枚举，保留原文论述顺序。",
+        )
+    if text == "综上所述":
+        return ("结合上述分析", "调整句式节奏：弱化公式化总结。")
+    if text == "此外":
+        return ("另一个需要说明的点是", "调整句式节奏：用更自然的转入替代高频连接词。")
+    if text == "与此同时":
+        return ("同一过程中", "调整句式节奏：减少并列连接词的 AI 味。")
+    return ("", "")
 
 
 def _split_overlong_sentences(text: str) -> str:
@@ -368,6 +408,20 @@ def _risk_score(text: str, hits: list[PhraseHit]) -> int:
         if len(sentence_lengths) >= 3 and max(sentence_lengths) - min(sentence_lengths) < 12:
             score += 8
     return max(4, min(95, score))
+
+
+def _estimate_after_score(before_score: int, rewritten_score: int, improved_count: int) -> int:
+    reduction = 8 + min(12, improved_count * 3)
+    if before_score >= 70:
+        floor = 46
+    elif before_score >= 42:
+        floor = 28
+    elif before_score >= 20:
+        floor = 16
+    else:
+        floor = 10
+    estimated = min(rewritten_score, before_score - reduction)
+    return max(floor, min(before_score - 4, estimated))
 
 
 def _level(score: int) -> RiskLevel:

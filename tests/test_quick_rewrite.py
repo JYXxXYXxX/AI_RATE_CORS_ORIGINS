@@ -22,6 +22,11 @@ def test_quick_rewrite_returns_structured_phrase_marks(client: TestClient) -> No
     assert payload["improvedPhrases"]
     assert payload["rewritePrinciples"]
     assert payload["disclaimer"] == "该结果为系统预估，不等同于知网检测结果。"
+    assert "旅游" in payload["rewrittenText"]
+    assert "营销" in payload["rewrittenText"]
+    assert "教学" not in payload["rewrittenText"]
+    assert "系统实施" not in payload["rewrittenText"]
+    assert payload["afterRisk"]["score"] >= 28
 
     first_phrase = payload["riskyPhrases"][0]
     assert {"text", "reason", "start", "end"}.issubset(first_phrase)
