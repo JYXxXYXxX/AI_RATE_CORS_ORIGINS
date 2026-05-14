@@ -122,9 +122,12 @@
         <div v-if="prioritySections.length" class="priority-nav">
           <div class="priority-nav-header">
             <strong>建议优先优化 {{ prioritySections.length }} 段</strong>
+            <button class="priority-toggle" @click="showAllPriority = !showAllPriority">
+              {{ showAllPriority ? '收起' : `展开 ${prioritySections.length}` }}
+            </button>
           </div>
           <div
-            v-for="sec in prioritySections"
+            v-for="sec in displayedPrioritySections"
             :key="sec.section_index"
             class="priority-nav-item"
             @click="scrollToParagraph(sec.paragraph_index ?? sec.section_index)"
@@ -282,10 +285,15 @@
             />
           </div>
           <div class="risk-filter-bar">
-            <span class="filter-tag filter-high">高风险 {{ riskCounts.high }}</span>
-            <span class="filter-tag filter-medium">中风险 {{ riskCounts.medium }}</span>
-            <span class="filter-tag filter-low">低风险 {{ riskCounts.low }}</span>
-            <span class="filter-tag filter-normal muted">正常 {{ riskCounts.normal }}（已折叠）</span>
+            <template v-if="riskCounts.high + riskCounts.medium + riskCounts.low > 0">
+              <span class="filter-tag filter-high">高风险 {{ riskCounts.high }}</span>
+              <span class="filter-tag filter-medium">中风险 {{ riskCounts.medium }}</span>
+              <span class="filter-tag filter-low">低风险 {{ riskCounts.low }}</span>
+              <span class="filter-tag filter-normal muted">正常 {{ riskCounts.normal }}（已折叠）</span>
+            </template>
+            <template v-else>
+              <span class="filter-tag filter-normal">全文 {{ riskCounts.normal }} 段均为正常水平（已折叠）</span>
+            </template>
           </div>
 
           <div v-if="panelLoading" class="panel-loading">
@@ -511,6 +519,7 @@ const blockHistoryIndex = ref(-1)
 
 // 折叠正常段落
 const foldNormal = ref(true)
+const showAllPriority = ref(false)
 
 // 解锁状态（付费功能已隐藏，始终开放）
 const rewriteUnlocked = ref(true)
@@ -925,7 +934,7 @@ function _groupFromSections(): ChapterGroup[] {
 
 const totalChars = computed(() => {
   if (blocks.value.length > 0) {
-    return blocks.value.reduce((sum, b) => sum + b.charCount, 0)
+    return blocks.value.reduce((sum, b) => sum + (b.charCount || 0), 0)
   }
   return sections.value.reduce((sum, s) => sum + (s.char_count || 0), 0)
 })
@@ -966,6 +975,11 @@ const prioritySections = computed<PrioritySection[]>(() => {
   withScore.sort((a, b) => b.combinedScore - a.combinedScore)
   const count = Math.max(5, Math.ceil(withScore.length * 0.15))
   return withScore.slice(0, count).map((s, i) => ({ ...s, priorityRank: i + 1 }))
+})
+
+const displayedPrioritySections = computed(() => {
+  if (showAllPriority.value) return prioritySections.value
+  return prioritySections.value.slice(0, 5)
 })
 
 const riskCounts = computed(() => {
@@ -1332,8 +1346,10 @@ async function selectBlock(block: DocumentBlock) {
 
   try {
     rewriteAdvice.value = await getRewriteAdvice(props.runId, secIdx)
-  } catch (err) {
-    panelError.value = err instanceof Error ? err.message : '获取改写建议失败'
+  } catch (err: any) {
+    panelError.value = String(
+      err?.message || err?.detail || err?.error || (typeof err === 'string' ? err : '获取改写建议失败')
+    )
   } finally {
     panelLoading.value = false
   }
@@ -1355,8 +1371,10 @@ async function selectSection(sec: RunSectionItem) {
 
   try {
     rewriteAdvice.value = await getRewriteAdvice(props.runId, sec.section_index)
-  } catch (err) {
-    panelError.value = err instanceof Error ? err.message : '获取改写建议失败'
+  } catch (err: any) {
+    panelError.value = String(
+      err?.message || err?.detail || err?.error || (typeof err === 'string' ? err : '获取改写建议失败')
+    )
   } finally {
     panelLoading.value = false
   }
