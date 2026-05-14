@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     service_version: str = "0.3.0"
     service_env: Literal["dev", "prod", "test"] = "dev"
     max_text_chars: int = Field(default=250_000, ge=1_000)
-    max_upload_bytes: int = Field(default=20 * 1024 * 1024, ge=1024)
+    max_upload_bytes: int = Field(default=50 * 1024 * 1024, ge=1024)
     min_segment_chars: int = Field(default=80, ge=20)
     target_segment_chars: int = Field(default=420, ge=120)
     sliding_window_chars: int = Field(default=560, ge=180)

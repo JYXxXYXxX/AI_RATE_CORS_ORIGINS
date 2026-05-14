@@ -37,7 +37,7 @@
         <template v-else>
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           <p class="drop-text">拖入文件或<strong>点击选择</strong></p>
-          <p class="drop-hint">支持 .txt、.md、.docx、.doc、.pdf，最大 20MB</p>
+          <p class="drop-hint">支持 .txt、.md、.docx、.doc、.pdf，最大 50MB</p>
         </template>
       </div>
 
@@ -243,7 +243,7 @@ const form = reactive({
   degreeLevel: ''
 })
 
-const MAX_SIZE = 20 * 1024 * 1024
+const MAX_SIZE = 50 * 1024 * 1024
 
 function triggerFileInput() {
   if (selectedFile.value) return
@@ -265,7 +265,7 @@ function handleDrop(e: DragEvent) {
 
 function setFile(file: File) {
   if (file.size > MAX_SIZE) {
-    alert('文件大小不能超过 20MB')
+    alert('文件大小不能超过 50MB')
     return
   }
   const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
