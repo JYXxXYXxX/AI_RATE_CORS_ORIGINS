@@ -869,11 +869,11 @@ async def export_rewritten_document(
         document_id=str(db_run["document_id"]), auth=auth, repository=repository
     )
 
-    # 检查导出解锁状态
-    if auth.user:
-        unlock = repository.get_run_unlock(str(auth.user["id"]), run_id, "export_docx")
-        if not unlock or unlock.get("status") != "unlocked":
-            raise HTTPException(status_code=402, detail="export_docx not unlocked")
+    # 付费功能已隐藏：导出始终开放
+    # if auth.user:
+    #     unlock = repository.get_run_unlock(str(auth.user["id"]), run_id, "export_docx")
+    #     if not unlock or unlock.get("status") != "unlocked":
+    #         raise HTTPException(status_code=402, detail="export_docx not unlocked")
 
     original_sections = repository.list_document_sections(str(db_run["document_id"]))
     rewritten_map = {s.section_index: s.content for s in payload.sections}
@@ -1016,11 +1016,11 @@ async def get_section_rewrite_advice(
         document_id=str(run["document_id"]), auth=auth, repository=get_repository()
     )
 
-    # 检查改写解锁状态
-    if auth.user:
-        unlock = get_repository().get_run_unlock(str(auth.user["id"]), run_id, "unlock_rewrite")
-        if not unlock or unlock.get("status") != "unlocked":
-            raise HTTPException(status_code=402, detail="unlock_rewrite not unlocked")
+    # 付费功能已隐藏：改写始终开放
+    # if auth.user:
+    #     unlock = get_repository().get_run_unlock(str(auth.user["id"]), run_id, "unlock_rewrite")
+    #     if not unlock or unlock.get("status") != "unlocked":
+    #         raise HTTPException(status_code=402, detail="unlock_rewrite not unlocked")
 
     report = pipeline.get_report(run_id)
     if report is None:
