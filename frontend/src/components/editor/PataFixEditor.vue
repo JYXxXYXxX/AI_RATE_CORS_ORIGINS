@@ -285,7 +285,7 @@
             <span class="filter-tag filter-high">高风险 {{ riskCounts.high }}</span>
             <span class="filter-tag filter-medium">中风险 {{ riskCounts.medium }}</span>
             <span class="filter-tag filter-low">低风险 {{ riskCounts.low }}</span>
-            <span class="filter-tag filter-normal">正常 {{ riskCounts.normal }}</span>
+            <span class="filter-tag filter-normal muted">正常 {{ riskCounts.normal }}（已折叠）</span>
           </div>
 
           <div v-if="panelLoading" class="panel-loading">

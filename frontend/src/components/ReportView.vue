@@ -317,13 +317,14 @@
     </article>
   </section>
 
+  <!-- 章节风险热力图：只显示有一定风险的章节 -->
   <section class="card">
     <div class="card-head">
       <p class="eyebrow">章节风险热力图</p>
       <h3>先看哪一章最容易拖高整体结果</h3>
     </div>
     <div class="heat-grid">
-      <article v-for="chapter in report.chapter_heatmap" :key="chapter.chapter_title" class="heat-card">
+      <article v-for="chapter in significantChapters" :key="chapter.chapter_title" class="heat-card">
         <div class="segment-head">
           <strong>{{ chapter.chapter_title }}</strong>
           <el-tag :type="tagType(chapter.risk_level)">{{ riskText(chapter.risk_level) }}</el-tag>
@@ -336,71 +337,35 @@
         <p>{{ chapter.advice }}</p>
       </article>
     </div>
+    <div v-if="hiddenChaptersCount > 0" class="helper-text" style="margin-top:12px">
+      另有 {{ hiddenChaptersCount }} 个章节风险较低，已折叠。
+      <el-button link type="primary" size="small" @click="showAllChapters = !showAllChapters">
+        {{ showAllChapters ? '收起' : '展开' }}
+      </el-button>
+    </div>
+    <div v-if="showAllChapters" class="heat-grid" style="margin-top:12px; opacity:0.6">
+      <article v-for="chapter in hiddenChapters" :key="chapter.chapter_title" class="heat-card">
+        <div class="segment-head">
+          <strong>{{ chapter.chapter_title }}</strong>
+          <el-tag type="success">低风险</el-tag>
+        </div>
+        <div class="mini-metrics">
+          <span>AIGC {{ (chapter.avg_aigc_score * 100).toFixed(1) }}%</span>
+          <span>查重 {{ (chapter.avg_duplication_score * 100).toFixed(1) }}%</span>
+        </div>
+        <div class="heat"><span :style="{ width: `${Math.round(chapter.combined_score * 100)}%` }"></span></div>
+        <p>{{ chapter.advice }}</p>
+      </article>
+    </div>
   </section>
 
   <section v-if="reportUnlocked" class="dual-grid">
-    <section class="card">
+    <!-- Top 风险段落已折叠：priority_sections 已覆盖 -->
+    <section class="card" v-if="false">
       <div class="card-head">
         <p class="eyebrow">Top 风险段落</p>
         <h3>先改这些段，通常最省力</h3>
       </div>
-      <article v-for="section in report.top_risk_sections" :key="section.section_index" class="segment-card">
-        <div class="segment-head">
-          <div>
-            <span class="segment-index">#{{ section.section_index + 1 }}</span>
-            <strong>{{ section.title }}</strong>
-          </div>
-          <el-tag :type="tagType(section.risk_level)">{{ riskText(section.risk_level) }}</el-tag>
-        </div>
-        <p class="preview">{{ section.text_preview }}</p>
-        <div class="mini-metrics">
-          <span>AIGC {{ (section.aigc_score * 100).toFixed(1) }}%</span>
-          <span>重复 {{ (section.duplication_score * 100).toFixed(1) }}%</span>
-          <span>综合 {{ (section.combined_score * 100).toFixed(1) }}%</span>
-        </div>
-        <div v-if="section.sub_scores" class="sub-score-bars">
-          <div class="sub-bar" title="AI 疑似度">
-            <span class="sub-label">AI</span>
-            <div class="sub-track"><div class="sub-fill sub-ai" :style="{ width: section.sub_scores.ai_likelihood + '%' }"></div></div>
-            <span class="sub-value">{{ Math.round(section.sub_scores.ai_likelihood) }}</span>
-          </div>
-          <div class="sub-bar" title="模板化">
-            <span class="sub-label">模板</span>
-            <div class="sub-track"><div class="sub-fill sub-template" :style="{ width: section.sub_scores.template_score + '%' }"></div></div>
-            <span class="sub-value">{{ Math.round(section.sub_scores.template_score) }}</span>
-          </div>
-          <div class="sub-bar" title="语义空洞">
-            <span class="sub-label">空洞</span>
-            <div class="sub-track"><div class="sub-fill sub-empty" :style="{ width: section.sub_scores.semantic_empty_score + '%' }"></div></div>
-            <span class="sub-value">{{ Math.round(section.sub_scores.semantic_empty_score) }}</span>
-          </div>
-          <div class="sub-bar" title="重复表达">
-            <span class="sub-label">重复</span>
-            <div class="sub-track"><div class="sub-fill sub-repeat" :style="{ width: section.sub_scores.repetition_score + '%' }"></div></div>
-            <span class="sub-value">{{ Math.round(section.sub_scores.repetition_score) }}</span>
-          </div>
-          <div class="sub-bar" title="引用风险">
-            <span class="sub-label">引用</span>
-            <div class="sub-track"><div class="sub-fill sub-cite" :style="{ width: section.sub_scores.citation_risk + '%' }"></div></div>
-            <span class="sub-value">{{ Math.round(section.sub_scores.citation_risk) }}</span>
-          </div>
-        </div>
-        <div class="reason-list">
-          <el-tag v-for="reason in section.reasons" :key="reason" effect="plain">{{ reason }}</el-tag>
-        </div>
-        <el-button
-          v-if="section.risk_level !== 'low'"
-          class="rewrite-btn"
-          type="primary"
-          plain
-          size="small"
-          :loading="rewriteLoadingMap[section.section_index]"
-          @click="openRewriteAdvice(section.section_index)"
-        >
-          <el-icon><EditPen /></el-icon>
-          <span>查看 AI 改写建议</span>
-        </el-button>
-      </article>
     </section>
 
     <section class="card">
@@ -811,6 +776,18 @@ const emit = defineEmits<{
 }>()
 
 const checklist = ref<ChecklistItem[]>([])
+
+const showAllChapters = ref(false)
+
+const significantChapters = computed(() => {
+  return props.report.chapter_heatmap.filter(c => c.combined_score >= 0.20)
+})
+
+const hiddenChapters = computed(() => {
+  return props.report.chapter_heatmap.filter(c => c.combined_score < 0.20)
+})
+
+const hiddenChaptersCount = computed(() => hiddenChapters.value.length)
 
 // 解锁状态（付费功能已隐藏，始终开放）
 const reportUnlocked = ref(true)
