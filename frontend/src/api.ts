@@ -20,6 +20,8 @@ import type {
   ProviderFetchResponse,
   ProviderResultImportResponse,
   ProxyModelTrainResponse,
+  QuickRewriteMode,
+  QuickRewriteResult,
   ReanalyzeResponse,
   RewriteAdviceResponse,
   RunSectionItem,
@@ -451,6 +453,22 @@ export async function getRewriteAdvice(runId: string, sectionIndex: number): Pro
     credentials: 'include'
   })
   return parseResponse<RewriteAdviceResponse>(response)
+}
+
+export async function quickRewrite(payload: {
+  text: string
+  mode?: QuickRewriteMode
+}): Promise<QuickRewriteResult> {
+  const response = await fetchWithRetry(`${baseUrl}/api/quick-rewrite`, {
+    method: 'POST',
+    headers: jsonHeaders(true),
+    credentials: 'include',
+    body: JSON.stringify({
+      text: payload.text,
+      mode: payload.mode || 'auto'
+    })
+  })
+  return parseResponse<QuickRewriteResult>(response)
 }
 
 export async function getRunSections(runId: string): Promise<RunSectionItem[]> {

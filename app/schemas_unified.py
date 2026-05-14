@@ -608,6 +608,37 @@ class ReanalyzeResponse(BaseModel):
     disclaimer: str
 
 
+class QuickRewriteRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=3000)
+    mode: Literal["auto", "aigc", "similarity", "polish"] = "auto"
+
+
+class QuickRewriteRisk(BaseModel):
+    score: int = Field(..., ge=0, le=100)
+    level: Literal["high", "medium", "low", "normal"]
+
+
+class QuickRewritePhrase(BaseModel):
+    text: str
+    reason: str
+    start: int | None = Field(default=None, ge=0)
+    end: int | None = Field(default=None, ge=0)
+
+
+class QuickRewriteResult(BaseModel):
+    originalText: str
+    rewrittenText: str
+    beforeRisk: QuickRewriteRisk
+    afterRisk: QuickRewriteRisk
+    riskyPhrases: list[QuickRewritePhrase]
+    improvedPhrases: list[QuickRewritePhrase]
+    rewritePrinciples: list[str]
+    summary: str
+    recommendedMode: Literal["auto", "aigc", "similarity", "polish"] = "auto"
+    remainingFreeUses: int | None = None
+    disclaimer: str = "该结果为系统预估，不等同于知网检测结果。"
+
+
 class ExportSectionItem(BaseModel):
     section_index: int
     content: str

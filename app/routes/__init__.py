@@ -8,6 +8,7 @@ from app.routes.feedback import router as feedback_router
 from app.routes.models import router as models_router
 from app.routes.legacy import router as legacy_router
 from app.routes.unlocks import router as unlocks_router
+from app.routes.quick_rewrite import router as quick_rewrite_router
 
 __all__ = [
     "auth_router",
@@ -18,4 +19,5 @@ __all__ = [
     "models_router",
     "legacy_router",
     "unlocks_router",
+    "quick_rewrite_router",
 ]

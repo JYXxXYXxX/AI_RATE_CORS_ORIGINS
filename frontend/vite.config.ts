@@ -35,6 +35,7 @@ export default defineConfig({
   },
   server: {
     proxy: {
+      '/api': 'http://127.0.0.1:8010',
       '/v1': 'http://127.0.0.1:8010',
       '/health': 'http://127.0.0.1:8010'
     }

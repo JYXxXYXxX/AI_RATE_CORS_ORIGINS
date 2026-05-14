@@ -15,6 +15,140 @@
       </div>
     </section>
 
+    <section class="quick-rewrite" id="quick-rewrite">
+      <div class="quick-shell">
+        <div class="quick-head">
+          <span class="hero-badge">首页体验入口</span>
+          <h2>短句风险优化</h2>
+          <p>粘贴一段论文内容，快速查看 AIGC 疑似风险，并生成更自然的改写版本。</p>
+        </div>
+
+        <div class="quick-tool">
+          <div class="quick-input-column">
+            <div class="mode-tabs" aria-label="改写模式">
+              <button
+                v-for="item in modeOptions"
+                :key="item.value"
+                type="button"
+                class="mode-tab"
+                :class="{ active: quickMode === item.value }"
+                @click="quickMode = item.value"
+              >
+                {{ item.label }}
+              </button>
+            </div>
+
+            <label class="quick-label" for="quick-rewrite-input">
+              输入论文段落
+              <span>{{ quickInput.length }}/300</span>
+            </label>
+            <textarea
+              id="quick-rewrite-input"
+              v-model="quickInput"
+              class="quick-textarea"
+              rows="8"
+              placeholder="请输入一段论文内容，建议 50～300 字"
+            />
+
+            <div class="quick-actions">
+              <button
+                type="button"
+                class="btn btn-primary"
+                :disabled="quickLoading || !quickInput.trim()"
+                @click="handleQuickRewrite"
+              >
+                <Search class="button-icon" />
+                {{ quickLoading ? '优化中...' : '检测并优化' }}
+              </button>
+              <button type="button" class="btn btn-outline" @click="fillExample">填入示例</button>
+            </div>
+
+            <p class="quick-limit">免费用户每天试用 3 次，每次最多 300 字；付费用户支持更长文本和更多候选版本。</p>
+            <p v-if="quickError" class="quick-error">{{ quickError }}</p>
+          </div>
+
+          <div class="quick-output-column">
+            <div v-if="!quickResult" class="quick-empty">
+              <strong>检测结果会显示在这里</strong>
+              <p>系统会标出风险短语、解释原因，并给出改写结果、修改对照和改写原理。</p>
+            </div>
+
+            <template v-else>
+              <div class="risk-strip">
+                <div>
+                  <span>优化前风险指数</span>
+                  <strong>{{ quickResult.beforeRisk.score }}</strong>
+                </div>
+                <div>
+                  <span>优化后预估风险指数</span>
+                  <strong>{{ quickResult.afterRisk.score }}</strong>
+                </div>
+              </div>
+              <p class="quick-disclaimer">该结果为系统预估，不等同于知网检测结果。</p>
+              <p class="quick-summary">{{ quickResult.summary }}</p>
+
+              <div class="result-grid">
+                <article class="result-panel">
+                  <h3>原文风险标记</h3>
+                  <p class="marked-text">
+                    <template v-for="(seg, idx) in originalSegments" :key="`o-${idx}`">
+                      <mark v-if="seg.mark" class="risk-mark" :title="seg.reason">{{ seg.text }}</mark>
+                      <span v-else>{{ seg.text }}</span>
+                    </template>
+                  </p>
+                  <ul class="reason-list-mini">
+                    <li v-for="reason in riskReasons" :key="reason">{{ reason }}</li>
+                  </ul>
+                </article>
+
+                <article class="result-panel">
+                  <h3>改写结果</h3>
+                  <p class="marked-text">
+                    <template v-for="(seg, idx) in rewrittenSegments" :key="`r-${idx}`">
+                      <mark v-if="seg.mark" class="improve-mark" :title="seg.reason">{{ seg.text }}</mark>
+                      <span v-else>{{ seg.text }}</span>
+                    </template>
+                  </p>
+                </article>
+
+                <article class="result-panel">
+                  <h3>修改对照</h3>
+                  <div class="compare-list">
+                    <div v-for="row in comparisonRows" :key="row.key" class="compare-row">
+                      <span class="before">{{ row.before || '原句整体节奏' }}</span>
+                      <span class="after">{{ row.after || '补充具体细节' }}</span>
+                    </div>
+                  </div>
+                </article>
+
+                <article class="result-panel">
+                  <h3>改写原理</h3>
+                  <ul class="principle-list">
+                    <li v-for="item in quickResult.rewritePrinciples" :key="item">{{ item }}</li>
+                  </ul>
+                </article>
+              </div>
+
+              <div class="quick-result-actions">
+                <button type="button" class="btn btn-primary" @click="copyRewritten">
+                  <DocumentCopy class="button-icon" />
+                  复制改写结果
+                </button>
+                <button type="button" class="btn btn-outline" :disabled="quickLoading" @click="handleQuickRewrite">
+                  <Refresh class="button-icon" />
+                  重新生成
+                </button>
+                <button type="button" class="btn btn-outline" @click="goUpload">
+                  <Upload class="button-icon" />
+                  上传全文检测
+                </button>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="features">
       <h2 class="section-title">为什么先预检再送检？</h2>
       <div class="feature-grid">
@@ -85,11 +219,47 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { getCurrentAccount } from '../api'
+import { ElMessage } from 'element-plus/es/components/message/index'
+import { DocumentCopy, Refresh, Search, Upload } from '@element-plus/icons-vue'
+import { getCurrentAccount, quickRewrite } from '../api'
+import type { QuickRewriteMode, QuickRewritePhrase, QuickRewriteResult } from '../types'
 
 const router = useRouter()
+
+const quickInput = ref('')
+const quickMode = ref<QuickRewriteMode>('auto')
+const quickLoading = ref(false)
+const quickError = ref('')
+const quickResult = ref<QuickRewriteResult | null>(null)
+
+const modeOptions: Array<{ value: QuickRewriteMode; label: string }> = [
+  { value: 'auto', label: '智能推荐' },
+  { value: 'aigc', label: '降AIGC' },
+  { value: 'similarity', label: '降重复' },
+  { value: 'polish', label: '学术润色' }
+]
+
+const originalSegments = computed(() =>
+  quickResult.value ? buildMarkedSegments(quickResult.value.originalText, quickResult.value.riskyPhrases) : []
+)
+const rewrittenSegments = computed(() =>
+  quickResult.value ? buildMarkedSegments(quickResult.value.rewrittenText, quickResult.value.improvedPhrases) : []
+)
+const riskReasons = computed(() => {
+  if (!quickResult.value) return []
+  return [...new Set(quickResult.value.riskyPhrases.map((item) => item.reason))].slice(0, 4)
+})
+const comparisonRows = computed(() => {
+  if (!quickResult.value) return []
+  const count = Math.max(quickResult.value.riskyPhrases.length, quickResult.value.improvedPhrases.length, 1)
+  return Array.from({ length: count }).map((_, index) => ({
+    key: `${index}-${quickResult.value?.riskyPhrases[index]?.text || 'risk'}-${quickResult.value?.improvedPhrases[index]?.text || 'improve'}`,
+    before: quickResult.value?.riskyPhrases[index]?.text || '',
+    after: quickResult.value?.improvedPhrases[index]?.text || ''
+  }))
+})
 
 onMounted(() => {
   getCurrentAccount().then(() => {
@@ -98,6 +268,79 @@ onMounted(() => {
     // 未登录，留在 landing page
   })
 })
+
+async function handleQuickRewrite() {
+  const text = quickInput.value.trim()
+  if (!text) {
+    ElMessage.warning('请先输入一段论文内容')
+    return
+  }
+  quickLoading.value = true
+  quickError.value = ''
+  try {
+    quickResult.value = await quickRewrite({ text, mode: quickMode.value })
+  } catch (error) {
+    quickError.value = error instanceof Error ? error.message : '检测失败，请稍后再试'
+    ElMessage.error(quickError.value)
+  } finally {
+    quickLoading.value = false
+  }
+}
+
+function fillExample() {
+  quickInput.value = '随着人工智能技术的发展，旅游企业必须不断引入创新并结合有效营销策略以保持竞争力。创新带来的新技术和新理念可以帮助企业更好地提高服务内容与质量，具有重要意义，并能够为相关实践提供参考价值。'
+}
+
+async function copyRewritten() {
+  if (!quickResult.value) return
+  try {
+    await navigator.clipboard.writeText(quickResult.value.rewrittenText)
+    ElMessage.success('改写结果已复制')
+  } catch {
+    ElMessage.error('复制失败')
+  }
+}
+
+function goUpload() {
+  router.push('/app/new')
+}
+
+function buildMarkedSegments(text: string, phrases: QuickRewritePhrase[]) {
+  const ranges = locateRanges(text, phrases)
+  const segments: Array<{ text: string; mark: boolean; reason?: string }> = []
+  let cursor = 0
+  for (const range of ranges) {
+    if (range.start > cursor) {
+      segments.push({ text: text.slice(cursor, range.start), mark: false })
+    }
+    segments.push({
+      text: text.slice(range.start, range.end),
+      mark: true,
+      reason: range.reason
+    })
+    cursor = range.end
+  }
+  if (cursor < text.length) {
+    segments.push({ text: text.slice(cursor), mark: false })
+  }
+  return segments
+}
+
+function locateRanges(text: string, phrases: QuickRewritePhrase[]) {
+  const ranges: Array<{ start: number; end: number; reason: string }> = []
+  for (const phrase of phrases) {
+    let start = typeof phrase.start === 'number' ? phrase.start : -1
+    let end = typeof phrase.end === 'number' ? phrase.end : -1
+    if (start < 0 || end <= start || text.slice(start, end) !== phrase.text) {
+      start = text.indexOf(phrase.text)
+      end = start >= 0 ? start + phrase.text.length : -1
+    }
+    if (start < 0 || end <= start) continue
+    if (ranges.some((range) => !(end <= range.start || start >= range.end))) continue
+    ranges.push({ start, end, reason: phrase.reason })
+  }
+  return ranges.sort((a, b) => a.start - b.start)
+}
 </script>
 
 <style scoped>
@@ -150,6 +393,268 @@ onMounted(() => {
   flex-wrap: wrap;
 }
 
+.quick-rewrite {
+  padding: 0 28px 72px;
+}
+
+.quick-shell {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 30px;
+  border: 1px solid rgba(31, 54, 73, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 18px 48px rgba(29, 45, 61, 0.08);
+}
+
+.quick-head {
+  max-width: 720px;
+  margin-bottom: 24px;
+}
+
+.quick-head h2 {
+  margin: 0 0 10px;
+  color: #172033;
+  font-size: 30px;
+  line-height: 1.2;
+}
+
+.quick-head p,
+.quick-limit,
+.quick-summary,
+.quick-disclaimer,
+.quick-empty p {
+  color: #53606f;
+  line-height: 1.7;
+}
+
+.quick-tool {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.92fr) minmax(0, 1.35fr);
+  gap: 22px;
+}
+
+.quick-input-column,
+.quick-output-column {
+  min-width: 0;
+}
+
+.mode-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.mode-tab {
+  border: 1px solid rgba(31, 54, 73, 0.12);
+  border-radius: 8px;
+  background: #fff;
+  color: #344150;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.mode-tab.active {
+  border-color: rgba(47, 125, 103, 0.55);
+  background: rgba(47, 125, 103, 0.1);
+  color: #236451;
+}
+
+.quick-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #344150;
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.quick-label span {
+  color: #7c8794;
+  font-weight: 600;
+}
+
+.quick-textarea {
+  width: 100%;
+  min-height: 210px;
+  resize: vertical;
+  border: 1px solid rgba(31, 54, 73, 0.14);
+  border-radius: 8px;
+  padding: 14px;
+  font: inherit;
+  line-height: 1.75;
+  color: #172033;
+  background: #fbfdfb;
+  outline: none;
+}
+
+.quick-textarea:focus {
+  border-color: #2f7d67;
+  box-shadow: 0 0 0 3px rgba(47, 125, 103, 0.12);
+}
+
+.quick-actions,
+.quick-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.button-icon {
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+}
+
+.quick-limit {
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.quick-error {
+  margin-top: 10px;
+  color: #c94044;
+  font-size: 14px;
+}
+
+.quick-empty {
+  display: grid;
+  align-content: center;
+  min-height: 360px;
+  padding: 24px;
+  border: 1px dashed rgba(47, 125, 103, 0.28);
+  border-radius: 8px;
+  background: #f7faf8;
+}
+
+.quick-empty strong {
+  margin-bottom: 8px;
+  color: #203048;
+  font-size: 18px;
+}
+
+.risk-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.risk-strip div {
+  padding: 14px;
+  border-radius: 8px;
+  background: #f7faf8;
+  border: 1px solid rgba(31, 54, 73, 0.06);
+}
+
+.risk-strip span {
+  display: block;
+  color: #5e6a78;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.risk-strip strong {
+  color: #203048;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.quick-disclaimer {
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.quick-summary {
+  margin-bottom: 14px;
+}
+
+.result-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.result-panel {
+  min-width: 0;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(31, 54, 73, 0.08);
+  background: #fff;
+}
+
+.result-panel h3 {
+  margin: 0 0 10px;
+  color: #172033;
+  font-size: 16px;
+}
+
+.marked-text {
+  color: #344150;
+  line-height: 1.9;
+  word-break: break-word;
+}
+
+.risk-mark,
+.improve-mark {
+  border-radius: 4px;
+  padding: 1px 3px;
+}
+
+.risk-mark {
+  color: #9e2f38;
+  background: rgba(200, 75, 82, 0.15);
+}
+
+.improve-mark {
+  color: #236451;
+  background: rgba(47, 125, 103, 0.16);
+}
+
+.reason-list-mini,
+.principle-list {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  color: #53606f;
+  line-height: 1.7;
+  font-size: 13px;
+}
+
+.compare-list {
+  display: grid;
+  gap: 8px;
+}
+
+.compare-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.compare-row span {
+  border-radius: 8px;
+  padding: 9px 10px;
+  line-height: 1.6;
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.compare-row .before {
+  color: #9e2f38;
+  background: rgba(200, 75, 82, 0.1);
+}
+
+.compare-row .after {
+  color: #236451;
+  background: rgba(47, 125, 103, 0.1);
+}
+
 /* Buttons */
 .btn {
   display: inline-flex;
@@ -180,6 +685,13 @@ onMounted(() => {
 .btn-primary:hover {
   transform: translateY(-1px);
   box-shadow: 0 8px 24px rgba(47, 125, 103, 0.25);
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+  transform: none;
+  box-shadow: none;
 }
 
 .btn-outline {
@@ -335,6 +847,11 @@ onMounted(() => {
 }
 
 @media (max-width: 900px) {
+  .quick-tool,
+  .result-grid {
+    grid-template-columns: 1fr;
+  }
+
   .feature-grid {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -343,6 +860,23 @@ onMounted(() => {
 @media (max-width: 600px) {
   .hero h1 {
     font-size: 32px;
+  }
+
+  .quick-rewrite {
+    padding: 0 16px 52px;
+  }
+
+  .quick-shell {
+    padding: 18px;
+  }
+
+  .quick-head h2 {
+    font-size: 24px;
+  }
+
+  .risk-strip,
+  .compare-row {
+    grid-template-columns: 1fr;
   }
 
   .feature-grid {

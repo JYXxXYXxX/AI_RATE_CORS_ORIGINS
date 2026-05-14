@@ -594,3 +594,31 @@ export interface ReanalyzeResponse {
   sections: ReanalyzeSectionResult[]
   disclaimer: string
 }
+
+export type QuickRewriteMode = 'auto' | 'aigc' | 'similarity' | 'polish'
+
+export interface QuickRewriteRisk {
+  score: number
+  level: 'high' | 'medium' | 'low' | 'normal'
+}
+
+export interface QuickRewritePhrase {
+  text: string
+  reason: string
+  start?: number
+  end?: number
+}
+
+export interface QuickRewriteResult {
+  originalText: string
+  rewrittenText: string
+  beforeRisk: QuickRewriteRisk
+  afterRisk: QuickRewriteRisk
+  riskyPhrases: QuickRewritePhrase[]
+  improvedPhrases: QuickRewritePhrase[]
+  rewritePrinciples: string[]
+  summary: string
+  recommendedMode: QuickRewriteMode
+  remainingFreeUses?: number | null
+  disclaimer: string
+}

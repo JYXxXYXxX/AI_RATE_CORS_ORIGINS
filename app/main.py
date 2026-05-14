@@ -27,6 +27,7 @@ from app.routes import (
     legacy_router,
     models_router,
     providers_router,
+    quick_rewrite_router,
     unlocks_router,
 )
 
@@ -202,6 +203,7 @@ app.include_router(unlocks_router)
 app.include_router(providers_router)
 app.include_router(feedback_router)
 app.include_router(models_router)
+app.include_router(quick_rewrite_router)
 app.include_router(legacy_router)
 
 
