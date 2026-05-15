@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     cors_origins: str = ""
     cookie_secure: bool = False
     cookie_max_age_seconds: int = Field(default=60 * 60 * 24 * 14, ge=3600)
-    llm_provider: Literal["kimi", "openai", "yunwu", "none"] = "none"
+    llm_provider: Literal["kimi", "openai", "yunwu", "codex", "none"] = "none"
     llm_api_key: str | None = None
     llm_base_url: str = "https://api.moonshot.cn/v1"
     llm_model: str = "moonshot-v1-32k"

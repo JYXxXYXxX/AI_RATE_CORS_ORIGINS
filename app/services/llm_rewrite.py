@@ -263,6 +263,82 @@ class LLMRewriteService:
             and settings.llm_api_key
         )
 
+    def _request_url(self) -> str:
+        base_url = self.settings.llm_base_url.rstrip("/")
+        if self.settings.llm_provider == "codex":
+            if base_url.endswith("/v1"):
+                return f"{base_url}/responses"
+            return f"{base_url}/v1/responses"
+        return f"{base_url}/chat/completions"
+
+    def _request_payload(self, system_prompt: str, user_prompt: str) -> dict[str, Any]:
+        if self.settings.llm_provider == "codex":
+            return {
+                "model": self.settings.llm_model,
+                "input": [
+                    {
+                        "role": "system",
+                        "content": [
+                            {"type": "input_text", "text": system_prompt},
+                        ],
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "input_text", "text": user_prompt},
+                        ],
+                    },
+                ],
+                "temperature": self.settings.llm_temperature,
+                "max_output_tokens": self.settings.llm_max_tokens,
+            }
+
+        return {
+            "model": self.settings.llm_model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": self.settings.llm_temperature,
+            "max_tokens": self.settings.llm_max_tokens,
+        }
+
+    @staticmethod
+    def _extract_text_from_response_part(part: Any) -> str | None:
+        if isinstance(part, str):
+            return part
+        if isinstance(part, list):
+            chunks = [
+                text
+                for item in part
+                if (text := LLMRewriteService._extract_text_from_response_part(item))
+            ]
+            return "\n".join(chunks) if chunks else None
+        if not isinstance(part, dict):
+            return None
+
+        text = part.get("text")
+        if isinstance(text, str) and text:
+            return text
+
+        for key in ("content", "output"):
+            value = part.get(key)
+            if value is not None:
+                nested = LLMRewriteService._extract_text_from_response_part(value)
+                if nested:
+                    return nested
+
+        return None
+
+    def _extract_llm_content(self, data: dict[str, Any]) -> str:
+        if self.settings.llm_provider == "codex":
+            output_text = data.get("output_text")
+            if isinstance(output_text, str) and output_text:
+                return output_text
+            return self._extract_text_from_response_part(data.get("output")) or "{}"
+
+        return data["choices"][0]["message"]["content"] or "{}"
+
     async def rewrite_paragraph(
         self,
         text: str,
@@ -293,20 +369,12 @@ class LLMRewriteService:
             local_dup_score=local_dup_score,
         )
 
-        url = f"{self.settings.llm_base_url.rstrip('/')}/chat/completions"
+        url = self._request_url()
         headers = {
             "Authorization": f"Bearer {self.settings.llm_api_key}",
             "Content-Type": "application/json",
         }
-        payload = {
-            "model": self.settings.llm_model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            "temperature": self.settings.llm_temperature,
-            "max_tokens": self.settings.llm_max_tokens,
-        }
+        payload = self._request_payload(system_prompt, user_prompt)
 
         max_retries = 6
         for attempt in range(max_retries):
@@ -317,7 +385,7 @@ class LLMRewriteService:
                     response = await client.post(url, headers=headers, json=payload)
                     response.raise_for_status()
                     data = response.json()
-                content = data["choices"][0]["message"]["content"] or "{}"
+                content = self._extract_llm_content(data)
                 result = json.loads(content)
                 result.setdefault("diagnosis", "")
                 result.setdefault("sentences", [])
