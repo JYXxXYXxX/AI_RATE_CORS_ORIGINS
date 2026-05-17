@@ -1,7 +1,7 @@
 <template>
   <div class="report-page">
     <div class="report-topbar">
-      <router-link to="/app" class="back-link">
+      <router-link to="/app/dashboard" class="back-link">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
         返回工作台
       </router-link>

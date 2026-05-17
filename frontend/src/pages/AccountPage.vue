@@ -1,13 +1,22 @@
 <template>
   <div class="account-page">
-    <div class="page-header">
-      <h1>账户</h1>
-      <p>管理你的账户信息和额度</p>
-    </div>
+    <section class="account-hero">
+      <div>
+        <p class="eyebrow">Account</p>
+        <h1>账户</h1>
+        <p>查看账号状态、最近使用入口和文档工作流。</p>
+      </div>
+      <div class="identity-card">
+        <div class="identity-avatar">{{ userInitial }}</div>
+        <div>
+          <strong>{{ auth.user?.display_name || 'PataFix 用户' }}</strong>
+          <span>{{ auth.user?.email }}</span>
+        </div>
+      </div>
+    </section>
 
     <div class="account-grid">
-      <!-- 用户信息卡 -->
-      <section class="card">
+      <section class="card profile-card">
         <h2>基本信息</h2>
         <div class="info-list">
           <div class="info-item">
@@ -29,27 +38,37 @@
         </div>
       </section>
 
-      <!-- 付费功能已隐藏 -->
-      <!-- <section class="card">
-        <h2>额度</h2>
-        <div class="credits-display">
-          <strong>{{ auth.credits }}</strong>
-          <span>次分析额度</span>
+      <section class="card action-card">
+        <h2>快捷操作</h2>
+        <div class="action-list">
+          <router-link to="/app/new" class="action-item">
+            <strong>上传新论文</strong>
+            <span>开始一次新的查重 / AIGC 分析</span>
+          </router-link>
+          <router-link to="/app/dashboard" class="action-item">
+            <strong>查看历史报告</strong>
+            <span>回到工作台继续处理已有论文</span>
+          </router-link>
         </div>
-        <p class="card-hint">每次分析消耗 1 次额度</p>
-      </section> -->
+      </section>
     </div>
 
-    <!-- 付费功能已隐藏 -->
-    <!-- <section class="card" v-if="auth.billing">
-      <h2>充值</h2>...（充值区内容）...</n    </section> -->
+    <section class="card note-card">
+      <h2>当前版本说明</h2>
+      <p>付费入口已隐藏，论文检测、报告查看和在线改写保持开放。后续如果接入额度或套餐，这里会作为账户中心继续扩展。</p>
+    </section>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
+const userInitial = computed(() => {
+  const name = auth.user?.display_name || auth.user?.email || 'U'
+  return name.charAt(0).toUpperCase()
+})
 
 function formatDate(iso: string | undefined) {
   if (!iso) return '-'
@@ -59,24 +78,74 @@ function formatDate(iso: string | undefined) {
 
 <style scoped>
 .account-page {
-  max-width: 860px;
+  max-width: 1060px;
   margin: 0 auto;
+  padding: 34px 28px 48px;
 }
 
-.page-header {
-  margin-bottom: 28px;
+.account-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 18px;
+  padding: 28px;
+  border-radius: 24px;
+  background: #fffdf7;
+  border: 1px solid rgba(58, 67, 61, 0.1);
+  box-shadow: 0 18px 50px rgba(46, 56, 48, 0.08);
 }
 
-.page-header h1 {
-  font-size: 28px;
-  color: #172033;
+.eyebrow {
+  color: #9b7750;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.account-hero h1 {
+  font-size: 34px;
+  color: #20251f;
   margin: 0 0 6px;
 }
 
-.page-header p {
-  color: #53606f;
+.account-hero p {
+  color: #62695f;
   font-size: 15px;
   margin: 0;
+}
+
+.identity-card {
+  min-width: 280px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 18px;
+  background: #f0eadf;
+}
+
+.identity-avatar {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  color: #fff;
+  background: #2f6f53;
+  font-weight: 900;
+}
+
+.identity-card strong,
+.identity-card span {
+  display: block;
+}
+
+.identity-card span {
+  margin-top: 4px;
+  color: #62695f;
+  font-size: 13px;
 }
 
 .account-grid {
@@ -88,16 +157,16 @@ function formatDate(iso: string | undefined) {
 
 .card {
   padding: 24px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid rgba(31, 54, 73, 0.06);
-  box-shadow: 0 4px 16px rgba(29, 45, 61, 0.04);
+  border-radius: 18px;
+  background: rgba(255, 253, 247, 0.94);
+  border: 1px solid rgba(58, 67, 61, 0.1);
+  box-shadow: 0 12px 34px rgba(46, 56, 48, 0.06);
   margin-bottom: 16px;
 }
 
 .card h2 {
   font-size: 18px;
-  color: #172033;
+  color: #20251f;
   margin: 0 0 16px;
 }
 
@@ -140,6 +209,33 @@ function formatDate(iso: string | undefined) {
   color: #2f7d67;
   font-size: 13px;
   font-weight: 600;
+}
+
+.action-list {
+  display: grid;
+  gap: 12px;
+}
+
+.action-item {
+  display: grid;
+  gap: 5px;
+  padding: 16px;
+  border-radius: 14px;
+  text-decoration: none;
+  color: #20251f;
+  background: #f4efe3;
+  border: 1px solid rgba(58, 67, 61, 0.08);
+}
+
+.action-item:hover {
+  border-color: rgba(47, 111, 83, 0.28);
+  background: #edf3e8;
+}
+
+.action-item span,
+.note-card p {
+  color: #62695f;
+  line-height: 1.7;
 }
 
 .credits-display {

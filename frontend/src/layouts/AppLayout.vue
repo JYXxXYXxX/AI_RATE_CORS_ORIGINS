@@ -8,12 +8,15 @@
         </router-link>
         <nav class="app-nav">
           <router-link to="/app" class="nav-link" exact-active-class="active">
-            <el-icon><HomeFilled /></el-icon>工作台
+            <el-icon><HomeFilled /></el-icon>首页
+          </router-link>
+          <router-link to="/app/dashboard" class="nav-link" active-class="active">
+            <el-icon><DataBoard /></el-icon>工作台
           </router-link>
           <router-link to="/app/new" class="nav-link" active-class="active">
             <el-icon><CirclePlusFilled /></el-icon>新建分析
           </router-link>
-          <router-link to="/app" class="nav-link" active-class="active">
+          <router-link v-if="latestRunId" :to="`/app/rewrite/${latestRunId}`" class="nav-link" active-class="active">
             <el-icon><EditPen /></el-icon>在线改写
           </router-link>
           <router-link to="/app/account" class="nav-link" active-class="active">
@@ -30,7 +33,7 @@
         </div> -->
         <div class="user-info">
           <el-avatar :size="28" class="user-avatar">{{ userInitial }}</el-avatar>
-          <span class="user-name">{{ auth.user?.display_name || auth.user?.email }}</span>
+          <router-link to="/app/account" class="user-name">{{ auth.user?.display_name || auth.user?.email }}</router-link>
           <button class="btn-text" @click="handleLogout">退出</button>
         </div>
       </div>
@@ -42,17 +45,25 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { HomeFilled, CirclePlusFilled, UserFilled, Coin, EditPen } from '@element-plus/icons-vue'
+import { HomeFilled, CirclePlusFilled, UserFilled, Coin, EditPen, DataBoard } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
+import { useAnalysisStore } from '../stores/analysis'
 
 const auth = useAuthStore()
+const analysis = useAnalysisStore()
 const router = useRouter()
 
 const userInitial = computed(() => {
   const name = auth.user?.display_name || auth.user?.email || 'U'
   return name.charAt(0).toUpperCase()
+})
+
+const latestRunId = computed(() => analysis.history.find(item => item.run_id)?.run_id || '')
+
+onMounted(() => {
+  analysis.refreshHistory()
 })
 
 async function handleLogout() {
@@ -66,7 +77,8 @@ async function handleLogout() {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #FAF9F6;
+  background:
+    linear-gradient(180deg, #f7f3ea 0%, #f2f6ef 42%, #f7f4ee 100%);
 }
 
 .app-header {
@@ -78,15 +90,15 @@ async function handleLogout() {
   justify-content: space-between;
   height: 64px;
   padding: 0 28px;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 253, 247, 0.94);
   backdrop-filter: blur(16px);
-  border-bottom: 1px solid #E8E6E1;
+  border-bottom: 1px solid rgba(60, 72, 61, 0.1);
 }
 
 .app-header-left {
   display: flex;
   align-items: center;
-  gap: 40px;
+  gap: 34px;
 }
 
 .app-logo {
@@ -95,7 +107,7 @@ async function handleLogout() {
   gap: 10px;
   font-size: 18px;
   font-weight: 700;
-  color: #1A1A1A;
+  color: #20251f;
   text-decoration: none;
   letter-spacing: -0.3px;
 }
@@ -106,31 +118,32 @@ async function handleLogout() {
 
 .app-nav {
   display: flex;
-  gap: 8px;
+  gap: 6px;
 }
 
 .nav-link {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 16px;
-  border-radius: 8px;
+  padding: 8px 14px;
+  border-radius: 12px;
   font-size: 14px;
   font-weight: 500;
-  color: #6B6B6B;
+  color: #64685f;
   text-decoration: none;
   transition: all 0.15s ease;
 }
 
 .nav-link:hover {
-  color: #2E7D5A;
-  background: #E8F5E9;
+  color: #285d47;
+  background: #ece8da;
 }
 
 .nav-link.active {
-  color: #2E7D5A;
-  background: #E8F5E9;
-  font-weight: 600;
+  color: #1f6749;
+  background: #dcecdf;
+  font-weight: 800;
+  box-shadow: inset 0 -2px 0 rgba(31, 103, 73, 0.16);
 }
 
 .app-header-right {
@@ -163,7 +176,7 @@ async function handleLogout() {
 }
 
 .user-avatar {
-  background: #2E7D5A;
+  background: #2f6f53;
   color: #fff;
   font-size: 12px;
   font-weight: 600;
@@ -171,8 +184,16 @@ async function handleLogout() {
 
 .user-name {
   font-size: 14px;
-  color: #1A1A1A;
+  color: #2c332d;
   font-weight: 500;
+  text-decoration: none;
+  border-radius: 8px;
+  padding: 5px 6px;
+}
+
+.user-name:hover {
+  background: #ece8da;
+  color: #1f6749;
 }
 
 .btn-text {
