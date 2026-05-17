@@ -71,6 +71,11 @@
             <span class="metric-sub">全文</span>
           </div>
           <div class="metric-item">
+            <span class="metric-label">页数</span>
+            <span class="metric-value">{{ displayPageCount }}</span>
+            <span class="metric-sub">{{ actualPageCount ? '原文件' : '估算' }}</span>
+          </div>
+          <div class="metric-item">
             <el-tag size="small" type="info">系统预估</el-tag>
           </div>
         </template>
@@ -106,6 +111,14 @@
         >
           <el-icon><Download /></el-icon>保存
         </el-button>
+        <el-button size="small" :type="editMode ? 'primary' : 'default'" @click="toggleEditMode">
+          {{ editMode ? '退出编辑' : '编辑' }}
+        </el-button>
+        <el-button-group size="small">
+          <el-button @click="changeZoom(-0.1)">-</el-button>
+          <el-button disabled>{{ Math.round(documentZoom * 100) }}%</el-button>
+          <el-button @click="changeZoom(0.1)">+</el-button>
+        </el-button-group>
       </div>
     </div>
 
@@ -148,10 +161,11 @@
             <div class="outline-title">
               <span class="outline-dot" :class="'dot-' + groupMaxColor(group)" />
               <span class="outline-text">{{ group.title || '正文' }}</span>
+              <span class="outline-count">{{ groupRiskCount(group) }}</span>
             </div>
             <div class="outline-children">
               <div
-                v-for="(para, pIdx) in group.paragraphs"
+                v-for="(para, pIdx) in filteredOutlineParas(group)"
                 :key="pIdx"
                 class="outline-para"
                 :class="[activeParaIndex === para.paragraphIndex ? 'active' : '', 'outline-risk-' + paraRiskColor(para)]"
@@ -165,10 +179,18 @@
         </div>
         <div class="risk-legend">
           <div class="legend-title">风险等级说明</div>
-          <div class="legend-item"><span class="legend-dot dot-red" />高风险（AIGC疑似度 ≥ 70%）</div>
-          <div class="legend-item"><span class="legend-dot dot-orange" />中风险（60% ≤ AIGC疑似度 < 70%）</div>
-          <div class="legend-item"><span class="legend-dot dot-purple" />低风险（30% ≤ AIGC疑似度 < 60%）</div>
-          <div class="legend-item"><span class="legend-dot dot-normal" />正常（AIGC疑似度 < 30%）</div>
+          <template v-if="runMode === 'report'">
+            <div class="legend-item"><span class="legend-dot dot-red" />官方报告高风险片段</div>
+            <div class="legend-item"><span class="legend-dot dot-orange" />官方报告中风险片段</div>
+            <div class="legend-item"><span class="legend-dot dot-purple" />官方报告低风险片段</div>
+            <div class="legend-item"><span class="legend-dot dot-normal" />官方报告未标记片段</div>
+          </template>
+          <template v-else>
+            <div class="legend-item"><span class="legend-dot dot-red" />高风险（AIGC疑似度 ≥ 70%）</div>
+            <div class="legend-item"><span class="legend-dot dot-orange" />中风险（60% ≤ AIGC疑似度 < 70%）</div>
+            <div class="legend-item"><span class="legend-dot dot-purple" />低风险（30% ≤ AIGC疑似度 < 60%）</div>
+            <div class="legend-item"><span class="legend-dot dot-normal" />正常（AIGC疑似度 < 30%）</div>
+          </template>
         </div>
 
         <!-- 未匹配风险段落（Report Mode） -->
@@ -197,69 +219,75 @@
 
       <!-- 中间正文 -->
       <main ref="docRef" class="editor-document">
-        <div v-if="loading || docxLoading" class="doc-loading">
-          <el-skeleton :rows="10" animated />
-        </div>
-        <div v-else-if="docxError" class="doc-loading">
-          <el-alert :title="docxError" type="warning" :closable="false" show-icon />
-          <!-- fallback 纯文本渲染 -->
-          <div class="a4-page" style="margin-top: 20px;">
-            <div v-if="paperTitle" class="paper-title">{{ paperTitle }}</div>
-            <div v-for="(group, gIdx) in groupedSections" :key="gIdx" class="chapter-block">
-              <h3 v-if="group.title" class="chapter-title">{{ group.title }}</h3>
-              <div class="chapter-body">
-                <div
-                  v-for="para in group.paragraphs"
-                  :key="para.paragraphIndex ?? -1"
-                  class="doc-paragraph"
-                  :class="['para-' + paraRiskColor(para), { 'is-rewritten': para.rewritten, 'folded': foldNormal && paraRiskColor(para) === 'normal' }]"
-                  @click="selectParagraph(para)"
-                >
-                  <div class="doc-paragraph-content">{{ para.content }}</div>
-                  <div v-if="foldNormal && paraRiskColor(para) === 'normal'" class="fold-hint">正常段落（点击展开）</div>
+        <div class="document-scale-shell" :style="{ zoom: documentZoom }">
+          <div v-if="loading || docxLoading" class="doc-loading">
+            <el-skeleton :rows="10" animated />
+          </div>
+          <div v-else-if="docxError" class="doc-loading">
+            <el-alert :title="docxError" type="warning" :closable="false" show-icon />
+            <div class="a4-page" style="margin-top: 20px;">
+              <div v-if="paperTitle" class="paper-title">{{ paperTitle }}</div>
+              <div v-for="(group, gIdx) in groupedSections" :key="gIdx" class="chapter-block">
+                <h3 v-if="group.title" class="chapter-title">{{ group.title }}</h3>
+                <div class="chapter-body">
+                  <div
+                    v-for="para in group.paragraphs"
+                    :key="para.paragraphIndex ?? -1"
+                    class="doc-paragraph"
+                    :contenteditable="editMode"
+                    :class="['para-' + paraRiskColor(para), { 'is-rewritten': para.rewritten, 'folded': foldNormal && paraRiskColor(para) === 'normal' }]"
+                    @click="selectParagraph(para)"
+                    @blur="onPlainParagraphBlur(para, $event)"
+                  >
+                    <div class="doc-paragraph-content">{{ para.content }}</div>
+                    <div v-if="foldNormal && paraRiskColor(para) === 'normal'" class="fold-hint">正常段落（点击展开）</div>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-        <template v-else-if="fileType === 'docx' && originalBuffer">
-          <DocxRenderer
-            :array-buffer="originalBuffer"
-            file-type="docx"
-            @rendered="onDocxRendered"
-            @error="onDocxError"
-          />
-        </template>
-        <template v-else-if="fileType === 'pdf' && originalBuffer">
-          <PdfRenderer
-            :array-buffer="originalBuffer"
-            :blocks="blocks"
-            @rendered="onPdfRendered"
-            @error="onPdfError"
-            @select-block="onPdfSelectBlock"
-          />
-        </template>
-        <template v-else>
-          <div class="a4-page">
-            <div v-if="paperTitle" class="paper-title">{{ paperTitle }}</div>
-            <div v-for="(group, gIdx) in groupedSections" :key="gIdx" class="chapter-block">
-              <h3 v-if="group.title" class="chapter-title">{{ group.title }}</h3>
-              <div class="chapter-body">
-                <div
-                  v-for="para in group.paragraphs"
-                  :key="para.paragraphIndex ?? -1"
-                  :id="'para-' + (para.paragraphIndex ?? -1)"
-                  class="doc-paragraph"
-                  :class="['para-' + paraRiskColor(para), { 'is-rewritten': para.rewritten, 'folded': foldNormal && paraRiskColor(para) === 'normal' }]"
-                  @click="selectParagraph(para)"
-                >
-                  <div class="doc-paragraph-content">{{ para.content }}</div>
-                  <div v-if="foldNormal && paraRiskColor(para) === 'normal'" class="fold-hint">正常段落（点击展开）</div>
+          <template v-else-if="fileType === 'docx' && originalBuffer">
+            <DocxRenderer
+              :array-buffer="originalBuffer"
+              file-type="docx"
+              @rendered="onDocxRendered"
+              @error="onDocxError"
+            />
+          </template>
+          <template v-else-if="fileType === 'pdf' && originalBuffer">
+            <PdfRenderer
+              :array-buffer="originalBuffer"
+              :blocks="blocks"
+              @rendered="onPdfRendered"
+              @error="onPdfError"
+              @select-block="onPdfSelectBlock"
+              @page-count="onPdfPageCount"
+            />
+          </template>
+          <template v-else>
+            <div class="a4-page">
+              <div v-if="paperTitle" class="paper-title">{{ paperTitle }}</div>
+              <div v-for="(group, gIdx) in groupedSections" :id="'group-' + gIdx" :key="gIdx" class="chapter-block">
+                <h3 v-if="group.title" class="chapter-title">{{ group.title }}</h3>
+                <div class="chapter-body">
+                  <div
+                    v-for="para in group.paragraphs"
+                    :key="para.paragraphIndex ?? -1"
+                    :id="'para-' + (para.paragraphIndex ?? -1)"
+                    class="doc-paragraph"
+                    :contenteditable="editMode"
+                    :class="['para-' + paraRiskColor(para), { 'is-rewritten': para.rewritten, 'folded': foldNormal && paraRiskColor(para) === 'normal' }]"
+                    @click="selectParagraph(para)"
+                    @blur="onPlainParagraphBlur(para, $event)"
+                  >
+                    <div class="doc-paragraph-content">{{ para.content }}</div>
+                    <div v-if="foldNormal && paraRiskColor(para) === 'normal'" class="fold-hint">正常段落（点击展开）</div>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        </template>
+          </template>
+        </div>
       </main>
 
       <!-- 右侧面板 -->
@@ -373,12 +401,15 @@
 
               <div class="card-section">
                 <div class="section-title">原文</div>
-                <div class="original-text">{{ activeSectionContent }}</div>
+                <div class="risk-word-tags" v-if="activeRiskTerms.length">
+                  <span v-for="term in activeRiskTerms" :key="term" class="risk-word-tag">{{ term }}</span>
+                </div>
+                <div class="original-text" v-html="activeOriginalHtml"></div>
               </div>
 
               <div class="card-section">
                 <div class="section-title">改写建议</div>
-                <div class="rewritten-text">{{ rewriteAdvice.rewritten_paragraph }}</div>
+                <div class="rewritten-text" v-html="activeRewrittenHtml"></div>
               </div>
 
               <div v-if="rewriteAdvice.overall_advice" class="card-section">
@@ -410,11 +441,11 @@
               >
                 <div class="sent-original">
                   <label>原文</label>
-                  <p>{{ sent.original }}</p>
+                  <p v-html="highlightOriginalRiskHtml(sent.original)"></p>
                 </div>
                 <div class="sent-rewritten">
                   <label>改写</label>
-                  <p>{{ sent.rewritten }}</p>
+                  <p v-html="highlightRewriteDiffHtml(sent.original, sent.rewritten)"></p>
                 </div>
                 <div class="sent-explanation">
                   <label>原理</label>
@@ -443,9 +474,12 @@
       </div>
       <div class="bottombar-center">
         <span class="status-text"><el-icon><CircleCheck /></el-icon>检测完成</span>
-        <span class="status-sub">全文共 {{ totalChars }} 字 · 检测范围：全文</span>
+        <span class="status-sub">全文 {{ totalChars }} 字 · {{ displayPageCount }} 页 · 已替换 {{ rewrittenCount }} 处</span>
       </div>
       <div class="bottombar-right">
+        <el-button size="small" type="warning" plain :loading="batchLoading" :disabled="!highRiskSections.length" @click="applyAllRiskRewrites">
+          一键替换风险句
+        </el-button>
         <el-button size="small" plain :loading="isReanalyzing" @click="doReanalyze">
           <el-icon><Refresh /></el-icon>重新检测
         </el-button>
@@ -455,7 +489,7 @@
           </el-button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item @click="doExportOriginal">导出 Word 原始格式 (.docx)</el-dropdown-item>
+              <el-dropdown-item @click="doExportOriginal">下载原文档</el-dropdown-item>
               <el-dropdown-item @click="doExportHtml">导出带高亮 HTML (.html)</el-dropdown-item>
               <el-dropdown-item divided @click="doExport('docx')">导出改写稿 (.docx)</el-dropdown-item>
               <el-dropdown-item @click="doExport('txt')">导出改写稿 (.txt)</el-dropdown-item>
@@ -477,7 +511,7 @@ import {
   Download, Refresh, CircleCheck, Lock
 } from '@element-plus/icons-vue'
 import { getRun, getRunSections, getRunBlocks, getRewriteAdvice, reanalyzeRun, exportRun, createPatch, getUnlockStatus, getUnlockPackages } from '../../api'
-import type { RunSectionItem, RewriteAdviceResponse, ReanalyzeResponse, DocumentBlock, DocumentPatch, UnlockPackage, UnlockOrder } from '../../types'
+import type { RunSectionItem, RewriteAdviceResponse, ReanalyzeResponse, DocumentBlock, DocumentPatch, OfficialReportSummary, UnlockPackage, UnlockOrder } from '../../types'
 import { getRiskStyle, getEffectiveRiskStyle, getEffectiveRiskLevel } from './riskStyle'
 import DocxRenderer from './DocxRenderer.vue'
 import PdfRenderer from './PdfRenderer.vue'
@@ -501,6 +535,9 @@ const fileType = ref<'docx' | 'pdf' | 'text'>('text')
 const docxLoading = ref(false)
 const docxError = ref('')
 const renderedContainer = ref<HTMLElement | null>(null)
+const documentZoom = ref(1)
+const editMode = ref(false)
+const actualPageCount = ref<number | null>(null)
 
 // ==================== 新架构：Blocks 驱动 ====================
 const blocks = ref<DocumentBlock[]>([])
@@ -544,16 +581,7 @@ const rewriteAdvice = ref<RewriteAdviceResponse | null>(null)
 
 // ==================== 知网报告驱动模式 ====================
 const runMode = ref<'estimate' | 'report'>('estimate')
-const reportSummary = ref<{
-  reportId?: string
-  reportType?: 'similarity' | 'aigc' | 'mixed'
-  totalCopyRatio?: number
-  aigcRatio?: number
-  highRiskCount: number
-  mediumRiskCount: number
-  lowRiskCount: number
-  unmatchedCount: number
-} | null>(null)
+const reportSummary = ref<OfficialReportSummary | null>(null)
 const unmatchedSpans = ref<Array<{
   spanId: string
   text: string
@@ -584,6 +612,7 @@ const animatedDup = ref(0)
 
 // ==================== 旧架构兼容变量（模板仍引用） ====================
 const paragraphMap = ref<Map<HTMLElement, number>>(new Map())
+const paragraphBlockMap = ref<Map<HTMLElement, string>>(new Map())
 const activeSectionIndex = ref<number | null>(null)
 const rewrittenMap = ref<Map<number, string>>(new Map())
 
@@ -592,6 +621,7 @@ interface HistoryEntry {
   previousText: string | undefined
   newText: string
   timestamp: number
+  blockId?: string
 }
 const historyStack = ref<HistoryEntry[]>([])
 const historyIndex = ref(-1)
@@ -607,6 +637,7 @@ async function loadOriginalFile() {
   if (!documentId.value) return
   docxLoading.value = true
   docxError.value = ''
+  actualPageCount.value = null
   try {
     const response = await fetch(`${baseUrl}/v1/documents/${documentId.value}/original`, {
       headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
@@ -662,6 +693,10 @@ function onPdfRendered(_container: HTMLElement) {
   // PDF 渲染完成，canvas + textLayer 已显示
 }
 
+function onPdfPageCount(count: number) {
+  actualPageCount.value = count
+}
+
 function onPdfError(msg: string) {
   originalBuffer.value = null
   fileType.value = 'text'
@@ -677,6 +712,7 @@ function onPdfSelectBlock(blockId: string) {
 
 function applyHighlightsToDocx(container: HTMLElement) {
   paragraphMap.value.clear()
+  paragraphBlockMap.value.clear()
   const paragraphs = container.querySelectorAll('p.doc-paragraph')
   let paraIdx = 0
   
@@ -685,11 +721,25 @@ function applyHighlightsToDocx(container: HTMLElement) {
     // 跳过空段落和标题
     const text = el.textContent?.trim() || ''
     if (!text) return
-    
+
+    const block = blocks.value.find(b => (b.sourceMap?.paragraphIndex ?? b.displayOrder) === paraIdx)
+    if (block) {
+      paragraphBlockMap.value.set(el, block.blockId)
+      el.dataset.blockId = block.blockId
+      el.dataset.originalText = block.text
+      el.contentEditable = editMode.value ? 'true' : 'false'
+      updateDocxParagraphRiskClass(el, block)
+      paraIdx++
+      return
+    }
+
     // 找到对应 section（按 paragraph_index 匹配）
     const sec = sections.value.find(s => s.paragraph_index === paraIdx || s.section_index === paraIdx)
     if (sec) {
       paragraphMap.value.set(el, sec.section_index)
+      el.dataset.sectionIndex = String(sec.section_index)
+      el.dataset.originalText = sec.content
+      el.contentEditable = editMode.value ? 'true' : 'false'
       updateParagraphRiskClass(el, sec)
     }
     paraIdx++
@@ -700,6 +750,16 @@ function applyHighlightsToDocx(container: HTMLElement) {
     const target = e.target as HTMLElement
     const para = target.closest('p.doc-paragraph') as HTMLElement | null
     if (!para) return
+    const blockId = paragraphBlockMap.value.get(para)
+    if (blockId) {
+      const block = blocks.value.find(b => b.blockId === blockId)
+      if (!block) return
+      e.stopPropagation()
+      selectBlock(block)
+      paragraphs.forEach(other => other.classList.remove('is-active'))
+      para.classList.add('is-active')
+      return
+    }
     const secIdx = paragraphMap.value.get(para)
     if (secIdx == null) return
     const sec = sections.value.find(s => s.section_index === secIdx)
@@ -710,6 +770,26 @@ function applyHighlightsToDocx(container: HTMLElement) {
     paragraphs.forEach(other => other.classList.remove('is-active'))
     para.classList.add('is-active')
   }
+
+  container.addEventListener('focusout', (e: FocusEvent) => {
+    if (!editMode.value) return
+    const target = e.target as HTMLElement
+    const para = target.closest('p.doc-paragraph') as HTMLElement | null
+    if (!para) return
+    const newText = (para.innerText || '').trim()
+    if (!newText) return
+    const blockId = paragraphBlockMap.value.get(para)
+    if (blockId) {
+      const block = blocks.value.find(b => b.blockId === blockId)
+      if (block) applyBlockRewrite(block, newText, { updateDom: false, toast: false })
+      return
+    }
+    const secIdx = paragraphMap.value.get(para)
+    const sec = sections.value.find(s => s.section_index === secIdx)
+    if (sec && newText !== (rewrittenMap.value.get(sec.section_index) || sec.content)) {
+      applyRewrite(sec.section_index, newText, { updateDom: false, toast: false })
+    }
+  })
 }
 
 function updateParagraphRiskClass(el: HTMLElement, sec: RunSectionItem) {
@@ -725,11 +805,28 @@ function updateParagraphRiskClass(el: HTMLElement, sec: RunSectionItem) {
   }
 }
 
+function updateDocxParagraphRiskClass(el: HTMLElement, block: DocumentBlock) {
+  el.classList.remove('risk-high', 'risk-medium', 'risk-low', 'risk-normal', 'is-rewritten')
+  const level = getEffectiveRiskLevel(block)
+  el.classList.add('risk-' + level)
+  if (patches.value.has(block.blockId)) {
+    el.classList.add('is-rewritten')
+  }
+}
+
 function refreshAllHighlights() {
   if (renderedContainer.value && fileType.value === 'docx') {
+    for (const [el, blockId] of paragraphBlockMap.value.entries()) {
+      const block = blocks.value.find(b => b.blockId === blockId)
+      if (block) {
+        el.contentEditable = editMode.value ? 'true' : 'false'
+        updateDocxParagraphRiskClass(el, block)
+      }
+    }
     for (const [el, secIdx] of paragraphMap.value.entries()) {
       const sec = sections.value.find(s => s.section_index === secIdx)
       if (sec) {
+        el.contentEditable = editMode.value ? 'true' : 'false'
         updateParagraphRiskClass(el, sec)
       }
     }
@@ -939,6 +1036,9 @@ const totalChars = computed(() => {
   return sections.value.reduce((sum, s) => sum + (s.char_count || 0), 0)
 })
 
+const estimatedPageCount = computed(() => Math.max(1, Math.ceil(totalChars.value / 900)))
+const displayPageCount = computed(() => actualPageCount.value || estimatedPageCount.value)
+
 const rewrittenCount = computed(() => {
   if (blocks.value.length > 0) {
     return patches.value.size
@@ -948,6 +1048,25 @@ const rewrittenCount = computed(() => {
 
 const highRiskSections = computed(() => {
   if (blocks.value.length > 0) {
+    if (runMode.value === 'report') {
+      return blocks.value
+        .filter(b => b.reportRisk && b.type !== 'title' && b.type !== 'heading')
+        .map(b => ({
+          section_index: b.sourceMap?.paragraphIndex ?? b.displayOrder,
+          paragraph_index: b.sourceMap?.paragraphIndex ?? b.displayOrder,
+          section_title: b.sectionTitle ?? null,
+          section_type: b.sectionType ?? null,
+          content: patches.value.get(b.blockId)?.newText || b.text,
+          char_count: b.charCount,
+          aigc_score: getBlockRiskScore(b) / 100,
+          dup_score: b.reportRisk?.riskType === 'similarity' ? getBlockRiskScore(b) / 100 : 0,
+          risk_level: (b.reportRisk?.riskLevel || 'low') as 'low' | 'medium' | 'high',
+          reasons: [
+            `官方报告标记：${b.reportRisk?.riskType === 'similarity' ? '查重' : 'AIGC'}`,
+            `官方风险等级：${b.reportRisk?.riskLevel || 'low'}`
+          ],
+        }))
+    }
     // blocks 模式下：用 block 风险分数过滤对应的 sections（保持类型兼容）
     return sections.value.filter(s => {
       const block = blocks.value.find(b => b.sourceMap?.paragraphIndex === s.paragraph_index)
@@ -1001,11 +1120,39 @@ const riskCounts = computed(() => {
   return counts
 })
 
+const optimisticReduction = computed(() => {
+  if (!rewrittenCount.value) return { aigc: 0, dup: 0 }
+  if (blocks.value.length > 0) {
+    let aigc = 0
+    let dup = 0
+    for (const block of blocks.value) {
+      if (!patches.value.has(block.blockId)) continue
+      const weight = Math.min(1, Math.max(0.25, (block.charCount || block.text.length) / Math.max(totalChars.value, 1) * 18))
+      const score = getBlockRiskScore(block)
+      const gain = score >= 70 ? 5.2 : score >= 60 ? 3.6 : score >= 30 ? 1.8 : 0.8
+      aigc += gain * weight
+      if (block.reportRisk?.riskType === 'similarity' || (block.internalRisk?.repetitionScore ?? 0) > 45) {
+        dup += gain * 0.7 * weight
+      }
+    }
+    return { aigc, dup }
+  }
+  let aigc = 0
+  let dup = 0
+  for (const sec of sections.value) {
+    if (!rewrittenMap.value.has(sec.section_index)) continue
+    const weight = Math.min(1, Math.max(0.25, (sec.char_count || sec.content.length) / Math.max(totalChars.value, 1) * 18))
+    aigc += (effectiveAigc(sec) >= 0.7 ? 5.2 : effectiveAigc(sec) >= 0.6 ? 3.6 : 1.8) * weight
+    dup += (effectiveDup(sec) >= 0.5 ? 3.2 : 1.1) * weight
+  }
+  return { aigc, dup }
+})
+
 const currentAigc = computed(() =>
-  realScores.value ? realScores.value.ai_like_percent : initialAigc.value * 100
+  realScores.value ? realScores.value.ai_like_percent : Math.max(0, initialAigc.value * 100 - optimisticReduction.value.aigc)
 )
 const currentDup = computed(() =>
-  realScores.value ? realScores.value.duplication_percent : initialDup.value * 100
+  realScores.value ? realScores.value.duplication_percent : Math.max(0, initialDup.value * 100 - optimisticReduction.value.dup)
 )
 
 const predictedAigc = computed(() => Math.max(0, currentAigc.value * 0.45))
@@ -1094,6 +1241,69 @@ const activeSectionContent = computed(() => {
   return rewrittenMap.value.get(sec.section_index) || sec.content
 })
 
+const RISKY_ACADEMIC_TERMS = [
+  '赋能', '支撑', '体系', '机制', '路径', '落地', '持续拓展', '坚实基础', '有效弥补',
+  '优化完善', '重要意义', '参考价值', '综上所述', '由此可见', '进一步提升', '显著提高',
+  '提供保障', '具有重要', '现实意义', '相关实践', '全面推进', '不断完善'
+]
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function collectRiskTerms(text: string): string[] {
+  const terms = new Set<string>()
+  for (const term of RISKY_ACADEMIC_TERMS) {
+    if (text.includes(term)) terms.add(term)
+  }
+  const reasons = [
+    ...(activeBlock.value?.internalRisk?.reasons || []),
+    ...(rewriteAdvice.value?.sentences?.map(s => s.explanation) || []),
+  ].join('；')
+  for (const term of RISKY_ACADEMIC_TERMS) {
+    if (reasons.includes(term)) terms.add(term)
+  }
+  return Array.from(terms).slice(0, 8)
+}
+
+const activeRiskTerms = computed(() => collectRiskTerms(activeSectionContent.value))
+
+function highlightOriginalRiskHtml(text: string): string {
+  let html = escapeHtml(text)
+  const terms = collectRiskTerms(text).sort((a, b) => b.length - a.length)
+  for (const term of terms) {
+    const escaped = escapeHtml(term)
+    html = html.split(escaped).join(`<mark class="risk-word">${escaped}</mark>`)
+  }
+  return html
+}
+
+function highlightRewriteDiffHtml(original: string, rewritten: string): string {
+  if (!rewritten) return ''
+  let start = 0
+  while (start < original.length && start < rewritten.length && original[start] === rewritten[start]) {
+    start++
+  }
+  let oldEnd = original.length - 1
+  let newEnd = rewritten.length - 1
+  while (oldEnd >= start && newEnd >= start && original[oldEnd] === rewritten[newEnd]) {
+    oldEnd--
+    newEnd--
+  }
+  const before = escapeHtml(rewritten.slice(0, start))
+  const changed = escapeHtml(rewritten.slice(start, newEnd + 1))
+  const after = escapeHtml(rewritten.slice(newEnd + 1))
+  return changed ? `${before}<mark class="rewrite-word">${changed}</mark>${after}` : escapeHtml(rewritten)
+}
+
+const activeOriginalHtml = computed(() => highlightOriginalRiskHtml(activeSectionContent.value))
+const activeRewrittenHtml = computed(() => highlightRewriteDiffHtml(activeSectionContent.value, rewriteAdvice.value?.rewritten_paragraph || ''))
+
 const currentIndex = computed(() => {
   if (activeSectionIndex.value == null) return -1
   return highRiskSections.value.findIndex(s => s.section_index === activeSectionIndex.value)
@@ -1109,14 +1319,18 @@ const nextSection = computed(() => {
   return idx >= 0 && idx < highRiskSections.value.length - 1 ? highRiskSections.value[idx + 1] : null
 })
 
-watch([currentAigc, currentDup], () => {
+watch([currentAigc, currentDup, patches], () => {
   animateScore()
-})
+}, { deep: true })
 
 // 改写或重算后自动刷新高亮
 watch([realScores, rewrittenMap], () => {
   refreshAllHighlights()
 }, { deep: true })
+
+watch(editMode, () => {
+  refreshAllHighlights()
+})
 
 function animateScore() {
   const targetAigc = currentAigc.value
@@ -1141,7 +1355,7 @@ async function loadData() {
     const [run, secs, blocksRes] = await Promise.all([
       getRun(props.runId),
       getRunSections(props.runId),
-      getRunBlocks(props.runId).catch(() => ({ blocks: [] }))
+      getRunBlocks(props.runId).catch(() => ({ blocks: [], reportSummary: null }))
     ])
     sections.value = secs
     blocks.value = blocksRes.blocks
@@ -1158,7 +1372,7 @@ async function loadData() {
           counts[b.reportRisk.riskLevel]++
         }
       }
-      reportSummary.value = {
+      reportSummary.value = blocksRes.reportSummary || {
         reportType: 'mixed',
         highRiskCount: counts.high,
         mediumRiskCount: counts.medium,
@@ -1287,6 +1501,16 @@ function paraPreview(para: ParagraphBlock): string {
   return para.content.slice(0, 24) + (para.content.length > 24 ? '…' : '')
 }
 
+function filteredOutlineParas(group: ChapterGroup): ParagraphBlock[] {
+  const risky = group.paragraphs.filter(p => p.riskLevel !== 'normal')
+  return risky.length ? risky.slice(0, 8) : group.paragraphs.slice(0, 3)
+}
+
+function groupRiskCount(group: ChapterGroup): string {
+  const count = group.paragraphs.filter(p => p.riskLevel !== 'normal').length
+  return count ? `${count}` : '0'
+}
+
 function scrollToGroup(gIdx: number) {
   const el = document.getElementById('group-' + gIdx)
   if (el && docRef.value) {
@@ -1330,6 +1554,7 @@ async function selectParagraph(para: ParagraphBlock) {
 
 async function selectBlock(block: DocumentBlock) {
   activeBlockId.value = block.blockId
+  activeSectionIndex.value = block.sourceMap?.paragraphIndex ?? block.displayOrder
   panelVisible.value = true
   panelLoading.value = true
   panelError.value = ''
@@ -1380,41 +1605,76 @@ async function selectSection(sec: RunSectionItem) {
   }
 }
 
-function pushHistory(sectionIndex: number, previousText: string | undefined, newText: string) {
+function pushHistory(sectionIndex: number, previousText: string | undefined, newText: string, blockId?: string) {
   if (historyIndex.value < historyStack.value.length - 1) {
     historyStack.value = historyStack.value.slice(0, historyIndex.value + 1)
   }
-  historyStack.value.push({ sectionIndex, previousText, newText, timestamp: Date.now() })
+  historyStack.value.push({ sectionIndex, previousText, newText, timestamp: Date.now(), blockId })
   historyIndex.value = historyStack.value.length - 1
 }
 
-function applyRewrite(sectionIndex: number, newText: string) {
+function applyBlockRewrite(
+  block: DocumentBlock,
+  newText: string,
+  options: { updateDom?: boolean; toast?: boolean } = {}
+) {
+  const { updateDom = true, toast = true } = options
+  const previousPatch = patches.value.get(block.blockId)
+  const previousText = previousPatch?.newText
+  const originalText = block.text
+  if (newText.trim() === (previousText || originalText).trim()) return
+
+  patches.value.set(block.blockId, {
+    blockId: block.blockId,
+    oldText: originalText,
+    newText,
+    createdAt: new Date().toISOString(),
+  })
+
+  const secIdx = block.sourceMap?.paragraphIndex ?? block.displayOrder
+  rewrittenMap.value.set(secIdx, newText)
+  pushHistory(secIdx, previousText, newText, block.blockId)
+
+  createPatch(props.runId, {
+    block_id: block.blockId,
+    old_text: originalText,
+    new_text: newText,
+    source_map: block.sourceMap,
+  }).catch(() => { /* 前端先保留状态，导出前仍可重试 */ })
+
+  if (updateDom && renderedContainer.value) {
+    for (const [el, blockId] of paragraphBlockMap.value.entries()) {
+      if (blockId === block.blockId) {
+        el.innerText = newText
+        el.classList.add('is-rewritten')
+        break
+      }
+    }
+  }
+  refreshAllHighlights()
+  if (toast) ElMessage.success('已替换原文')
+}
+
+function applyRewrite(
+  sectionIndex: number,
+  newText: string,
+  options: { updateDom?: boolean; toast?: boolean } = {}
+) {
+  const { updateDom = true, toast = false } = options
+  if (blocks.value.length > 0 && activeBlockId.value) {
+    const block = blocks.value.find(b => b.blockId === activeBlockId.value)
+    if (block) {
+      applyBlockRewrite(block, newText, { updateDom, toast })
+      return
+    }
+  }
+
   const previousText = rewrittenMap.value.get(sectionIndex)
   rewrittenMap.value.set(sectionIndex, newText)
   pushHistory(sectionIndex, previousText, newText)
 
-  // 同步更新 patches（新架构）
-  if (blocks.value.length > 0 && activeBlockId.value) {
-    const block = blocks.value.find(b => b.blockId === activeBlockId.value)
-    if (block) {
-      const oldText = previousText || block.text
-      patches.value.set(activeBlockId.value, {
-        blockId: activeBlockId.value,
-        oldText,
-        newText,
-        createdAt: new Date().toISOString(),
-      })
-      // 异步保存到后端（不阻塞 UI）
-      createPatch(props.runId, {
-        block_id: activeBlockId.value,
-        old_text: oldText,
-        new_text: newText,
-      }).catch(() => { /* 静默失败，前端已保存 */ })
-    }
-  }
-
   // 同步更新 mammoth HTML 中的文本
-  if (renderedContainer.value) {
+  if (updateDom && renderedContainer.value) {
     const sec = sections.value.find(s => s.section_index === sectionIndex)
     if (sec) {
       const oldText = previousText || sec.content
@@ -1427,6 +1687,7 @@ function applyRewrite(sectionIndex: number, newText: string) {
       }
     }
   }
+  if (toast) ElMessage.success('已替换原文')
 }
 
 function applySentenceRewrite(sentenceIdx: number) {
@@ -1478,6 +1739,54 @@ function ignoreActive() {
   ElMessage.info('已忽略该条建议')
 }
 
+async function selectRiskItem(item: any) {
+  if (blocks.value.length > 0) {
+    const paraIdx = item.paragraph_index ?? item.section_index
+    const block = blocks.value.find(b => (b.sourceMap?.paragraphIndex ?? b.displayOrder) === paraIdx)
+    if (block) {
+      await selectBlock(block)
+      return
+    }
+  }
+  await selectSection(item)
+}
+
+function changeZoom(delta: number) {
+  documentZoom.value = Math.min(1.6, Math.max(0.6, Number((documentZoom.value + delta).toFixed(2))))
+}
+
+function toggleEditMode() {
+  if (fileType.value === 'pdf') {
+    ElMessage.info('PDF 当前支持原版预览、定位和高亮；正文改写请用右侧替换后导出 docx。')
+    return
+  }
+  editMode.value = !editMode.value
+  if (editMode.value) foldNormal.value = false
+  refreshAllHighlights()
+  ElMessage.info(editMode.value ? '已进入编辑模式：可直接改正文段落，失焦后自动保存为文本替换。' : '已退出编辑模式')
+}
+
+function onPlainParagraphBlur(para: ParagraphBlock, event: FocusEvent) {
+  if (!editMode.value) return
+  const target = event.currentTarget as HTMLElement | null
+  const text = target?.innerText?.trim()
+  if (!text || text === para.content.trim()) return
+
+  if (blocks.value.length > 0) {
+    const block = blocks.value.find(b =>
+      (b.sourceMap?.paragraphIndex ?? b.displayOrder) === para.paragraphIndex
+    )
+    if (block) {
+      applyBlockRewrite(block, text, { updateDom: false, toast: false })
+      return
+    }
+  }
+  const sectionIndex = para.sectionIndices[0]
+  if (sectionIndex != null) {
+    applyRewrite(sectionIndex, text, { updateDom: false, toast: false })
+  }
+}
+
 async function fetchBatchAdvice() {
   const targets = highRiskSections.value.filter(s => !batchAdviceMap.value.has(s.section_index))
   if (!targets.length) {
@@ -1505,8 +1814,53 @@ async function fetchBatchAdvice() {
   }
 }
 
+async function applyAllRiskRewrites() {
+  const targets = highRiskSections.value.filter(s => s.risk_level !== 'low' || runMode.value === 'report')
+  if (!targets.length) {
+    ElMessage.info('当前没有需要批量替换的风险句')
+    return
+  }
+  batchLoading.value = true
+  batchProgress.value = 0
+  try {
+    for (const sec of targets) {
+      try {
+        let advice = batchAdviceMap.value.get(sec.section_index)
+        if (!advice) {
+          advice = await getRewriteAdvice(props.runId, sec.section_index)
+          batchAdviceMap.value.set(sec.section_index, advice)
+        }
+        if (!advice.rewritten_paragraph?.trim()) continue
+        if (blocks.value.length > 0) {
+          const block = blocks.value.find(b =>
+            (b.sourceMap?.paragraphIndex ?? b.displayOrder) === (sec.paragraph_index ?? sec.section_index)
+          )
+          if (block) {
+            applyBlockRewrite(block, advice.rewritten_paragraph, { updateDom: true, toast: false })
+          }
+        } else {
+          rewrittenMap.value.set(sec.section_index, advice.rewritten_paragraph)
+          pushHistory(sec.section_index, undefined, advice.rewritten_paragraph)
+        }
+      } catch {
+        // 单段失败不影响其他段落
+      } finally {
+        batchProgress.value++
+      }
+    }
+    refreshAllHighlights()
+    ElMessage.success(`已替换 ${batchProgress.value} 个风险段落，AIGC/重复率已按改写进度实时预估下降`)
+  } finally {
+    batchLoading.value = false
+  }
+}
+
 async function doReanalyze() {
   if (!rewrittenCount.value) return
+  if (runMode.value === 'report') {
+    ElMessage.info('当前为官方报告驱动模式，风险颜色和指标以学校/检测平台报告为准。改写后请上传新的官方复检报告更新结果。')
+    return
+  }
   isReanalyzing.value = true
   try {
     const payload = sections.value.map(sec => ({
@@ -1557,8 +1911,8 @@ async function doExportOriginal() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    const filename = paperTitle.value || '原始文档'
-    a.download = `${filename}.docx`
+    const filename = originalFilename.value || paperTitle.value || '原始文档'
+    a.download = filename
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -1620,6 +1974,39 @@ function doSave() {
 function undo() {
   if (!canUndo.value) return
   const entry = historyStack.value[historyIndex.value]
+  if (entry.blockId) {
+    const block = blocks.value.find(b => b.blockId === entry.blockId)
+    if (block) {
+      if (entry.previousText === undefined) {
+        patches.value.delete(entry.blockId)
+        rewrittenMap.value.delete(entry.sectionIndex)
+        createPatch(props.runId, {
+          block_id: entry.blockId,
+          old_text: block.text,
+          new_text: block.text,
+          source_map: block.sourceMap,
+        }).catch(() => {})
+      } else {
+        patches.value.set(entry.blockId, {
+          blockId: entry.blockId,
+          oldText: block.text,
+          newText: entry.previousText,
+          createdAt: new Date().toISOString(),
+        })
+        rewrittenMap.value.set(entry.sectionIndex, entry.previousText)
+        createPatch(props.runId, {
+          block_id: entry.blockId,
+          old_text: block.text,
+          new_text: entry.previousText,
+          source_map: block.sourceMap,
+        }).catch(() => {})
+      }
+      refreshAllHighlights()
+      historyIndex.value--
+      ElMessage.success('已撤销')
+      return
+    }
+  }
   if (entry.previousText === undefined) {
     rewrittenMap.value.delete(entry.sectionIndex)
   } else {
@@ -1633,20 +2020,38 @@ function redo() {
   if (!canRedo.value) return
   historyIndex.value++
   const entry = historyStack.value[historyIndex.value]
+  if (entry.blockId) {
+    const block = blocks.value.find(b => b.blockId === entry.blockId)
+    if (block) {
+      patches.value.set(entry.blockId, {
+        blockId: entry.blockId,
+        oldText: block.text,
+        newText: entry.newText,
+        createdAt: new Date().toISOString(),
+      })
+      createPatch(props.runId, {
+        block_id: entry.blockId,
+        old_text: block.text,
+        new_text: entry.newText,
+        source_map: block.sourceMap,
+      }).catch(() => {})
+    }
+  }
   rewrittenMap.value.set(entry.sectionIndex, entry.newText)
+  refreshAllHighlights()
   ElMessage.success('已重做')
 }
 
 function goPrev() {
   if (prevSection.value) {
-    selectSection(prevSection.value)
+    selectRiskItem(prevSection.value)
     scrollToParagraph(prevSection.value.paragraph_index ?? prevSection.value.section_index)
   }
 }
 
 function goNext() {
   if (nextSection.value) {
-    selectSection(nextSection.value)
+    selectRiskItem(nextSection.value)
     scrollToParagraph(nextSection.value.paragraph_index ?? nextSection.value.section_index)
   }
 }
@@ -1885,8 +2290,23 @@ function goNext() {
   color: #1A1A1A;
 }
 
+.outline-count {
+  margin-left: auto;
+  min-width: 22px;
+  height: 20px;
+  line-height: 20px;
+  text-align: center;
+  border-radius: 10px;
+  background: #F2F1EC;
+  color: #6B6B6B;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .outline-children {
   padding-left: 16px;
+  border-left: 1px solid #EEECE6;
+  margin-left: 10px;
 }
 
 .outline-para {
@@ -1969,6 +2389,13 @@ function goNext() {
   background: #FAF9F6;
 }
 
+.document-scale-shell {
+  width: fit-content;
+  min-width: 100%;
+  margin: 0 auto;
+  transform-origin: top center;
+}
+
 .a4-page {
   max-width: 210mm;
   min-height: 297mm;
@@ -2024,6 +2451,13 @@ function goNext() {
 .doc-paragraph.is-active {
   outline: 2px solid #2E7D5A;
   outline-offset: -2px;
+}
+
+.doc-paragraph[contenteditable="true"],
+:deep(.mammoth-doc p.doc-paragraph[contenteditable="true"]) {
+  cursor: text;
+  caret-color: #2E7D5A;
+  box-shadow: inset 0 0 0 1px rgba(46, 125, 90, 0.22);
 }
 
 /* 风险着色 */
@@ -2206,6 +2640,40 @@ function goNext() {
   background: #E8F5E9;
   border-radius: 4px;
   border: 1px solid #C8E6C9;
+}
+
+.risk-word-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.risk-word-tag {
+  font-size: 12px;
+  color: #B71C1C;
+  background: #FFEBEE;
+  border: 1px solid #FFCDD2;
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+:deep(.risk-word),
+.risk-word {
+  color: #B71C1C;
+  background: rgba(229, 57, 53, 0.16);
+  border-bottom: 1px solid #E53935;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+:deep(.rewrite-word),
+.rewrite-word {
+  color: #1B5E20;
+  background: rgba(46, 125, 90, 0.18);
+  border-bottom: 1px solid #2E7D5A;
+  padding: 0 2px;
+  border-radius: 2px;
 }
 
 .card-actions {

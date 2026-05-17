@@ -6,6 +6,8 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
+from app.services.rewrite_strategy import apply_learned_rewrite_style
+
 
 RiskLevel = Literal["high", "medium", "low", "normal"]
 QuickRewriteMode = Literal["auto", "aigc", "similarity", "polish"]
@@ -229,6 +231,7 @@ def _rewrite_text(
         reasons_by_phrase[replacement] = reason
 
     rewritten = _split_overlong_sentences(rewritten)
+    rewritten = apply_learned_rewrite_style(rewritten)
     improved = _locate_improved_phrases(rewritten, reasons_by_phrase)
     return rewritten, improved
 
@@ -238,6 +241,7 @@ def _fallback_polish(
 ) -> tuple[str, list[ImprovedPhrase]]:
     context = _infer_context(text)
     rewritten = _split_overlong_sentences(text)
+    rewritten = apply_learned_rewrite_style(rewritten)
     if rewritten == text:
         suffix = f"后续可结合{context['actor']}的{context['focus']}补充更具体的材料或案例。"
         rewritten = f"{text.rstrip('。') if text.endswith('。') else text}。{suffix}"

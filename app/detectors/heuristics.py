@@ -139,6 +139,34 @@ VAGUE_TERMS = (
     "新业态",
 )
 
+REPORT_LEARNED_AI_TERMS = (
+    "持续发展",
+    "持续迭代",
+    "趋于多元",
+    "赋能",
+    "支撑",
+    "体系",
+    "机制",
+    "路径",
+    "落地",
+    "拓展",
+    "坚实基础",
+    "有效弥补",
+    "场景适配",
+    "优化完善",
+    "提供参考",
+    "参考价值",
+    "重要意义",
+    "应用价值",
+)
+
+DETAIL_EVIDENCE_RE = re.compile(
+    r"(?:\d+(?:\.\d+)?\s*(?:%|ms|秒|s|个|人|次|年|月)|"
+    r"SpringBoot|Springboot|Vue|MySQL|JWT|MyBatis|Postman|Docker|"
+    r"API|RAG|ECharts|Element Plus|\[\d+\])",
+    re.IGNORECASE,
+)
+
 
 def clamp(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
     return max(lower, min(upper, value))
@@ -247,6 +275,34 @@ class VagueAbstractionDetector(Detector):
         return DetectorResult(self.name, score, self.weight, reasons)
 
 
+class ReportLearnedStyleDetector(Detector):
+    name = "report_learned_style"
+    weight = 0.13
+
+    def score(self, segment: str, all_segments: list[str]) -> DetectorResult:
+        char_count = max(cn_char_count(segment), 1)
+        hits = [term for term in REPORT_LEARNED_AI_TERMS if term in segment]
+        density = len(hits) / (char_count / 260)
+        score = clamp((density - 0.8) / 4.2)
+
+        has_detail = bool(DETAIL_EVIDENCE_RE.search(segment))
+        if hits and not has_detail:
+            score = clamp(score + 0.12)
+
+        reasons = []
+        if score > 0.45:
+            preview = "、".join(hits[:5])
+            if has_detail:
+                reasons.append(
+                    f"存在报告对照中常见的AI书面化表达：{preview}，建议保留版本号/数据/引用并改成更自然的系统说明句"
+                )
+            else:
+                reasons.append(
+                    f"存在报告对照中常见的AI书面化表达：{preview}，且缺少版本号、测试数据或引用等可核验细节"
+                )
+        return DetectorResult(self.name, score, self.weight, reasons)
+
+
 class CrossSegmentRepetitionDetector(Detector):
     name = "cross_segment_repetition"
     weight = 0.10
@@ -292,5 +348,6 @@ def build_default_detectors() -> list[Detector]:
         TemplatePhraseDetector(),
         ConnectorDensityDetector(),
         VagueAbstractionDetector(),
+        ReportLearnedStyleDetector(),
         CrossSegmentRepetitionDetector(),
     ]

@@ -107,13 +107,19 @@ def export_docx_with_patches(
     original_path: str,
     blocks: list[dict],
     patches: list[dict],
+    *,
+    highlight_risks: bool = False,
 ) -> bytes:
-    """基于原始 docx 母版，应用 patches 并添加风险背景色。
+    """基于原始 docx 母版，仅应用文本 patches。
+
+    默认不写入风险底色，避免导出的改写稿破坏用户原论文格式。风险颜色只用于
+    网页编辑器和专门的高亮导出视图；正式改写稿走“仅文本替换”路线。
 
     Args:
         original_path: 原始 docx 文件路径
         blocks: 文档 blocks 列表，每个 block 包含 block_id, text, risk_score, source_map
         patches: 改写 patches 列表，每个 patch 包含 block_id, old_text, new_text
+        highlight_risks: 是否在导出 docx 中写入风险底色。
 
     Returns:
         docx 文件的字节内容
@@ -143,16 +149,20 @@ def export_docx_with_patches(
             if not _try_replace_in_runs(para, old_text, new_text):
                 _fallback_replace_paragraph(para, new_text)
 
-        # 添加风险背景色
-        risk_score = block.get("risk_score") or 0
-        color = RISK_COLORS["normal"]
-        if risk_score >= 70:
-            color = RISK_COLORS["high"]
-        elif risk_score >= 60:
-            color = RISK_COLORS["medium"]
-        elif risk_score >= 30:
-            color = RISK_COLORS["low"]
-        _set_para_shading(para, color)
+        if highlight_risks:
+            color = RISK_COLORS["normal"]
+            report_risk = block.get("report_risk")
+            if isinstance(report_risk, dict) and report_risk.get("risk_level"):
+                color = RISK_COLORS.get(report_risk.get("risk_level"), RISK_COLORS["normal"])
+            else:
+                risk_score = block.get("risk_score") or 0
+                if risk_score >= 70:
+                    color = RISK_COLORS["high"]
+                elif risk_score >= 60:
+                    color = RISK_COLORS["medium"]
+                elif risk_score >= 30:
+                    color = RISK_COLORS["low"]
+            _set_para_shading(para, color)
 
     buf = io.BytesIO()
     doc.save(buf)

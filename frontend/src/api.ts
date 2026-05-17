@@ -14,6 +14,7 @@ import type {
   DocumentPatch,
   DocumentUploadResponse,
   ModelStatusResponse,
+  OfficialReportSummary,
   ProviderCatalogResponse,
   ProviderConfigDetail,
   ProviderConfigListResponse,
@@ -284,6 +285,7 @@ export async function submitCnkiFeedback(payload: {
   singleMaxDupPercent?: number | null
   suspectedPlagiarism?: Record<string, number> | null
   fragments?: CnkiReportFragment[] | null
+  learningConsent?: boolean
   evidenceFile?: File | null
 }): Promise<CnkiFeedbackResponse> {
   const formData = new FormData()
@@ -297,6 +299,7 @@ export async function submitCnkiFeedback(payload: {
   if (typeof payload.singleMaxDupPercent === 'number') formData.append('single_max_dup_percent', String(payload.singleMaxDupPercent))
   if (payload.suspectedPlagiarism) formData.append('suspected_plagiarism_json', JSON.stringify(payload.suspectedPlagiarism))
   if (payload.fragments) formData.append('fragments_json', JSON.stringify(payload.fragments))
+  formData.append('learning_consent', String(payload.learningConsent ?? true))
   if (payload.evidenceFile) formData.append('evidence_file', payload.evidenceFile)
 
   const response = await fetchWithRetry(`${baseUrl}/v1/cnki-feedback`, {
@@ -510,12 +513,55 @@ export async function exportRun(
   return response.blob()
 }
 
-export async function getRunBlocks(runId: string): Promise<{ blocks: DocumentBlock[] }> {
+export async function getRunBlocks(runId: string): Promise<{ blocks: DocumentBlock[]; reportSummary?: OfficialReportSummary | null }> {
   const response = await fetchWithRetry(`${baseUrl}/v1/runs/${runId}/blocks`, {
     headers: authHeaders(),
     credentials: 'include'
   })
-  return parseResponse<{ blocks: DocumentBlock[] }>(response)
+  const payload = await parseResponse<{ blocks: any[]; reportSummary?: OfficialReportSummary | null }>(response)
+  return {
+    ...payload,
+    blocks: (payload.blocks || []).map(normalizeDocumentBlock)
+  }
+}
+
+function normalizeDocumentBlock(block: any): DocumentBlock {
+  const reportRisk = block.reportRisk || block.report_risk
+  const internalRisk = block.internalRisk || block.internal_risk
+  return {
+    blockId: block.blockId ?? block.block_id,
+    type: block.type ?? block.blockType ?? block.block_type,
+    text: block.text || '',
+    html: block.html ?? undefined,
+    effectiveText: block.effectiveText ?? block.effective_text ?? undefined,
+    riskScore: block.riskScore ?? block.risk_score ?? undefined,
+    reportRisk: reportRisk ? {
+      source: reportRisk.source || 'cnki',
+      riskType: reportRisk.riskType ?? reportRisk.risk_type,
+      riskLevel: reportRisk.riskLevel ?? reportRisk.risk_level,
+      similarity: reportRisk.similarity ?? undefined,
+      aigcScore: reportRisk.aigcScore ?? reportRisk.aigc_score ?? undefined,
+      matchedSource: reportRisk.matchedSource ?? reportRisk.matched_source ?? undefined,
+      spanId: reportRisk.spanId ?? reportRisk.span_id,
+      matchConfidence: reportRisk.matchConfidence ?? reportRisk.match_confidence ?? 0
+    } : undefined,
+    internalRisk: internalRisk ? {
+      overallRisk: internalRisk.overallRisk ?? internalRisk.overall_risk ?? 0,
+      aiLikelihood: internalRisk.aiLikelihood ?? internalRisk.ai_likelihood ?? undefined,
+      templateScore: internalRisk.templateScore ?? internalRisk.template_score ?? undefined,
+      semanticEmptyScore: internalRisk.semanticEmptyScore ?? internalRisk.semantic_empty_score ?? undefined,
+      repetitionScore: internalRisk.repetitionScore ?? internalRisk.repetition_score ?? undefined,
+      citationRisk: internalRisk.citationRisk ?? internalRisk.citation_risk ?? undefined,
+      reasons: internalRisk.reasons || []
+    } : undefined,
+    rewriteStatus: block.rewriteStatus ?? block.rewrite_status ?? 'none',
+    sourceType: block.sourceType ?? block.source_type,
+    sourceMap: block.sourceMap ?? block.source_map ?? undefined,
+    sectionTitle: block.sectionTitle ?? block.section_title ?? undefined,
+    sectionType: block.sectionType ?? block.section_type ?? undefined,
+    charCount: block.charCount ?? block.char_count ?? 0,
+    displayOrder: block.displayOrder ?? block.display_order ?? 0,
+  }
 }
 
 export async function uploadDocumentWithReport(payload: {
@@ -529,15 +575,8 @@ export async function uploadDocumentWithReport(payload: {
   fileId: string
   runId: string
   reportMode: boolean
-  reportSummary: {
+  reportSummary: OfficialReportSummary & {
     reportId: string
-    reportType: 'similarity' | 'aigc' | 'mixed'
-    totalCopyRatio?: number
-    aigcRatio?: number
-    highRiskCount: number
-    mediumRiskCount: number
-    lowRiskCount: number
-    unmatchedCount: number
   }
   blocks: DocumentBlock[]
   unmatchedRiskSpans: Array<{
@@ -570,7 +609,11 @@ export async function uploadDocumentWithReport(payload: {
       }
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(JSON.parse(xhr.responseText))
+          const result = JSON.parse(xhr.responseText)
+          resolve({
+            ...result,
+            blocks: (result.blocks || []).map(normalizeDocumentBlock)
+          })
         } else {
           let detail = `请求失败：${xhr.status}`
           try {
@@ -591,7 +634,11 @@ export async function uploadDocumentWithReport(payload: {
     credentials: 'include',
     body: formData
   })
-  return parseResponse(response)
+  const result = await parseResponse<any>(response)
+  return {
+    ...result,
+    blocks: (result.blocks || []).map(normalizeDocumentBlock)
+  }
 }
 
 export async function attachReportToDocument(documentId: string, reportFile: File): Promise<{
@@ -644,7 +691,7 @@ export async function remapReport(documentId: string): Promise<{
 
 export async function createPatch(
   runId: string,
-  payload: { block_id: string; old_text: string; new_text: string }
+  payload: { block_id: string; old_text: string; new_text: string; source_map?: Record<string, any> }
 ): Promise<DocumentPatch> {
   const response = await fetchWithRetry(`${baseUrl}/v1/runs/${runId}/patches`, {
     method: 'POST',

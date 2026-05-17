@@ -24,6 +24,7 @@ tempCodeRunnerFile.py
 data/uploads/
 data/cleaned/
 data/feedback/
+data/feedback_learning_skill/
 data/models/
 data/training/
 data/test_*runtime*/

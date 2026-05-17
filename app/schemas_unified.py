@@ -413,6 +413,8 @@ class CnkiFeedbackResponse(BaseModel):
     predicted_run_id: str | None = None
     calibration_updated: bool
     calibration_version: str
+    learning_sample_saved: bool = False
+    learning_skill_updated: bool = False
     auto_train_triggered: bool = False
     auto_train_versions: list[str] = Field(default_factory=list)
     created_at: datetime

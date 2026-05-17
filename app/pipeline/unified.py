@@ -22,6 +22,11 @@ from app.services.analyzer import PaperAnalyzer, risk_level
 from app.services.calibration import CalibrationSample, CnkiCalibrator
 from app.services.document_blocks import parse_document_to_blocks
 from app.services.document_loader import convert_doc_to_docx, extract_text
+from app.services.feedback_learning import (
+    append_feedback_learning_sample,
+    build_feedback_learning_sample,
+    refresh_feedback_learning_skill,
+)
 from app.services.text_processing import clean_body_text, preview_text, segment_document
 
 
@@ -379,6 +384,7 @@ class UnifiedPipeline:
         notes: str | None,
         details: dict[str, Any] | None = None,
         evidence_file: UploadFile | None = None,
+        learning_consent: bool = True,
     ) -> dict[str, Any]:
         document = self.repository.get_document(document_id)
         if document is None:
@@ -432,10 +438,31 @@ class UnifiedPipeline:
                 )
                 calibration_updated = True
 
+        learning_sample_saved = False
+        learning_skill_updated = False
+        if learning_consent:
+            learning_sample_saved = append_feedback_learning_sample(
+                self.settings.feedback_learning_store_path,
+                build_feedback_learning_sample(
+                    repository=self.repository,
+                    document=document,
+                    feedback=feedback,
+                    predicted_run_id=predicted_run_id,
+                    details=details,
+                ),
+            )
+            if learning_sample_saved:
+                learning_skill_updated = refresh_feedback_learning_skill(
+                    self.settings.feedback_learning_store_path,
+                    self.settings.feedback_learning_skill_path,
+                )
+
         return {
             "feedback": feedback,
             "calibration_updated": calibration_updated,
             "calibration_version": self.calibrator.version,
+            "learning_sample_saved": learning_sample_saved,
+            "learning_skill_updated": learning_skill_updated,
         }
 
     def build_run_status(self, run_id: str) -> AnalysisRunStatusResponse:
@@ -465,6 +492,7 @@ class UnifiedPipeline:
         if snapshot is None:
             return None
         report = dict(snapshot["report_json"])
+        _ensure_report_summary_defaults(report)
         provider_payloads = self.repository.list_provider_payloads(run_id)
         provider_results = _serialize_provider_results(provider_payloads)
         feedback_rows = self.repository.list_cnki_feedback_for_document(
@@ -656,6 +684,34 @@ def _estimate_risk_score(
 ) -> int:
     score = 100 - dup_high * 42 - aigc_high * 38 - high_risk_segments * 3.5
     return max(18, min(96, round(score)))
+
+
+def _ensure_report_summary_defaults(report: dict[str, Any]) -> None:
+    summary = report.setdefault("summary", {})
+    top_risk_sections = report.get("top_risk_sections", []) or []
+
+    dup_band = summary.get("predicted_cnki_dup") or {}
+    aigc_band = summary.get("predicted_cnki_aigc") or {}
+    dup_high = float(dup_band.get("high", 0.0) or 0.0)
+    aigc_high = float(aigc_band.get("high", 0.0) or 0.0)
+    high_count = sum(
+        1 for item in top_risk_sections if item.get("risk_level") == "high"
+    )
+
+    risk_score = summary.get("risk_score")
+    if risk_score is None:
+        summary["risk_score"] = _estimate_risk_score(dup_high, aigc_high, high_count)
+
+    summary.setdefault("overall_risk", "low")
+    if not summary.get("one_line_judgement"):
+        summary["one_line_judgement"] = (
+            f"系统已补齐历史报告摘要，当前风险指数 {summary['risk_score']}/100。"
+        )
+    if "first_fix_targets" not in summary:
+        summary["first_fix_targets"] = [
+            item.get("title", "正文段落") for item in top_risk_sections[:3]
+        ]
+    summary.setdefault("priority_summary", None)
 
 
 def _build_preview_risk_sections(

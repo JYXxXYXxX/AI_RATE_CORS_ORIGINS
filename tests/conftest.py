@@ -37,6 +37,8 @@ def isolated_settings(temp_test_dir: Path) -> Settings:
         upload_storage_dir=str(temp_test_dir / "uploads"),
         cleaned_storage_dir=str(temp_test_dir / "cleaned"),
         feedback_storage_dir=str(temp_test_dir / "feedback"),
+        feedback_learning_store_path=str(temp_test_dir / "feedback_learning.jsonl"),
+        feedback_learning_skill_path=str(temp_test_dir / "feedback_skill" / "SKILL.md"),
         model_artifact_dir=str(temp_test_dir / "models"),
         calibration_store_path=str(temp_test_dir / "calibration.jsonl"),
         provider_registry_path=str(temp_test_dir / "provider_registry.json"),

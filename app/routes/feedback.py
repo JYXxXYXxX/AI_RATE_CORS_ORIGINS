@@ -51,6 +51,7 @@ async def add_cnki_feedback(
     single_max_dup_percent: float | None = Form(default=None),
     suspected_plagiarism_json: str | None = Form(default=None),
     fragments_json: str | None = Form(default=None),
+    learning_consent: bool = Form(default=True),
     evidence_file: UploadFile | None = File(default=None),
     pipeline: UnifiedPipeline = Depends(get_unified_pipeline),
     training_service: ProxyTrainingService = Depends(get_proxy_training_service),
@@ -106,6 +107,7 @@ async def add_cnki_feedback(
             notes=notes,
             details=details,
             evidence_file=evidence_file,
+            learning_consent=learning_consent,
         )
     except ValueError as exc:
         message = str(exc)
@@ -132,6 +134,8 @@ async def add_cnki_feedback(
         else None,
         calibration_updated=result["calibration_updated"],
         calibration_version=result["calibration_version"],
+        learning_sample_saved=result.get("learning_sample_saved", False),
+        learning_skill_updated=result.get("learning_skill_updated", False),
         auto_train_triggered=auto_train_triggered,
         auto_train_versions=auto_train_versions,
         created_at=feedback["created_at"],

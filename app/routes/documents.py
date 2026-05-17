@@ -718,6 +718,11 @@ async def reanalyze_run(
     ensure_document_access(
         document_id=str(run["document_id"]), auth=auth, repository=repository
     )
+    if run.get("mode") == "report":
+        raise HTTPException(
+            status_code=409,
+            detail="该任务已上传官方查重/AIGC报告，复核结果应以官方报告为准。请上传新的官方复检报告来更新风险颜色和指标。",
+        )
 
     original_sections = repository.list_document_sections(str(run["document_id"]))
     rewritten_map = {s.section_index: s.content for s in payload.sections}
@@ -890,6 +895,36 @@ async def export_rewritten_document(
     safe_title = _safe_download_name(doc_title) or "rewritten"
 
     if payload.format == "txt":
+        if not assembled:
+            try:
+                blocks_for_txt = repository.list_document_blocks(str(db_run["document_id"]))
+                patches_for_txt = repository.list_latest_patches_by_run(
+                    str(db_run["document_id"]), run_id
+                )
+                patch_map_for_txt = {
+                    patch["block_id"]: patch for patch in patches_for_txt
+                }
+                for block in sorted(
+                    blocks_for_txt, key=lambda item: item.get("display_order", 0)
+                ):
+                    if block.get("block_type") in {"title", "heading"}:
+                        continue
+                    patch = patch_map_for_txt.get(block.get("block_id"))
+                    text = (
+                        patch.get("new_text")
+                        if patch
+                        else block.get("text") or ""
+                    )
+                    if text.strip():
+                        assembled.append(
+                            (
+                                int(block.get("display_order", 0)),
+                                block.get("section_title"),
+                                text,
+                            )
+                        )
+            except Exception:
+                assembled = []
         lines: list[str] = []
         if doc_title:
             lines.append(doc_title)
@@ -1009,11 +1044,12 @@ async def get_section_rewrite_advice(
     llm_service=Depends(get_llm_rewrite_service),
     auth: AuthContext = Depends(get_auth_context),
 ) -> RewriteAdviceResponse:
-    run = get_repository().get_run(run_id)
+    repository = get_repository()
+    run = repository.get_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="run not found")
     ensure_document_access(
-        document_id=str(run["document_id"]), auth=auth, repository=get_repository()
+        document_id=str(run["document_id"]), auth=auth, repository=repository
     )
 
     # 付费功能已隐藏：改写始终开放
@@ -1021,6 +1057,15 @@ async def get_section_rewrite_advice(
     #     unlock = get_repository().get_run_unlock(str(auth.user["id"]), run_id, "unlock_rewrite")
     #     if not unlock or unlock.get("status") != "unlocked":
     #         raise HTTPException(status_code=402, detail="unlock_rewrite not unlocked")
+
+    if run.get("mode") == "report":
+        return await _get_report_mode_rewrite_advice(
+            run=run,
+            run_id=run_id,
+            section_index=section_index,
+            repository=repository,
+            llm_service=llm_service,
+        )
 
     report = pipeline.get_report(run_id)
     if report is None:
@@ -1040,7 +1085,7 @@ async def get_section_rewrite_advice(
         # 如果没有找到，也允许继续，只是缺少风险信息
 
     # 获取完整段落文本
-    sections = get_repository().list_document_sections(str(run["document_id"]))
+    sections = repository.list_document_sections(str(run["document_id"]))
     target_section = None
     for sec in sections:
         if sec.get("section_index") == section_index:
@@ -1131,6 +1176,119 @@ async def get_section_rewrite_advice(
     )
 
 
+async def _get_report_mode_rewrite_advice(
+    *,
+    run: dict[str, Any],
+    run_id: str,
+    section_index: int,
+    repository: Any,
+    llm_service: Any,
+) -> RewriteAdviceResponse:
+    document_id = str(run["document_id"])
+    blocks = repository.list_document_blocks(document_id)
+    target_block = _find_report_mode_block(blocks, section_index)
+    if target_block is None:
+        raise HTTPException(status_code=404, detail="report block not found")
+
+    report_risk = target_block.get("report_risk") or {}
+    if not report_risk:
+        raise HTTPException(
+            status_code=400,
+            detail="该段落未被官方查重/AIGC报告标记为风险段，报告模式下仅对官方标记片段生成改写建议。",
+        )
+    text = target_block.get("text") or ""
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="block text is empty")
+
+    latest_report = _latest_cnki_report(repository, document_id)
+    cnki_dup = latest_report.get("total_copy_ratio") if latest_report else None
+    cnki_aigc = latest_report.get("aigc_ratio") if latest_report else None
+
+    risk_type = report_risk.get("risk_type") or "mixed"
+    if risk_type not in {"aigc", "duplication", "similarity", "mixed"}:
+        risk_type = "mixed"
+    if risk_type == "similarity":
+        risk_type = "duplication"
+
+    risk_label = report_risk.get("risk_level", "medium")
+    metric = report_risk.get("similarity")
+    if metric is None:
+        metric = report_risk.get("aigc_score")
+    reasons = [
+        f"官方报告标记为{risk_label}风险",
+        f"官方报告类型：{report_risk.get('risk_type', 'mixed')}",
+    ]
+    if metric is not None:
+        reasons.append(f"官方报告片段分值：{float(metric):.1f}%")
+    if report_risk.get("matched_source"):
+        reasons.append(f"相似来源：{report_risk['matched_source']}")
+
+    result = await llm_service.rewrite_paragraph(
+        text=text,
+        risk_type=risk_type,
+        reasons=reasons,
+        subject=run.get("subject"),
+        section_title=target_block.get("section_title"),
+        degree_level=run.get("degree_level"),
+        cnki_dup_percent=cnki_dup,
+        cnki_aigc_percent=cnki_aigc,
+        local_aigc_score=None,
+        local_dup_score=None,
+    )
+
+    if result.get("error"):
+        return RewriteAdviceResponse(
+            run_id=run_id,
+            section_index=section_index,
+            diagnosis="",
+            sentences=[],
+            rewritten_paragraph="",
+            overall_advice="",
+            error=result["error"],
+        )
+
+    sentences = [
+        {
+            "original": s.get("original", ""),
+            "risk": s.get("risk", "medium"),
+            "rewritten": s.get("rewritten", ""),
+            "explanation": s.get("explanation", ""),
+        }
+        for s in result.get("sentences", [])
+    ]
+
+    diagnosis = result.get("diagnosis", "")
+    official_prefix = "本次改写以用户上传的官方查重/AIGC报告为准；风险等级、优先级和改写方向均围绕官方标记片段展开。"
+    return RewriteAdviceResponse(
+        run_id=run_id,
+        section_index=section_index,
+        diagnosis=f"{official_prefix}{diagnosis}",
+        sentences=sentences,
+        rewritten_paragraph=result.get("rewritten_paragraph", ""),
+        overall_advice=result.get("overall_advice", ""),
+    )
+
+
+def _find_report_mode_block(
+    blocks: list[dict[str, Any]], section_index: int
+) -> dict[str, Any] | None:
+    for block in blocks:
+        source_map = block.get("source_map") or {}
+        if source_map.get("paragraphIndex") == section_index:
+            return block
+    for block in blocks:
+        if block.get("display_order") == section_index:
+            return block
+    return None
+
+
+def _latest_cnki_report(
+    repository: Any, document_id: str
+) -> dict[str, Any] | None:
+    reports = repository.list_cnki_reports_by_document(document_id)
+    return reports[0] if reports else None
+
+
 # ------------------------------------------------------------------
 # Document Blocks
 # ------------------------------------------------------------------
@@ -1205,7 +1363,28 @@ async def get_run_blocks(
     patch_map = {p["block_id"]: p for p in patches}
 
     result = [_build_block_response(b, patch_map.get(b["block_id"])) for b in blocks]
-    return {"blocks": result}
+    reports = repository.list_cnki_reports_by_document(str(db_run["document_id"]))
+    report_summary = None
+    if reports:
+        latest_report = reports[0]
+        counts = {"high": 0, "medium": 0, "low": 0}
+        for block in blocks:
+            report_risk = block.get("report_risk")
+            if isinstance(report_risk, dict):
+                level = report_risk.get("risk_level")
+                if level in counts:
+                    counts[level] += 1
+        report_summary = {
+            "reportType": latest_report.get("report_type"),
+            "totalCopyRatio": latest_report.get("total_copy_ratio"),
+            "aigcRatio": latest_report.get("aigc_ratio"),
+            "highRiskCount": counts["high"],
+            "mediumRiskCount": counts["medium"],
+            "lowRiskCount": counts["low"],
+            "unmatchedCount": 0,
+        }
+
+    return {"blocks": result, "reportSummary": report_summary}
 
 
 # ------------------------------------------------------------------

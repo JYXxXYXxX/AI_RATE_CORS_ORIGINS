@@ -17,6 +17,7 @@ _DETECTOR_CATEGORY_MAP: dict[str, str] = {
     "PerplexityDetector": "ai_likelihood",
     "TemplatePhraseDetector": "template_score",
     "ConnectorDensityDetector": "template_score",
+    "ReportLearnedStyleDetector": "template_score",
     "TokenRankStyleDetector": "template_score",
     "VagueAbstractionDetector": "semantic_empty_score",
     "LexicalDiversityDetector": "repetition_score",
@@ -135,7 +136,7 @@ class PaperAnalyzer:
         self.settings = settings
         self.detectors = detectors or build_production_detectors()
         self.calibrator = calibrator or CnkiCalibrator(settings)
-        self.model_version = "ensemble-cn-academic-0.2.0"
+        self.model_version = "ensemble-cn-academic-0.2.1"
 
     def analyze(
         self,

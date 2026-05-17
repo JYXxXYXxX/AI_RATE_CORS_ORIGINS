@@ -364,6 +364,8 @@ export interface CnkiFeedbackResponse {
   predicted_run_id?: string | null
   calibration_updated: boolean
   calibration_version: string
+  learning_sample_saved: boolean
+  learning_skill_updated: boolean
   auto_train_triggered: boolean
   auto_train_versions: string[]
   created_at: string
@@ -448,6 +450,16 @@ export interface DocumentBlock {
   sectionType?: string | null
   charCount: number
   displayOrder: number
+}
+
+export interface OfficialReportSummary {
+  reportType?: 'similarity' | 'aigc' | 'mixed' | null
+  totalCopyRatio?: number | null
+  aigcRatio?: number | null
+  highRiskCount: number
+  mediumRiskCount: number
+  lowRiskCount: number
+  unmatchedCount: number
 }
 
 export interface DocumentPatch {

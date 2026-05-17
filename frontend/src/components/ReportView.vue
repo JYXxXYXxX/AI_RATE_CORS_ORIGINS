@@ -29,20 +29,20 @@
           <span>知网实测查重</span>
           <strong>{{ optionalPercent(latestFeedback.cnki_dup_percent) }}</strong>
           <small v-if="latestFeedback.cnki_dup_percent != null">
-            本系统预测 {{ report.summary.predicted_cnki_dup.center_percent.toFixed(1) }}%
+            以官方报告为准
           </small>
         </article>
         <article class="metric-card cnki-primary">
           <span>知网实测 AIGC</span>
           <strong>{{ optionalPercent(latestFeedback.cnki_aigc_percent) }}</strong>
           <small v-if="latestFeedback.cnki_aigc_percent != null">
-            本系统预测 {{ report.summary.predicted_cnki_aigc.center_percent.toFixed(1) }}%
+            以官方报告为准
           </small>
         </article>
         <article class="metric-card">
-          <span>模型置信度</span>
-          <strong>{{ Math.round(report.summary.confidence * 100) }}%</strong>
-          <small>{{ report.local_metrics.segment_count }} 个分析片段</small>
+          <span>校准状态</span>
+          <strong>官方优先</strong>
+          <small>{{ report.local_metrics.segment_count }} 个片段用于定位改写</small>
         </article>
         <article class="metric-card">
           <span>改写策略</span>

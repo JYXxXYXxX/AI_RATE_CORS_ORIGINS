@@ -41,6 +41,7 @@ const emit = defineEmits<{
   (e: 'rendered', container: HTMLElement): void
   (e: 'error', message: string): void
   (e: 'select-block', blockId: string): void
+  (e: 'page-count', count: number): void
 }>()
 
 const containerRef = ref<HTMLDivElement | null>(null)
@@ -99,6 +100,7 @@ onMounted(async () => {
   try {
     const pdf = await pdfjsLib.getDocument({ data: props.arrayBuffer }).promise
     const pageCount = pdf.numPages
+    emit('page-count', pageCount)
     pages.value = Array.from({ length: pageCount }, (_, i) => i + 1)
 
     // 等待 DOM 更新

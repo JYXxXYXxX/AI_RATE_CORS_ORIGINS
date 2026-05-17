@@ -61,10 +61,11 @@ def compose_report(
         ai_report.segment_reports, duplication.section_scores
     )
     chapter_heatmap = _build_chapter_heatmap(section_reports)
+    actionable_sections = _actionable_sections(section_reports)
     top_risk_sections = sorted(
-        section_reports, key=lambda item: item["combined_score"], reverse=True
+        actionable_sections, key=lambda item: item["combined_score"], reverse=True
     )[:8]
-    priority_sections = _build_priority_sections(section_reports)
+    priority_sections = _build_priority_sections(actionable_sections)
     priority_summary = _build_priority_summary(priority_sections)
     top_similarity_matches = _serialize_matches(duplication.matches, section_reports)[
         :10
@@ -123,6 +124,28 @@ def compose_report(
         "disclaimer": ai_report.disclaimer,
         "retained_content_policy": ai_report.retained_content_policy,
     }
+
+
+def _is_actionable_section(section: dict[str, Any]) -> bool:
+    if _infer_section_type(section.get("section_title")) in (
+        "references",
+        "acknowledgement",
+    ):
+        return False
+    combined = float(section.get("combined_score", 0.0))
+    aigc = float(section.get("aigc_score", 0.0))
+    duplication = float(section.get("duplication_score", 0.0))
+    return (
+        section.get("risk_level") != "low"
+        or combined >= 0.24
+        or aigc >= 0.30
+        or duplication >= 0.20
+        or (combined >= 0.18 and bool(section.get("reasons")))
+    )
+
+
+def _actionable_sections(section_reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [dict(section) for section in section_reports if _is_actionable_section(section)]
 
 
 def _merge_section_reports(
@@ -415,9 +438,9 @@ def _build_priority_sections(
         if _infer_section_type(s.get("section_title")) not in ("references", "acknowledgement")
     ]
     if not scored:
-        scored = [dict(s) for s in section_reports]
+        return []
 
-    count = max(5, math.ceil(len(scored) * 0.15))
+    count = min(len(scored), max(3, math.ceil(len(scored) * 0.15)))
     sorted_sections = sorted(scored, key=lambda item: item["combined_score"], reverse=True)
     priority = sorted_sections[:count]
 

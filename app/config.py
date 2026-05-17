@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     upload_storage_dir: str = "data/uploads"
     cleaned_storage_dir: str = "data/cleaned"
     feedback_storage_dir: str = "data/feedback"
+    feedback_learning_store_path: str = "data/feedback_learning_samples.jsonl"
+    feedback_learning_skill_path: str = "data/feedback_learning_skill/SKILL.md"
     model_artifact_dir: str = "data/models"
     local_dup_model_version: str = "local-dup-0.1.0"
     unified_proxy_model_version: str = "cnki-proxy-mvp-0.1.0"
