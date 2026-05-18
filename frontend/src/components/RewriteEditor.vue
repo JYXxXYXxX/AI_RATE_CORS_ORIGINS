@@ -679,7 +679,7 @@ async function doExport(format: 'docx' | 'txt') {
       section_index: sec.section_index,
       content: rewrittenMap.value.get(sec.section_index) || sec.content
     }))
-    const blob = await exportRun(props.runId, payload, format)
+    const { blob, patchStats } = await exportRun(props.runId, payload, format)
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -688,7 +688,11 @@ async function doExport(format: 'docx' | 'txt') {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
-    ElMessage.success(`已导出 ${format.toUpperCase()}`)
+    if (patchStats && format === 'docx') {
+      ElMessage.success(`已导出 DOCX，成功替换 ${patchStats.applied}/${patchStats.requested} 处`)
+    } else {
+      ElMessage.success(`已导出 ${format.toUpperCase()}`)
+    }
   } catch (err) {
     ElMessage.error(err instanceof Error ? err.message : '导出失败')
   }

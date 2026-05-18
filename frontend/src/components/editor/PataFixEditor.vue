@@ -202,8 +202,10 @@
           <div v-if="showUnmatchedPanel" class="unmatched-list">
             <div
               v-for="(span, idx) in unmatchedSpans"
-              :key="idx"
+              :key="span.spanId || idx"
               class="unmatched-item"
+              :class="{ selected: selectedUnmatchedSpan?.spanId === span.spanId }"
+              @click="selectUnmatchedSpan(span)"
             >
               <div class="unmatched-risk">
                 <span class="risk-badge-small" :class="'badge-' + span.riskLevel">
@@ -212,6 +214,20 @@
                 <span class="risk-type">{{ span.riskType === 'similarity' ? '复制' : 'AIGC' }}</span>
               </div>
               <p class="unmatched-text">{{ span.text.slice(0, 60) }}{{ span.text.length > 60 ? '…' : '' }}</p>
+              <div class="unmatched-actions">
+                <el-button size="small" type="primary" plain @click.stop="startManualBind(span)">
+                  绑定到正文段落
+                </el-button>
+                <el-button
+                  size="small"
+                  plain
+                  :disabled="!activeBlockId || bindingSpanId === span.spanId"
+                  :loading="bindingSpanId === span.spanId"
+                  @click.stop="bindSpanToActiveBlock(span)"
+                >
+                  绑定当前段落
+                </el-button>
+              </div>
             </div>
           </div>
         </div>
@@ -320,7 +336,7 @@
               <span class="filter-tag filter-normal muted">正常 {{ riskCounts.normal }}（已折叠）</span>
             </template>
             <template v-else>
-              <span class="filter-tag filter-normal">全文 {{ riskCounts.normal }} 段均为正常水平（已折叠）</span>
+              <span class="filter-tag filter-normal">未发现高/中风险句，建议上传官方报告校准或抽查摘要、结论、综述段</span>
             </template>
           </div>
 
@@ -505,13 +521,13 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeft, ArrowRight, ArrowDown, RefreshLeft, RefreshRight,
   Download, Refresh, CircleCheck, Lock
 } from '@element-plus/icons-vue'
-import { getRun, getRunSections, getRunBlocks, getRewriteAdvice, reanalyzeRun, exportRun, createPatch, getUnlockStatus, getUnlockPackages } from '../../api'
-import type { RunSectionItem, RewriteAdviceResponse, ReanalyzeResponse, DocumentBlock, DocumentPatch, OfficialReportSummary, UnlockPackage, UnlockOrder } from '../../types'
+import { getRun, getRunSections, getRunBlocks, getRewriteAdvice, reanalyzeRun, exportRun, createPatch, bindReportSpan, getUnlockStatus, getUnlockPackages } from '../../api'
+import type { RunSectionItem, RewriteAdviceResponse, ReanalyzeResponse, DocumentBlock, DocumentPatch, OfficialReportSummary, OfficialRiskSpan, UnlockPackage, UnlockOrder } from '../../types'
 import { getRiskStyle, getEffectiveRiskStyle, getEffectiveRiskLevel } from './riskStyle'
 import DocxRenderer from './DocxRenderer.vue'
 import PdfRenderer from './PdfRenderer.vue'
@@ -582,16 +598,11 @@ const rewriteAdvice = ref<RewriteAdviceResponse | null>(null)
 // ==================== 知网报告驱动模式 ====================
 const runMode = ref<'estimate' | 'report'>('estimate')
 const reportSummary = ref<OfficialReportSummary | null>(null)
-const unmatchedSpans = ref<Array<{
-  spanId: string
-  text: string
-  riskType: 'similarity' | 'aigc'
-  riskLevel: 'high' | 'medium' | 'low'
-  similarity?: number
-  aigcScore?: number
-  matchedSource?: string
-}>>([])
+const unmatchedSpans = ref<OfficialRiskSpan[]>([])
 const showUnmatchedPanel = ref(false)
+const selectedUnmatchedSpan = ref<OfficialRiskSpan | null>(null)
+const manualBindMode = ref(false)
+const bindingSpanId = ref<string | null>(null)
 
 // 真实重算结果
 const realScores = ref<ReanalyzeResponse | null>(null)
@@ -706,6 +717,10 @@ function onPdfError(msg: string) {
 function onPdfSelectBlock(blockId: string) {
   const block = blocks.value.find(b => b.blockId === blockId)
   if (block) {
+    if (manualBindMode.value && selectedUnmatchedSpan.value) {
+      bindSpanToBlock(selectedUnmatchedSpan.value, block)
+      return
+    }
     selectBlock(block)
   }
 }
@@ -755,6 +770,10 @@ function applyHighlightsToDocx(container: HTMLElement) {
       const block = blocks.value.find(b => b.blockId === blockId)
       if (!block) return
       e.stopPropagation()
+      if (manualBindMode.value && selectedUnmatchedSpan.value) {
+        bindSpanToBlock(selectedUnmatchedSpan.value, block)
+        return
+      }
       selectBlock(block)
       paragraphs.forEach(other => other.classList.remove('is-active'))
       para.classList.add('is-active')
@@ -1086,13 +1105,20 @@ const prioritySections = computed<PrioritySection[]>(() => {
   const scored = sections.value.filter(
     s => s.section_type !== 'references' && s.section_type !== 'acknowledgement'
   )
-  const withScore = scored.map(s => ({
-    ...s,
-    combinedScore: s.aigc_score * 0.58 + s.dup_score * 0.42,
-    priorityRank: 0,
-  }))
+  const withScore = scored
+    .map(s => ({
+      ...s,
+      combinedScore: s.aigc_score * 0.58 + s.dup_score * 0.42,
+      priorityRank: 0,
+    }))
+    .filter(s => (
+      s.combinedScore >= 0.24 ||
+      s.aigc_score >= 0.30 ||
+      s.dup_score >= 0.20 ||
+      ((s.reasons?.length || 0) > 0 && s.combinedScore >= 0.18)
+    ))
   withScore.sort((a, b) => b.combinedScore - a.combinedScore)
-  const count = Math.max(5, Math.ceil(withScore.length * 0.15))
+  const count = Math.max(3, Math.ceil(withScore.length * 0.2))
   return withScore.slice(0, count).map((s, i) => ({ ...s, priorityRank: i + 1 }))
 })
 
@@ -1355,7 +1381,7 @@ async function loadData() {
     const [run, secs, blocksRes] = await Promise.all([
       getRun(props.runId),
       getRunSections(props.runId),
-      getRunBlocks(props.runId).catch(() => ({ blocks: [], reportSummary: null }))
+      getRunBlocks(props.runId).catch(() => ({ blocks: [], reportSummary: null, unmatchedSpans: [] }))
     ])
     sections.value = secs
     blocks.value = blocksRes.blocks
@@ -1379,8 +1405,13 @@ async function loadData() {
         lowRiskCount: counts.low,
         unmatchedCount: counts.unmatched,
       }
+      unmatchedSpans.value = blocksRes.unmatchedSpans || []
+      showUnmatchedPanel.value = unmatchedSpans.value.length > 0
     } else {
       reportSummary.value = null
+      unmatchedSpans.value = []
+      selectedUnmatchedSpan.value = null
+      manualBindMode.value = false
     }
 
     // 计算初始分数
@@ -1526,6 +1557,66 @@ function scrollToParagraph(paraIdx: number | null) {
   }
 }
 
+function selectUnmatchedSpan(span: OfficialRiskSpan) {
+  selectedUnmatchedSpan.value = span
+  manualBindMode.value = true
+  showUnmatchedPanel.value = true
+  ElMessage.info('已选择官方报告片段，请点击正文中对应段落完成绑定')
+}
+
+function startManualBind(span: OfficialRiskSpan) {
+  selectUnmatchedSpan(span)
+}
+
+async function bindSpanToBlock(span: OfficialRiskSpan, block: DocumentBlock) {
+  if (bindingSpanId.value) return
+  try {
+    await ElMessageBox.confirm(
+      '确认把该官方报告风险片段绑定到当前正文段落吗？绑定后页面风险颜色和右侧改写建议会以官方报告为准。',
+      '绑定官方风险片段',
+      { type: 'warning', confirmButtonText: '确认绑定', cancelButtonText: '取消' }
+    )
+  } catch {
+    return
+  }
+
+  bindingSpanId.value = span.spanId
+  try {
+    const result = await bindReportSpan(props.runId, {
+      spanId: span.spanId,
+      blockId: block.blockId,
+    })
+    const idx = blocks.value.findIndex(item => item.blockId === result.block.blockId)
+    if (idx >= 0) {
+      blocks.value.splice(idx, 1, result.block)
+    }
+    unmatchedSpans.value = result.unmatchedSpans
+    if (reportSummary.value) {
+      reportSummary.value.unmatchedCount = result.unmatchedCount
+    }
+    selectedUnmatchedSpan.value = null
+    manualBindMode.value = false
+    activeBlockId.value = block.blockId
+    refreshAllHighlights()
+    await selectBlock(result.block)
+    ElMessage.success('已按官方报告绑定风险段落')
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : '绑定失败')
+  } finally {
+    bindingSpanId.value = null
+  }
+}
+
+async function bindSpanToActiveBlock(span: OfficialRiskSpan) {
+  if (!activeBlockId.value) {
+    ElMessage.info('请先点击正文里对应的段落')
+    return
+  }
+  const block = blocks.value.find(item => item.blockId === activeBlockId.value)
+  if (!block) return
+  await bindSpanToBlock(span, block)
+}
+
 async function selectParagraph(para: ParagraphBlock) {
   // blocks 模式：通过 paragraphIndex 找 block
   if (blocks.value.length > 0) {
@@ -1533,6 +1624,10 @@ async function selectParagraph(para: ParagraphBlock) {
       (b.sourceMap?.paragraphIndex ?? b.displayOrder) === para.paragraphIndex
     )
     if (block) {
+      if (manualBindMode.value && selectedUnmatchedSpan.value) {
+        await bindSpanToBlock(selectedUnmatchedSpan.value, block)
+        return
+      }
       activeBlockId.value = block.blockId
       await selectBlock(block)
       return
@@ -1884,7 +1979,7 @@ async function doExport(format: 'docx' | 'txt') {
       content: rewrittenMap.value.get(sec.section_index) || sec.content,
       risk_level: effectiveRisk(sec)
     }))
-    const blob = await exportRun(props.runId, payload, format)
+    const { blob, patchStats } = await exportRun(props.runId, payload, format)
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -1893,7 +1988,11 @@ async function doExport(format: 'docx' | 'txt') {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
-    ElMessage.success(`已导出 ${format.toUpperCase()}`)
+    if (patchStats && format === 'docx') {
+      ElMessage.success(`已导出 DOCX，成功替换 ${patchStats.applied}/${patchStats.requested} 处`)
+    } else {
+      ElMessage.success(`已导出 ${format.toUpperCase()}`)
+    }
   } catch (err) {
     ElMessage.error(err instanceof Error ? err.message : '导出失败')
   }
@@ -2382,6 +2481,71 @@ function goNext() {
 }
 
 /* ===== 中间正文 ===== */
+.unmatched-panel {
+  border-top: 1px solid #E8E6E1;
+  padding: 12px 14px;
+  background: #FFFBF3;
+}
+
+.unmatched-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  color: #7A4D00;
+}
+
+.unmatched-toggle {
+  font-size: 12px;
+  color: #A66B00;
+  font-weight: 500;
+}
+
+.unmatched-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.unmatched-item {
+  padding: 10px;
+  border: 1px solid #F1D9A8;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.unmatched-item:hover,
+.unmatched-item.selected {
+  border-color: #D8941F;
+  box-shadow: 0 0 0 2px rgba(216, 148, 31, 0.14);
+}
+
+.unmatched-risk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.unmatched-text {
+  margin: 0;
+  color: #3E3426;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.unmatched-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 .editor-document {
   flex: 1;
   overflow-y: auto;

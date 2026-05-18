@@ -99,8 +99,8 @@
               <el-alert :title="cnkiOcrError" type="warning" :closable="false" show-icon />
             </div>
 
-            <div v-else-if="cnkiPreview" class="cnki-form">
-              <div class="cnki-ocr-result">
+            <div v-else class="cnki-form">
+              <div v-if="cnkiPreview" class="cnki-ocr-result">
                 <p class="ocr-preview">{{ cnkiPreview.extracted_text_preview }}</p>
                 <div class="ocr-matched">
                   <el-tag v-for="f in cnkiPreview.matched_fields" :key="f" type="success" size="small" effect="plain">
@@ -140,6 +140,26 @@
               <div class="form-field">
                 <label>备注（可选）</label>
                 <input v-model="cnkiForm.notes" type="text" placeholder="例如：第 1 次正式检测" />
+              </div>
+              <div class="learning-consent">
+                <div class="learning-options">
+                  <label class="learning-option" :class="{ active: cnkiForm.learningScope === 'none' }">
+                    <input v-model="cnkiForm.learningScope" type="radio" value="none" />
+                    <span>默认不参与共享学习</span>
+                    <small>仅用于本次检测与改写，不进入校准样本。</small>
+                  </label>
+                  <label class="learning-option" :class="{ active: cnkiForm.learningScope === 'private_account' }">
+                    <input v-model="cnkiForm.learningScope" type="radio" value="private_account" />
+                    <span>仅用于本人账号优化</span>
+                    <small>帮助后续更贴合你的学校标准，不贡献给全局模型。</small>
+                  </label>
+                  <label class="learning-option" :class="{ active: cnkiForm.learningScope === 'anonymous_global' }">
+                    <input v-model="cnkiForm.learningScope" type="radio" value="anonymous_global" />
+                    <span>匿名贡献给系统校准</span>
+                    <small>只保存匿名特征、官方风险等级和改写效果信号。</small>
+                  </label>
+                </div>
+                <p>系统不保存论文原文作为训练样本；官方报告只用于本次对齐风险颜色、定位高风险句子和生成更准确的改写建议。</p>
               </div>
             </div>
           </div>
@@ -209,7 +229,7 @@ import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAnalysisStore } from '../stores/analysis'
 import { previewCnkiFeedbackOcr } from '../api'
-import type { CnkiFeedbackOcrPreviewResponse } from '../types'
+import type { CnkiFeedbackOcrPreviewResponse, LearningScope } from '../types'
 
 const router = useRouter()
 const analysis = useAnalysisStore()
@@ -235,6 +255,7 @@ const cnkiForm = reactive({
   singleMaxDupPercent: undefined as number | undefined,
   suspectedPlagiarism: undefined as Record<string, number> | undefined,
   fragments: undefined as any[] | undefined,
+  learningScope: 'none' as LearningScope,
 })
 
 const form = reactive({
@@ -330,6 +351,7 @@ function removeCnkiFile() {
   cnkiForm.singleMaxDupPercent = undefined
   cnkiForm.suspectedPlagiarism = undefined
   cnkiForm.fragments = undefined
+  cnkiForm.learningScope = 'none'
 }
 
 function fieldLabel(field: string): string {
@@ -377,6 +399,7 @@ async function handleSubmit() {
           singleMaxDupPercent: cnkiForm.singleMaxDupPercent ?? null,
           suspectedPlagiarism: cnkiForm.suspectedPlagiarism ?? null,
           fragments: cnkiForm.fragments ?? null,
+          learningScope: cnkiForm.learningScope,
         }
       : undefined
   })
@@ -726,6 +749,51 @@ async function handleSubmit() {
 }
 .cnki-form .form-field input {
   background: #fff;
+}
+.learning-consent {
+  padding: 12px;
+  border: 1px solid rgba(47, 125, 103, 0.16);
+  border-radius: 12px;
+  background: rgba(47, 125, 103, 0.06);
+}
+.learning-options {
+  display: grid;
+  gap: 8px;
+}
+.learning-option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  padding: 9px 10px;
+  border: 1px solid rgba(31, 54, 73, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.74);
+  cursor: pointer;
+}
+.learning-option.active {
+  border-color: rgba(47, 125, 103, 0.38);
+  background: rgba(47, 125, 103, 0.1);
+}
+.learning-option input {
+  grid-row: span 2;
+  width: auto;
+  margin-top: 2px;
+}
+.learning-option span {
+  font-size: 13px;
+  font-weight: 700;
+  color: #344150;
+}
+.learning-option small {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #6f7a86;
+}
+.learning-consent p {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #6f7a86;
 }
 
 @media (max-width: 500px) {

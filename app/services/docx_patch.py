@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 import io
 from pathlib import Path
 
@@ -20,6 +21,48 @@ RISK_COLORS = {
     "low": "E1BEE7",
     "normal": "C8E6C9",
 }
+
+
+@dataclass
+class DocxPatchFailure:
+    block_id: str
+    paragraph_index: int | None
+    reason: str
+    old_text_preview: str
+
+
+@dataclass
+class DocxPatchStats:
+    requested_patch_count: int
+    applied_count: int = 0
+    failed_count: int = 0
+    skipped_block_count: int = 0
+    highlighted_block_count: int = 0
+    failures: list[DocxPatchFailure] = field(default_factory=list)
+
+    def to_headers(self) -> dict[str, str]:
+        return {
+            "X-PataFix-Patch-Requested": str(self.requested_patch_count),
+            "X-PataFix-Patch-Applied": str(self.applied_count),
+            "X-PataFix-Patch-Failed": str(self.failed_count),
+            "X-PataFix-Patch-Skipped": str(self.skipped_block_count),
+            "X-PataFix-Patch-Highlighted": str(self.highlighted_block_count),
+        }
+
+
+@dataclass
+class DocxPatchResult:
+    content: bytes
+    stats: DocxPatchStats
+
+
+class DocxPatchError(ValueError):
+    def __init__(self, stats: DocxPatchStats) -> None:
+        self.stats = stats
+        details = "; ".join(
+            f"{item.block_id}: {item.reason}" for item in stats.failures[:5]
+        )
+        super().__init__(details or "DOCX patch failed")
 
 
 def _set_para_shading(paragraph, color_hex: str) -> None:
@@ -109,6 +152,7 @@ def export_docx_with_patches(
     patches: list[dict],
     *,
     highlight_risks: bool = False,
+    strict: bool = False,
 ) -> bytes:
     """基于原始 docx 母版，仅应用文本 patches。
 
@@ -124,30 +168,85 @@ def export_docx_with_patches(
     Returns:
         docx 文件的字节内容
     """
+    return export_docx_with_patch_report(
+        original_path,
+        blocks,
+        patches,
+        highlight_risks=highlight_risks,
+        strict=strict,
+    ).content
+
+
+def export_docx_with_patch_report(
+    original_path: str,
+    blocks: list[dict],
+    patches: list[dict],
+    *,
+    highlight_risks: bool = False,
+    strict: bool = False,
+) -> DocxPatchResult:
     path = Path(original_path)
     if not path.exists() or path.suffix.lower() != ".docx":
         raise ValueError("原始 docx 文件不存在")
 
     doc = Document(original_path)
     patch_map = {p["block_id"]: p for p in patches}
+    handled_patch_ids: set[str] = set()
+    stats = DocxPatchStats(requested_patch_count=len(patches))
 
     for block in blocks:
+        block_id = block.get("block_id")
         if block.get("block_type") != "paragraph":
+            if block_id in patch_map:
+                handled_patch_ids.add(str(block_id))
+                stats.skipped_block_count += 1
+                stats.failures.append(
+                    DocxPatchFailure(
+                        block_id=str(block_id),
+                        paragraph_index=None,
+                        reason="该 block 不是正文段落，已跳过",
+                        old_text_preview=str(patch_map[block_id].get("old_text", ""))[:80],
+                    )
+                )
             continue
 
-        patch = patch_map.get(block["block_id"])
+        patch = patch_map.get(block_id)
         para_idx = block.get("source_map", {}).get("paragraphIndex")
         if para_idx is None or para_idx >= len(doc.paragraphs):
+            if patch:
+                handled_patch_ids.add(str(block_id))
+                stats.failed_count += 1
+                stats.failures.append(
+                    DocxPatchFailure(
+                        block_id=str(block_id),
+                        paragraph_index=para_idx,
+                        reason="无法定位原文档段落",
+                        old_text_preview=str(patch.get("old_text", ""))[:80],
+                    )
+                )
             continue
 
         para = doc.paragraphs[para_idx]
 
-        # 如果有 patch，替换文本
         if patch:
+            handled_patch_ids.add(str(block_id))
             old_text = patch["old_text"]
             new_text = patch["new_text"]
-            if not _try_replace_in_runs(para, old_text, new_text):
+            if _try_replace_in_runs(para, old_text, new_text):
+                stats.applied_count += 1
+            elif strict:
+                stats.failed_count += 1
+                stats.failures.append(
+                    DocxPatchFailure(
+                        block_id=str(block_id),
+                        paragraph_index=para_idx,
+                        reason="原句未在对应段落中找到，未执行整段覆盖以避免破坏格式",
+                        old_text_preview=str(old_text)[:80],
+                    )
+                )
+            else:
                 _fallback_replace_paragraph(para, new_text)
+                stats.applied_count += 1
 
         if highlight_risks:
             color = RISK_COLORS["normal"]
@@ -163,8 +262,27 @@ def export_docx_with_patches(
                 elif risk_score >= 30:
                     color = RISK_COLORS["low"]
             _set_para_shading(para, color)
+            stats.highlighted_block_count += 1
+
+    missing_patch_ids = set(str(item.get("block_id")) for item in patches) - handled_patch_ids
+    for block_id in sorted(missing_patch_ids):
+        patch = patch_map.get(block_id)
+        if patch is None:
+            continue
+        stats.failed_count += 1
+        stats.failures.append(
+            DocxPatchFailure(
+                block_id=block_id,
+                paragraph_index=None,
+                reason="patch 未匹配到任何可导出的正文 block",
+                old_text_preview=str(patch.get("old_text", ""))[:80],
+            )
+        )
+
+    if strict and stats.failed_count:
+        raise DocxPatchError(stats)
 
     buf = io.BytesIO()
     doc.save(buf)
     buf.seek(0)
-    return buf.getvalue()
+    return DocxPatchResult(content=buf.getvalue(), stats=stats)

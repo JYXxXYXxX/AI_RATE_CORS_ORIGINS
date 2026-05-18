@@ -366,10 +366,13 @@ export interface CnkiFeedbackResponse {
   calibration_version: string
   learning_sample_saved: boolean
   learning_skill_updated: boolean
+  learning_scope: LearningScope
   auto_train_triggered: boolean
   auto_train_versions: string[]
   created_at: string
 }
+
+export type LearningScope = 'none' | 'private_account' | 'anonymous_global'
 
 export interface CnkiFeedbackOcrPreviewResponse {
   filename: string
@@ -460,6 +463,17 @@ export interface OfficialReportSummary {
   mediumRiskCount: number
   lowRiskCount: number
   unmatchedCount: number
+}
+
+export interface OfficialRiskSpan {
+  spanId: string
+  text: string
+  riskType: 'similarity' | 'aigc'
+  riskLevel: 'high' | 'medium' | 'low'
+  similarity?: number
+  aigcScore?: number
+  matchedSource?: string
+  pageNumber?: number
 }
 
 export interface DocumentPatch {

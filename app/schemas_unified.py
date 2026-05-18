@@ -415,6 +415,7 @@ class CnkiFeedbackResponse(BaseModel):
     calibration_version: str
     learning_sample_saved: bool = False
     learning_skill_updated: bool = False
+    learning_scope: Literal["none", "private_account", "anonymous_global"] = "none"
     auto_train_triggered: bool = False
     auto_train_versions: list[str] = Field(default_factory=list)
     created_at: datetime
@@ -749,3 +750,18 @@ class AttachReportResponse(BaseModel):
     mapped_count: int
     unmatched_count: int
     unmatched_spans: list[CnkiRiskSpanResponse]
+
+
+class ManualReportSpanBindRequest(BaseModel):
+    span_id: str
+    block_id: str
+
+
+class ManualReportSpanBindResponse(BaseModel):
+    report_id: str
+    span_id: str
+    block_id: str
+    mapped_count: int
+    unmatched_count: int
+    unmatched_spans: list[CnkiRiskSpanResponse]
+    block: DocumentBlockResponse

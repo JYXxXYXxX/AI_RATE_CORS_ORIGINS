@@ -641,6 +641,14 @@
           <label>备注（可选）</label>
           <input v-model="cnkiUploadForm.notes" type="text" placeholder="例如：第 2 次修改后检测" />
         </div>
+        <div class="learning-consent">
+          <el-radio-group v-model="cnkiUploadForm.learningScope" class="learning-scope-group">
+            <el-radio-button label="none">默认不参与共享学习</el-radio-button>
+            <el-radio-button label="private_account">仅用于本人账号优化</el-radio-button>
+            <el-radio-button label="anonymous_global">匿名贡献给系统校准</el-radio-button>
+          </el-radio-group>
+          <p>系统不保存论文原文作为训练样本；只记录匿名特征、官方风险等级、绑定关系和改写效果信号，用于校准检测与改写策略。</p>
+        </div>
       </div>
     </div>
 
@@ -758,6 +766,7 @@ import type {
   ScoreBand,
   SubScores,
   UnifiedReportResponse,
+  LearningScope,
   UnlockPackage,
   UnlockOrder
 } from '../types'
@@ -832,6 +841,7 @@ const cnkiUploadForm = ref({
   singleMaxDupPercent: undefined as number | undefined,
   suspectedPlagiarism: undefined as Record<string, number> | undefined,
   fragments: undefined as any[] | undefined,
+  learningScope: 'none' as LearningScope,
 })
 
 const latestFeedback = computed(() => {
@@ -938,7 +948,7 @@ function openCnkiUploadDialog() {
   cnkiUploadFile.value = null
   cnkiUploadOcrPreview.value = null
   cnkiUploadOcrError.value = ''
-  cnkiUploadForm.value = { cnkiDupPercent: undefined, cnkiAigcPercent: undefined, reportDate: '', notes: '', removeReferenceDupPercent: undefined, singleMaxDupPercent: undefined, suspectedPlagiarism: undefined, fragments: undefined }
+  cnkiUploadForm.value = { cnkiDupPercent: undefined, cnkiAigcPercent: undefined, reportDate: '', notes: '', removeReferenceDupPercent: undefined, singleMaxDupPercent: undefined, suspectedPlagiarism: undefined, fragments: undefined, learningScope: 'none' }
   cnkiUploadDialogVisible.value = true
 }
 
@@ -978,7 +988,7 @@ function removeCnkiUploadFile() {
   cnkiUploadFile.value = null
   cnkiUploadOcrPreview.value = null
   cnkiUploadOcrError.value = ''
-  cnkiUploadForm.value = { cnkiDupPercent: undefined, cnkiAigcPercent: undefined, reportDate: '', notes: '', removeReferenceDupPercent: undefined, singleMaxDupPercent: undefined, suspectedPlagiarism: undefined, fragments: undefined }
+  cnkiUploadForm.value = { cnkiDupPercent: undefined, cnkiAigcPercent: undefined, reportDate: '', notes: '', removeReferenceDupPercent: undefined, singleMaxDupPercent: undefined, suspectedPlagiarism: undefined, fragments: undefined, learningScope: 'none' }
 }
 
 async function submitNewCnkiReport() {
@@ -999,6 +1009,7 @@ async function submitNewCnkiReport() {
       singleMaxDupPercent: cnkiUploadForm.value.singleMaxDupPercent ?? null,
       suspectedPlagiarism: cnkiUploadForm.value.suspectedPlagiarism ?? null,
       fragments: cnkiUploadForm.value.fragments ?? null,
+      learningScope: cnkiUploadForm.value.learningScope,
       evidenceFile: cnkiUploadFile.value
     })
     ElMessage.success('知网报告已上传成功')
@@ -1458,6 +1469,23 @@ function deltaText(value: number | null | undefined) {
   font-weight: 600;
   color: #344150;
   margin-bottom: 6px;
+}
+.cnki-dialog-form .learning-consent {
+  padding: 12px;
+  border: 1px solid rgba(47, 111, 83, 0.16);
+  border-radius: 12px;
+  background: rgba(47, 111, 83, 0.06);
+}
+.learning-scope-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.cnki-dialog-form .learning-consent p {
+  margin: 8px 0 0;
+  color: #6b7569;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 /* Pass banner */

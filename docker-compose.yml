@@ -50,6 +50,7 @@ services:
       - .env
     environment:
       AI_RATE_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-changeme_in_production}@db:5432/${POSTGRES_DB:-paper_risk_platform}
+      AI_RATE_ASYNC_QUEUE_BACKEND: celery
       AI_RATE_CELERY_BROKER_URL: redis://redis:6379/0
       AI_RATE_CELERY_RESULT_BACKEND: redis://redis:6379/0
     volumes:
@@ -73,6 +74,31 @@ services:
           memory: 2G
     # 生产环境建议以非 root 用户运行（需在 Dockerfile 中创建 app 用户）
     # user: "1000:1000"
+
+  # 后台分析 Worker：生产环境不要让 API 进程直接执行长任务
+  worker:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      AI_RATE_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-changeme_in_production}@db:5432/${POSTGRES_DB:-paper_risk_platform}
+      AI_RATE_ASYNC_QUEUE_BACKEND: celery
+      AI_RATE_CELERY_BROKER_URL: redis://redis:6379/0
+      AI_RATE_CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.worker.celery_app worker --loglevel=INFO --queues=analysis --concurrency=2
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
 
   # Nginx 反向代理
   nginx:

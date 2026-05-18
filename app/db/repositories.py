@@ -685,6 +685,45 @@ class UnifiedRepository:
             conn.commit()
         return count
 
+    def get_analysis_task_summary(self) -> dict[str, Any]:
+        """Return aggregate task health for admin operations dashboards."""
+        query = """
+            SELECT
+                COUNT(*) AS total,
+                COUNT(*) FILTER (WHERE status = 'queued') AS queued,
+                COUNT(*) FILTER (WHERE status = 'processing') AS processing,
+                COUNT(*) FILTER (WHERE status = 'completed') AS completed,
+                COUNT(*) FILTER (WHERE status = 'failed') AS failed,
+                MIN(created_at) FILTER (WHERE status = 'queued') AS oldest_queued_at,
+                MAX(finished_at) FILTER (WHERE status = 'failed') AS latest_failed_at,
+                AVG(EXTRACT(EPOCH FROM (finished_at - started_at)))
+                    FILTER (WHERE status = 'completed' AND started_at IS NOT NULL AND finished_at IS NOT NULL)
+                    AS avg_completed_seconds
+            FROM analysis_tasks
+        """
+        summary = self._fetchone(query, ()) or {}
+        latest_failed = self._fetchone(
+            """
+            SELECT id, document_id, error_message, finished_at
+            FROM analysis_tasks
+            WHERE status = 'failed'
+            ORDER BY finished_at DESC NULLS LAST, created_at DESC
+            LIMIT 1
+            """,
+            (),
+        )
+        return {
+            "total": int(summary.get("total") or 0),
+            "queued": int(summary.get("queued") or 0),
+            "processing": int(summary.get("processing") or 0),
+            "completed": int(summary.get("completed") or 0),
+            "failed": int(summary.get("failed") or 0),
+            "oldest_queued_at": summary.get("oldest_queued_at"),
+            "latest_failed_at": summary.get("latest_failed_at"),
+            "avg_completed_seconds": summary.get("avg_completed_seconds"),
+            "latest_failed_task": latest_failed,
+        }
+
     def list_user_analysis_tasks(
         self, user_id: str, limit: int = 10
     ) -> list[dict[str, Any]]:
@@ -1509,6 +1548,33 @@ class UnifiedRepository:
     def list_cnki_report_spans(self, report_id: str) -> list[dict[str, Any]]:
         return self._fetchall(
             "SELECT * FROM cnki_report_spans WHERE report_id = %s ORDER BY id",
+            (report_id,),
+        )
+
+    def get_cnki_report_span(
+        self, report_id: str, span_id: str
+    ) -> dict[str, Any] | None:
+        return self._fetchone(
+            """
+            SELECT *
+            FROM cnki_report_spans
+            WHERE report_id = %s AND span_id = %s
+            """,
+            (report_id, span_id),
+        )
+
+    def list_unmapped_cnki_report_spans(self, report_id: str) -> list[dict[str, Any]]:
+        return self._fetchall(
+            """
+            SELECT s.*
+            FROM cnki_report_spans s
+            LEFT JOIN block_report_mappings m
+              ON m.report_id = s.report_id
+             AND m.span_id = s.span_id
+            WHERE s.report_id = %s
+              AND m.id IS NULL
+            ORDER BY s.id
+            """,
             (report_id,),
         )
 

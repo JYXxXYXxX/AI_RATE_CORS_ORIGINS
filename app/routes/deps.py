@@ -87,6 +87,14 @@ class AuthContext:
     token: str | None
     user: dict[str, Any] | None
 
+    @property
+    def authenticated(self) -> bool:
+        return self.user is not None
+
+    @property
+    def user_id(self) -> str | None:
+        return str(self.user["id"]) if self.user is not None else None
+
 
 def get_auth_context(
     request: Request,

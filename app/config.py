@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     cleaned_storage_dir: str = "data/cleaned"
     feedback_storage_dir: str = "data/feedback"
     feedback_learning_store_path: str = "data/feedback_learning_samples.jsonl"
+    feedback_private_learning_dir: str = "data/feedback_private_learning"
     feedback_learning_skill_path: str = "data/feedback_learning_skill/SKILL.md"
     model_artifact_dir: str = "data/models"
     local_dup_model_version: str = "local-dup-0.1.0"
@@ -69,7 +70,8 @@ class Settings(BaseSettings):
     llm_model: str = "moonshot-v1-32k"
     llm_max_tokens: int = Field(default=4096, ge=512)
     llm_temperature: float = Field(default=0.5, ge=0.0, le=2.0)
-    llm_timeout_seconds: int = Field(default=60, ge=5)
+    llm_timeout_seconds: int = Field(default=30, ge=5)
+    llm_max_retries: int = Field(default=2, ge=1, le=6)
     llm_rewrite_enabled: bool = False
 
     data_retention_days: int = Field(default=90, ge=1)

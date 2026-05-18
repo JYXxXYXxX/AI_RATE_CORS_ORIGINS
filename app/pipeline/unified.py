@@ -24,6 +24,7 @@ from app.services.document_blocks import parse_document_to_blocks
 from app.services.document_loader import convert_doc_to_docx, extract_text
 from app.services.feedback_learning import (
     append_feedback_learning_sample,
+    append_private_feedback_learning_sample,
     build_feedback_learning_sample,
     refresh_feedback_learning_skill,
 )
@@ -384,7 +385,9 @@ class UnifiedPipeline:
         notes: str | None,
         details: dict[str, Any] | None = None,
         evidence_file: UploadFile | None = None,
-        learning_consent: bool = True,
+        learning_consent: bool = False,
+        learning_scope: str = "none",
+        learning_user_id: str | None = None,
     ) -> dict[str, Any]:
         document = self.repository.get_document(document_id)
         if document is None:
@@ -438,24 +441,38 @@ class UnifiedPipeline:
                 )
                 calibration_updated = True
 
+        effective_learning_scope = _normalize_learning_scope(
+            learning_scope, learning_consent
+        )
         learning_sample_saved = False
         learning_skill_updated = False
-        if learning_consent:
+        learning_sample: dict[str, Any] | None = None
+        if effective_learning_scope != "none":
+            learning_sample = build_feedback_learning_sample(
+                repository=self.repository,
+                document=document,
+                feedback=feedback,
+                predicted_run_id=predicted_run_id,
+                details=details,
+            )
+            if learning_sample:
+                learning_sample["learning_scope"] = effective_learning_scope
+        if effective_learning_scope == "anonymous_global":
             learning_sample_saved = append_feedback_learning_sample(
                 self.settings.feedback_learning_store_path,
-                build_feedback_learning_sample(
-                    repository=self.repository,
-                    document=document,
-                    feedback=feedback,
-                    predicted_run_id=predicted_run_id,
-                    details=details,
-                ),
+                learning_sample,
             )
             if learning_sample_saved:
                 learning_skill_updated = refresh_feedback_learning_skill(
                     self.settings.feedback_learning_store_path,
                     self.settings.feedback_learning_skill_path,
                 )
+        elif effective_learning_scope == "private_account":
+            learning_sample_saved = append_private_feedback_learning_sample(
+                self.settings.feedback_private_learning_dir,
+                learning_user_id,
+                learning_sample,
+            )
 
         return {
             "feedback": feedback,
@@ -463,6 +480,7 @@ class UnifiedPipeline:
             "calibration_version": self.calibrator.version,
             "learning_sample_saved": learning_sample_saved,
             "learning_skill_updated": learning_skill_updated,
+            "learning_scope": effective_learning_scope,
         }
 
     def build_run_status(self, run_id: str) -> AnalysisRunStatusResponse:
@@ -928,3 +946,13 @@ def _provider_label(provider: str) -> str:
         "local": "本地引擎",
     }
     return mapping.get(provider, provider)
+
+
+def _normalize_learning_scope(scope: str | None, consent: bool = False) -> str:
+    if scope == "private_account":
+        return "private_account"
+    if scope == "anonymous_global" or consent:
+        return "anonymous_global"
+    if scope == "none":
+        return scope
+    return "none"

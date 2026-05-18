@@ -37,6 +37,12 @@ def get_model_status(
     )
 
 
+@router.get("/admin/tasks/summary", dependencies=[Depends(require_admin)])
+def get_task_summary() -> dict:
+    """Return queue and task health for production operations."""
+    return get_repository().get_analysis_task_summary()
+
+
 @router.post(
     "/models/train-proxy",
     response_model=ProxyModelTrainResponse,

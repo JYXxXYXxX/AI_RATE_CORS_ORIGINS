@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
@@ -11,9 +12,18 @@ from app.schemas_unified import ReanalyzeRequest
 
 
 class FakeReportRepository:
-    def __init__(self, *, blocks: list[dict] | None = None, reports: list[dict] | None = None):
+    def __init__(
+        self,
+        *,
+        blocks: list[dict] | None = None,
+        reports: list[dict] | None = None,
+        spans: list[dict] | None = None,
+        mappings: list[dict] | None = None,
+    ):
         self.blocks = blocks or []
         self.reports = reports or []
+        self.spans = spans or []
+        self.mappings = mappings or []
 
     def get_run(self, run_id: str) -> dict:
         return {
@@ -33,8 +43,64 @@ class FakeReportRepository:
     def list_latest_patches_by_run(self, document_id: str, run_id: str) -> list[dict]:
         return []
 
+    def list_document_patches(self, document_id: str, run_id: str) -> list[dict]:
+        return []
+
+    def get_report_snapshot(self, run_id: str) -> dict | None:
+        return None
+
     def list_cnki_reports_by_document(self, document_id: str) -> list[dict]:
         return self.reports
+
+    def list_cnki_report_spans(self, report_id: str) -> list[dict]:
+        return [span for span in self.spans if str(span.get("report_id")) == str(report_id)]
+
+    def get_cnki_report_span(self, report_id: str, span_id: str) -> dict | None:
+        return next(
+            (
+                span
+                for span in self.spans
+                if str(span.get("report_id")) == str(report_id)
+                and span.get("span_id") == span_id
+            ),
+            None,
+        )
+
+    def list_unmapped_cnki_report_spans(self, report_id: str) -> list[dict]:
+        mapped = {
+            mapping.get("span_id")
+            for mapping in self.mappings
+            if str(mapping.get("report_id")) == str(report_id)
+        }
+        return [
+            span
+            for span in self.list_cnki_report_spans(report_id)
+            if span.get("span_id") not in mapped
+        ]
+
+    def list_block_report_mappings(self, document_id: str) -> list[dict]:
+        return [
+            mapping
+            for mapping in self.mappings
+            if str(mapping.get("document_id")) == str(document_id)
+        ]
+
+    def get_document_block(self, document_id: str, block_id: str) -> dict | None:
+        return next((block for block in self.blocks if block.get("block_id") == block_id), None)
+
+    def insert_block_report_mapping(self, **kwargs) -> dict:
+        mapping = {**kwargs, "id": f"mapping-{len(self.mappings) + 1}"}
+        self.mappings.append(mapping)
+        return mapping
+
+    def update_block_report_risk(
+        self, document_id: str, block_id: str, report_risk: dict
+    ) -> dict | None:
+        block = self.get_document_block(document_id, block_id)
+        if block is None:
+            return None
+        block["report_risk"] = report_risk
+        return block
 
 
 class FakeRewriteService:
@@ -136,6 +202,168 @@ def test_run_blocks_returns_official_report_summary(monkeypatch: pytest.MonkeyPa
         "lowRiskCount": 0,
         "unmatchedCount": 0,
     }
+
+
+def test_run_blocks_returns_unmatched_official_spans(monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = FakeReportRepository(
+        blocks=[],
+        reports=[
+            {
+                "id": "report-1",
+                "report_type": "mixed",
+                "total_copy_ratio": 18.5,
+                "aigc_ratio": 42.0,
+            }
+        ],
+        spans=[
+            {
+                "report_id": "report-1",
+                "span_id": "s1",
+                "text": "已匹配官方风险片段",
+                "risk_type": "aigc",
+                "risk_level": "high",
+                "aigc_score": 88.0,
+            },
+            {
+                "report_id": "report-1",
+                "span_id": "s2",
+                "text": "未匹配官方风险片段",
+                "risk_type": "similarity",
+                "risk_level": "medium",
+                "similarity": 61.0,
+            },
+        ],
+        mappings=[
+            {
+                "document_id": "doc-1",
+                "report_id": "report-1",
+                "span_id": "s1",
+                "block_id": "b1",
+            }
+        ],
+    )
+    monkeypatch.setattr(documents, "get_repository", lambda: repo)
+
+    response = asyncio.run(
+        documents.get_run_blocks("run-report", auth=AuthContext(token=None, user=None))
+    )
+
+    assert response["reportSummary"]["highRiskCount"] == 1
+    assert response["reportSummary"]["mediumRiskCount"] == 1
+    assert response["reportSummary"]["unmatchedCount"] == 1
+    assert response["unmatchedSpans"][0].span_id == "s2"
+
+
+def test_manual_bind_report_span_updates_block_risk(monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = FakeReportRepository(
+        blocks=[
+            {
+                "block_id": "b2",
+                "block_type": "paragraph",
+                "text": "正文里对应的风险段落",
+                "source_type": "txt",
+                "source_map": {"paragraphIndex": 2},
+                "display_order": 2,
+                "char_count": 10,
+                "report_risk": None,
+            }
+        ],
+        reports=[
+            {
+                "id": "report-1",
+                "report_type": "mixed",
+                "total_copy_ratio": 18.5,
+                "aigc_ratio": 42.0,
+            }
+        ],
+        spans=[
+            {
+                "report_id": "report-1",
+                "span_id": "s2",
+                "text": "未匹配官方风险片段",
+                "risk_type": "similarity",
+                "risk_level": "medium",
+                "similarity": 61.0,
+            },
+        ],
+    )
+    monkeypatch.setattr(documents, "get_repository", lambda: repo)
+
+    response = asyncio.run(
+        documents.bind_report_span_to_block(
+            "run-report",
+            documents.ManualReportSpanBindRequest(span_id="s2", block_id="b2"),
+            auth=AuthContext(token=None, user=None),
+        )
+    )
+
+    assert response.unmatched_count == 0
+    assert response.mapped_count == 1
+    assert repo.blocks[0]["report_risk"]["span_id"] == "s2"
+    assert repo.blocks[0]["report_risk"]["risk_level"] == "medium"
+    assert repo.mappings[0]["match_method"] == "manual"
+
+
+def test_official_report_upload_can_save_learning_sample(tmp_path) -> None:
+    repo = FakeReportRepository(
+        blocks=[
+            {
+                "block_id": "b1",
+                "block_type": "paragraph",
+                "text": "随着系统持续发展，该机制为平台提供了支撑。",
+                "source_type": "txt",
+                "source_map": {"paragraphIndex": 1},
+                "display_order": 1,
+                "char_count": 18,
+            }
+        ],
+        mappings=[
+            {
+                "document_id": "doc-1",
+                "report_id": "report-1",
+                "block_id": "b1",
+                "span_id": "s1",
+                "span_text": "随着系统持续发展",
+                "risk_type": "aigc",
+                "risk_level": "high",
+                "aigc_score": 88.0,
+                "match_method": "manual",
+                "match_confidence": 1.0,
+            }
+        ],
+    )
+    settings = SimpleNamespace(
+        feedback_learning_store_path=str(tmp_path / "learning.jsonl"),
+        feedback_learning_skill_path=str(tmp_path / "skill" / "SKILL.md"),
+    )
+
+    saved, refreshed = documents._record_official_report_learning_if_allowed(
+        repository=repo,
+        settings=settings,
+        document={"id": "doc-1", "subject": "cs", "degree_level": "本科"},
+        report={
+            "id": "report-1",
+            "total_copy_ratio": 4.0,
+            "aigc_ratio": 5.0,
+            "generated_at": "2026-05-18",
+            "parsed_at": "2026-05-18T10:00:00",
+        },
+        spans=[
+            {
+                "span_id": "s1",
+                "text": "随着系统持续发展",
+                "risk_type": "aigc",
+                "risk_level": "high",
+                "aigc_score": 88.0,
+            }
+        ],
+        predicted_run_id=None,
+        learning_consent=True,
+    )
+
+    assert saved is True
+    assert refreshed is True
+    assert "official-report-feedback-reducer" in (tmp_path / "skill" / "SKILL.md").read_text(encoding="utf-8")
 
 
 def test_report_mode_rewrite_uses_official_risk_only() -> None:

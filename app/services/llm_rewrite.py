@@ -388,7 +388,7 @@ class LLMRewriteService:
         }
         payload = self._request_payload(system_prompt, user_prompt)
 
-        max_retries = 6
+        max_retries = max(1, int(getattr(self.settings, "llm_max_retries", 2)))
         for attempt in range(max_retries):
             try:
                 async with httpx.AsyncClient(

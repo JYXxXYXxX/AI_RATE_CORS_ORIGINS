@@ -436,6 +436,7 @@ def _build_priority_sections(
         dict(s)
         for s in section_reports
         if _infer_section_type(s.get("section_title")) not in ("references", "acknowledgement")
+        and _is_actionable_section(s)
     ]
     if not scored:
         return []

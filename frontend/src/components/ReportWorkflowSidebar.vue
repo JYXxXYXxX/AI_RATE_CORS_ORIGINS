@@ -41,6 +41,16 @@
             <el-button>选择文件</el-button>
           </el-upload>
         </el-form-item>
+        <div class="learning-consent">
+          <el-radio-group v-model="feedbackForm.learningScope" class="learning-scope-group">
+            <el-radio-button label="none">默认不参与共享学习</el-radio-button>
+            <el-radio-button label="private_account">仅用于本人账号优化</el-radio-button>
+            <el-radio-button label="anonymous_global">匿名贡献给系统校准</el-radio-button>
+          </el-radio-group>
+          <p class="helper-text">
+            系统不保存论文原文作为训练样本；只记录匿名特征、官方风险等级、绑定关系和改写效果信号，用于校准检测与改写策略。
+          </p>
+        </div>
         <el-button plain :loading="ocrPreviewLoading" :disabled="!evidenceFile" @click="previewEvidenceOcr">
           自动识别回填数据
         </el-button>
@@ -207,7 +217,8 @@ import type {
   ProviderFetchResponse,
   ProviderResultImportResponse,
   ProxyModelTrainResponse,
-  UnifiedReportResponse
+  UnifiedReportResponse,
+  LearningScope
 } from '../types'
 
 type ProviderCode = 'wanfang' | 'vip' | 'turnitin' | 'manual'
@@ -242,6 +253,7 @@ const feedbackForm = reactive({
   singleMaxDupPercent: undefined as number | undefined,
   suspectedPlagiarism: undefined as Record<string, number> | undefined,
   fragments: undefined as any[] | undefined,
+  learningScope: 'none' as LearningScope,
 })
 
 const providerForm = reactive({
@@ -314,6 +326,7 @@ async function submitFeedbackForm() {
       singleMaxDupPercent: feedbackForm.singleMaxDupPercent ?? null,
       suspectedPlagiarism: feedbackForm.suspectedPlagiarism ?? null,
       fragments: feedbackForm.fragments ?? null,
+      learningScope: feedbackForm.learningScope,
       evidenceFile: evidenceFile.value
     })
     ElMessage.success(
@@ -450,6 +463,7 @@ function resetWorkflowState() {
     singleMaxDupPercent: undefined,
     suspectedPlagiarism: undefined,
     fragments: undefined,
+    learningScope: 'none',
   })
   Object.assign(providerForm, {
     provider: 'manual',
@@ -487,3 +501,23 @@ function isProviderCode(value: string | undefined): value is ProviderCode {
   return value === 'wanfang' || value === 'vip' || value === 'turnitin' || value === 'manual'
 }
 </script>
+
+<style scoped>
+.learning-consent {
+  padding: 12px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(47, 111, 83, 0.16);
+  border-radius: 12px;
+  background: rgba(47, 111, 83, 0.06);
+}
+
+.learning-scope-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.learning-consent .helper-text {
+  margin: 8px 0 0;
+}
+</style>

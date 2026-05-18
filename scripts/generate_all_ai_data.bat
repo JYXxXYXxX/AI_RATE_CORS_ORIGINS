@@ -34,23 +34,32 @@ echo.
 
 :: 1. Yunwu (gpt-4o-mini) - 通常最稳定
 echo [1/3] 正在使用 Yunwu (gpt-4o-mini) 生成数据...
-set AI_GEN_API_KEY=sk-rjZc2w75YjjjDXjmADQS5bIqL2gAsbj0gB2RggsSpr1bff9F
+if "%AI_GEN_YUNWU_API_KEY%"=="" (
+    echo [跳过] 未设置 AI_GEN_YUNWU_API_KEY
+) else (
+set AI_GEN_API_KEY=%AI_GEN_YUNWU_API_KEY%
 set AI_GEN_BASE_URL=https://api.yunwu.ai/v1
 set AI_GEN_MODEL=gpt-4o-mini
 start /B cmd /c "python scripts/generate_ai_training_data.py --count %GEN_COUNT% --delay %DELAY% --output data/training/ai_yunwu.jsonl > data/training/log_yunwu.txt 2>&1"
+)
 
 :: 2. Ollama 本地 (如果运行中)
 echo [2/3] 正在使用 Ollama (qwen2.5:7b) 生成数据...
+set AI_GEN_API_KEY=
 set AI_GEN_BASE_URL=http://127.0.0.1:11434/v1
 set AI_GEN_MODEL=qwen2.5:7b
 start /B cmd /c "python scripts/generate_ai_training_data.py --count %GEN_COUNT% --delay 0.5 --output data/training/ai_ollama.jsonl > data/training/log_ollama.txt 2>&1"
 
 :: 3. 智谱 AI
 echo [3/3] 正在使用 Zhipu (glm-4-plus) 生成数据...
-set AI_GEN_API_KEY=9a963fc602bf467a8d807bf61f648b92.C3ZdihQVUmEoekLq
+if "%AI_GEN_ZHIPU_API_KEY%"=="" (
+    echo [跳过] 未设置 AI_GEN_ZHIPU_API_KEY
+) else (
+set AI_GEN_API_KEY=%AI_GEN_ZHIPU_API_KEY%
 set AI_GEN_BASE_URL=https://open.bigmodel.cn/api/paas/v4
 set AI_GEN_MODEL=glm-4-plus
 start /B cmd /c "python scripts/generate_ai_training_data.py --count %GEN_COUNT% --delay %DELAY% --output data/training/ai_zhipu.jsonl > data/training/log_zhipu.txt 2>&1"
+)
 
 echo.
 echo ============================================

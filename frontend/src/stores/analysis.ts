@@ -15,7 +15,8 @@ import type {
   AnalysisTaskStatusResponse,
   AnalysisRunStatusResponse,
   UnifiedReportResponse,
-  RecentAnalysisTaskSummary
+  RecentAnalysisTaskSummary,
+  LearningScope
 } from '../types'
 
 export interface CnkiReportPayload {
@@ -28,6 +29,8 @@ export interface CnkiReportPayload {
   singleMaxDupPercent?: number | null
   suspectedPlagiarism?: Record<string, number> | null
   fragments?: any[] | null
+  learningConsent?: boolean
+  learningScope?: LearningScope
 }
 
 export const useAnalysisStore = defineStore('analysis', () => {
@@ -72,6 +75,8 @@ export const useAnalysisStore = defineStore('analysis', () => {
           title: payload.title,
           subject: payload.subject,
           degreeLevel: payload.degreeLevel,
+          learningScope: payload.cnkiReport.learningScope,
+          learningConsent: payload.cnkiReport.learningConsent === true,
           onProgress: (percent) => { uploadProgress.value = percent }
         })
         uploadProgress.value = 100

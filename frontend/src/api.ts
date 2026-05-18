@@ -14,7 +14,9 @@ import type {
   DocumentPatch,
   DocumentUploadResponse,
   ModelStatusResponse,
+  LearningScope,
   OfficialReportSummary,
+  OfficialRiskSpan,
   ProviderCatalogResponse,
   ProviderConfigDetail,
   ProviderConfigListResponse,
@@ -286,6 +288,7 @@ export async function submitCnkiFeedback(payload: {
   suspectedPlagiarism?: Record<string, number> | null
   fragments?: CnkiReportFragment[] | null
   learningConsent?: boolean
+  learningScope?: LearningScope
   evidenceFile?: File | null
 }): Promise<CnkiFeedbackResponse> {
   const formData = new FormData()
@@ -299,7 +302,9 @@ export async function submitCnkiFeedback(payload: {
   if (typeof payload.singleMaxDupPercent === 'number') formData.append('single_max_dup_percent', String(payload.singleMaxDupPercent))
   if (payload.suspectedPlagiarism) formData.append('suspected_plagiarism_json', JSON.stringify(payload.suspectedPlagiarism))
   if (payload.fragments) formData.append('fragments_json', JSON.stringify(payload.fragments))
-  formData.append('learning_consent', String(payload.learningConsent ?? true))
+  const learningScope = payload.learningScope || (payload.learningConsent ? 'anonymous_global' : 'none')
+  formData.append('learning_scope', learningScope)
+  formData.append('learning_consent', String(learningScope === 'anonymous_global'))
   if (payload.evidenceFile) formData.append('evidence_file', payload.evidenceFile)
 
   const response = await fetchWithRetry(`${baseUrl}/v1/cnki-feedback`, {
@@ -499,7 +504,7 @@ export async function exportRun(
   runId: string,
   sections: { section_index: number; content: string; risk_level?: string }[],
   format: 'docx' | 'txt' = 'docx'
-): Promise<Blob> {
+): Promise<{ blob: Blob; patchStats?: Record<string, number> }> {
   const response = await fetchWithRetry(`${baseUrl}/v1/runs/${runId}/export`, {
     method: 'POST',
     headers: jsonHeaders(true),
@@ -508,20 +513,63 @@ export async function exportRun(
   })
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}))
-    throw new Error(payload.detail || `请求失败：${response.status}`)
+    const detail = payload.detail
+    if (typeof detail === 'string') {
+      throw new Error(detail)
+    }
+    if (detail?.message) {
+      const firstFailure = Array.isArray(detail.failures) && detail.failures.length
+        ? `：${detail.failures[0].reason}`
+        : ''
+      throw new Error(`${detail.message}${firstFailure}`)
+    }
+    throw new Error(`请求失败：${response.status}`)
   }
-  return response.blob()
+  const patchStats = {
+    requested: Number(response.headers.get('X-PataFix-Patch-Requested') || 0),
+    applied: Number(response.headers.get('X-PataFix-Patch-Applied') || 0),
+    failed: Number(response.headers.get('X-PataFix-Patch-Failed') || 0),
+    skipped: Number(response.headers.get('X-PataFix-Patch-Skipped') || 0),
+    highlighted: Number(response.headers.get('X-PataFix-Patch-Highlighted') || 0),
+  }
+  return {
+    blob: await response.blob(),
+    patchStats: response.headers.has('X-PataFix-Patch-Requested') ? patchStats : undefined,
+  }
 }
 
-export async function getRunBlocks(runId: string): Promise<{ blocks: DocumentBlock[]; reportSummary?: OfficialReportSummary | null }> {
+export async function getRunBlocks(runId: string): Promise<{
+  blocks: DocumentBlock[]
+  reportSummary?: OfficialReportSummary | null
+  unmatchedSpans?: OfficialRiskSpan[]
+}> {
   const response = await fetchWithRetry(`${baseUrl}/v1/runs/${runId}/blocks`, {
     headers: authHeaders(),
     credentials: 'include'
   })
-  const payload = await parseResponse<{ blocks: any[]; reportSummary?: OfficialReportSummary | null }>(response)
+  const payload = await parseResponse<{
+    blocks: any[]
+    reportSummary?: OfficialReportSummary | null
+    unmatchedSpans?: any[]
+    unmatched_spans?: any[]
+  }>(response)
   return {
     ...payload,
-    blocks: (payload.blocks || []).map(normalizeDocumentBlock)
+    blocks: (payload.blocks || []).map(normalizeDocumentBlock),
+    unmatchedSpans: (payload.unmatchedSpans || payload.unmatched_spans || []).map(normalizeOfficialRiskSpan)
+  }
+}
+
+function normalizeOfficialRiskSpan(span: any): OfficialRiskSpan {
+  return {
+    spanId: span.spanId ?? span.span_id,
+    text: span.text || '',
+    riskType: span.riskType ?? span.risk_type,
+    riskLevel: span.riskLevel ?? span.risk_level,
+    similarity: span.similarity ?? undefined,
+    aigcScore: span.aigcScore ?? span.aigc_score ?? undefined,
+    matchedSource: span.matchedSource ?? span.matched_source ?? undefined,
+    pageNumber: span.pageNumber ?? span.page_number ?? undefined,
   }
 }
 
@@ -570,6 +618,8 @@ export async function uploadDocumentWithReport(payload: {
   title?: string
   subject?: string
   degreeLevel?: string
+  learningConsent?: boolean
+  learningScope?: LearningScope
   onProgress?: (percent: number) => void
 }): Promise<{
   fileId: string
@@ -579,16 +629,7 @@ export async function uploadDocumentWithReport(payload: {
     reportId: string
   }
   blocks: DocumentBlock[]
-  unmatchedRiskSpans: Array<{
-    spanId: string
-    text: string
-    riskType: 'similarity' | 'aigc'
-    riskLevel: 'high' | 'medium' | 'low'
-    similarity?: number
-    aigcScore?: number
-    matchedSource?: string
-    pageNumber?: number
-  }>
+  unmatchedRiskSpans: OfficialRiskSpan[]
 }> {
   const formData = new FormData()
   formData.append('file', payload.file)
@@ -596,6 +637,9 @@ export async function uploadDocumentWithReport(payload: {
   if (payload.title) formData.append('title', payload.title)
   if (payload.subject) formData.append('subject', payload.subject)
   if (payload.degreeLevel) formData.append('degree_level', payload.degreeLevel)
+  const learningScope = payload.learningScope || (payload.learningConsent ? 'anonymous_global' : 'none')
+  formData.append('learning_scope', learningScope)
+  formData.append('learning_consent', String(learningScope === 'anonymous_global'))
 
   if (payload.onProgress) {
     return new Promise((resolve, reject) => {
@@ -612,7 +656,8 @@ export async function uploadDocumentWithReport(payload: {
           const result = JSON.parse(xhr.responseText)
           resolve({
             ...result,
-            blocks: (result.blocks || []).map(normalizeDocumentBlock)
+            blocks: (result.blocks || []).map(normalizeDocumentBlock),
+            unmatchedRiskSpans: (result.unmatchedRiskSpans || result.unmatched_risk_spans || []).map(normalizeOfficialRiskSpan)
           })
         } else {
           let detail = `请求失败：${xhr.status}`
@@ -637,56 +682,88 @@ export async function uploadDocumentWithReport(payload: {
   const result = await parseResponse<any>(response)
   return {
     ...result,
-    blocks: (result.blocks || []).map(normalizeDocumentBlock)
+    blocks: (result.blocks || []).map(normalizeDocumentBlock),
+    unmatchedRiskSpans: (result.unmatchedRiskSpans || result.unmatched_risk_spans || []).map(normalizeOfficialRiskSpan)
   }
 }
 
-export async function attachReportToDocument(documentId: string, reportFile: File): Promise<{
+export async function attachReportToDocument(documentId: string, reportFile: File, learningScope: LearningScope = 'none'): Promise<{
   reportId: string
   mappedCount: number
   unmatchedCount: number
-  unmatchedSpans: Array<{
-    spanId: string
-    text: string
-    riskType: 'similarity' | 'aigc'
-    riskLevel: 'high' | 'medium' | 'low'
-    similarity?: number
-    aigcScore?: number
-    matchedSource?: string
-    pageNumber?: number
-  }>
+  unmatchedSpans: OfficialRiskSpan[]
 }> {
   const formData = new FormData()
   formData.append('report_file', reportFile)
+  formData.append('learning_scope', learningScope)
+  formData.append('learning_consent', String(learningScope === 'anonymous_global'))
   const response = await fetchWithRetry(`${baseUrl}/v1/documents/${documentId}/report`, {
     method: 'POST',
     headers: authHeaders(),
     credentials: 'include',
     body: formData
   })
-  return parseResponse(response)
+  const result = await parseResponse<any>(response)
+  return {
+    ...result,
+    reportId: result.reportId ?? result.report_id,
+    mappedCount: result.mappedCount ?? result.mapped_count,
+    unmatchedCount: result.unmatchedCount ?? result.unmatched_count,
+    unmatchedSpans: (result.unmatchedSpans || result.unmatched_spans || []).map(normalizeOfficialRiskSpan)
+  }
 }
 
 export async function remapReport(documentId: string): Promise<{
   mappedCount: number
   unmatchedCount: number
-  unmatchedSpans: Array<{
-    spanId: string
-    text: string
-    riskType: 'similarity' | 'aigc'
-    riskLevel: 'high' | 'medium' | 'low'
-    similarity?: number
-    aigcScore?: number
-    matchedSource?: string
-    pageNumber?: number
-  }>
+  unmatchedSpans: OfficialRiskSpan[]
 }> {
   const response = await fetchWithRetry(`${baseUrl}/v1/documents/${documentId}/remap-report`, {
     method: 'POST',
     headers: authHeaders(),
     credentials: 'include'
   })
-  return parseResponse(response)
+  const result = await parseResponse<any>(response)
+  return {
+    ...result,
+    mappedCount: result.mappedCount ?? result.mapped_count,
+    unmatchedCount: result.unmatchedCount ?? result.unmatched_count,
+    unmatchedSpans: (result.unmatchedSpans || result.unmatched_spans || []).map(normalizeOfficialRiskSpan)
+  }
+}
+
+export async function bindReportSpan(
+  runId: string,
+  payload: { spanId: string; blockId: string }
+): Promise<{
+  reportId: string
+  spanId: string
+  blockId: string
+  mappedCount: number
+  unmatchedCount: number
+  unmatchedSpans: OfficialRiskSpan[]
+  block: DocumentBlock
+}> {
+  const response = await fetchWithRetry(`${baseUrl}/v1/runs/${runId}/report-spans/bind`, {
+    method: 'POST',
+    headers: jsonHeaders(true),
+    credentials: 'include',
+    body: JSON.stringify({
+      span_id: payload.spanId,
+      block_id: payload.blockId,
+    })
+  })
+  const result = await parseResponse<any>(response)
+  return {
+    ...result,
+    reportId: result.reportId ?? result.report_id,
+    spanId: result.spanId ?? result.span_id,
+    blockId: result.blockId ?? result.block_id,
+    mappedCount: result.mappedCount ?? result.mapped_count,
+    unmatchedCount: result.unmatchedCount ?? result.unmatched_count,
+    unmatchedSpans: (result.unmatchedSpans || result.unmatched_spans || []).map(normalizeOfficialRiskSpan),
+    block: normalizeDocumentBlock(result.block),
+  }
 }
 
 export async function createPatch(

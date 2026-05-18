@@ -46,6 +46,8 @@ from app.schemas_unified import (
     DocumentUploadResponse,
     ExportRequest,
     InternalRiskData,
+    ManualReportSpanBindRequest,
+    ManualReportSpanBindResponse,
     ReanalyzeRequest,
     ReanalyzeResponse,
     ReanalyzeSectionResult,
@@ -58,6 +60,12 @@ from app.services.analyzer import PaperAnalyzer, risk_level
 from app.services.block_matcher import match_spans_to_blocks
 from app.services.cnki_report_parser import parse_cnki_report_bytes
 from app.services.document_blocks import parse_document_to_blocks
+from app.services.feedback_learning import (
+    append_feedback_learning_sample,
+    append_private_feedback_learning_sample,
+    build_feedback_learning_sample,
+    refresh_feedback_learning_skill,
+)
 from app.services.text_processing import preview_text, segment_document
 from app.task_queue import dispatch_analysis_task
 
@@ -109,6 +117,8 @@ async def upload_document_with_report(
     title: str | None = Form(default=None),
     subject: str | None = Form(default=None),
     degree_level: str | None = Form(default=None),
+    learning_consent: bool = Form(default=False),
+    learning_scope: str = Form(default="none"),
     settings: Settings = Depends(get_settings),
     auth: AuthContext = Depends(get_auth_context),
 ) -> UploadWithReportResponse:
@@ -234,6 +244,30 @@ async def upload_document_with_report(
     repository.mark_run_completed(run_id)
     repository.mark_document_status(document_id, "completed")
 
+    _record_official_report_learning_if_allowed(
+        repository=repository,
+        settings=settings,
+        document=document,
+        report=db_report,
+        spans=[
+            {
+                "span_id": s.span_id,
+                "text": s.text,
+                "risk_type": s.risk_type,
+                "risk_level": s.risk_level,
+                "similarity": s.similarity,
+                "aigc_score": s.aigc_score,
+                "matched_source": s.matched_source,
+                "page_number": s.page_number,
+            }
+            for s in cnki_report.risky_spans
+        ],
+        predicted_run_id=run_id,
+        learning_consent=learning_consent,
+        learning_scope=learning_scope,
+        learning_user_id=auth.user_id if auth.authenticated else None,
+    )
+
     # 8. 组装响应
     db_blocks = repository.list_document_blocks(document_id)
     block_responses = [_build_block_response(b, None) for b in db_blocks]
@@ -277,6 +311,8 @@ async def upload_document_with_report(
 async def attach_report_to_document(
     document_id: str,
     report_file: UploadFile = File(...),
+    learning_consent: bool = Form(default=False),
+    learning_scope: str = Form(default="none"),
     settings: Settings = Depends(get_settings),
     auth: AuthContext = Depends(get_auth_context),
 ) -> AttachReportResponse:
@@ -378,6 +414,32 @@ async def attach_report_to_document(
                     "match_confidence": mapping.match_confidence,
                 },
             )
+
+    latest_runs = repository.list_completed_runs(document_id, limit=1)
+    predicted_run_id = str(latest_runs[0]["id"]) if latest_runs else None
+    _record_official_report_learning_if_allowed(
+        repository=repository,
+        settings=settings,
+        document=document,
+        report=db_report,
+        spans=[
+            {
+                "span_id": s.span_id,
+                "text": s.text,
+                "risk_type": s.risk_type,
+                "risk_level": s.risk_level,
+                "similarity": s.similarity,
+                "aigc_score": s.aigc_score,
+                "matched_source": s.matched_source,
+                "page_number": s.page_number,
+            }
+            for s in cnki_report.risky_spans
+        ],
+        predicted_run_id=predicted_run_id,
+        learning_consent=learning_consent,
+        learning_scope=learning_scope,
+        learning_user_id=auth.user_id if auth.authenticated else None,
+    )
 
     return AttachReportResponse(
         report_id=report_id,
@@ -988,18 +1050,53 @@ async def export_rewritten_document(
 
     if blocks and original_path and Path(original_path).suffix.lower() == ".docx" and Path(original_path).exists():
         try:
-            from app.services.docx_patch import export_docx_with_patches
-            docx_bytes = export_docx_with_patches(original_path, blocks, patches)
-            return Response(
-                content=docx_bytes,
-                media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                headers={
-                    "Content-Disposition": f'attachment; filename="{safe_title}.docx"'
-                },
+            from app.services.docx_patch import (
+                DocxPatchError,
+                export_docx_with_patch_report,
             )
-        except Exception:
-            # 回退到旧逻辑
-            pass
+
+            patch_result = export_docx_with_patch_report(
+                original_path,
+                blocks,
+                patches,
+                strict=True,
+            )
+            headers = {
+                "Content-Disposition": f'attachment; filename="{safe_title}.docx"',
+                **patch_result.stats.to_headers(),
+            }
+            return Response(
+                content=patch_result.content,
+                media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                headers=headers,
+            )
+        except DocxPatchError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "DOCX 原文档文本替换失败。为避免破坏论文格式，系统未导出重建版文档。",
+                    "stats": {
+                        "requested_patch_count": exc.stats.requested_patch_count,
+                        "applied_count": exc.stats.applied_count,
+                        "failed_count": exc.stats.failed_count,
+                        "skipped_block_count": exc.stats.skipped_block_count,
+                    },
+                    "failures": [
+                        {
+                            "block_id": item.block_id,
+                            "paragraph_index": item.paragraph_index,
+                            "reason": item.reason,
+                            "old_text_preview": item.old_text_preview,
+                        }
+                        for item in exc.stats.failures[:10]
+                    ],
+                },
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="DOCX 原文档导出失败。为避免破坏论文格式，系统未回退生成重建版文档。",
+            ) from exc
 
     # 回退：基于 sections 的导出（兼容旧数据）
     risk_map = {s.section_index: s.risk_level for s in payload.sections}
@@ -1034,6 +1131,10 @@ async def export_rewritten_document(
 
 
 @router.post(
+    "/runs/{run_id}/sections/{section_index}/rewrite-advice",
+    response_model=RewriteAdviceResponse,
+)
+@router.get(
     "/runs/{run_id}/sections/{section_index}/rewrite-advice",
     response_model=RewriteAdviceResponse,
 )
@@ -1289,9 +1390,229 @@ def _latest_cnki_report(
     return reports[0] if reports else None
 
 
+def _span_response(span: dict[str, Any]) -> CnkiRiskSpanResponse:
+    return CnkiRiskSpanResponse(
+        span_id=span["span_id"],
+        text=span["text"],
+        risk_type=span["risk_type"],
+        risk_level=span["risk_level"],
+        similarity=span.get("similarity"),
+        aigc_score=span.get("aigc_score"),
+        matched_source=span.get("matched_source"),
+        page_number=span.get("page_number"),
+    )
+
+
+def _report_risk_from_span(
+    span: dict[str, Any], *, match_confidence: float
+) -> dict[str, Any]:
+    return {
+        "source": "cnki",
+        "risk_type": span["risk_type"],
+        "risk_level": span["risk_level"],
+        "similarity": span.get("similarity"),
+        "aigc_score": span.get("aigc_score"),
+        "matched_source": span.get("matched_source"),
+        "span_id": span["span_id"],
+        "match_confidence": match_confidence,
+    }
+
+
+def _list_report_spans(repository: Any, report_id: str) -> list[dict[str, Any]]:
+    if not hasattr(repository, "list_cnki_report_spans"):
+        return []
+    return repository.list_cnki_report_spans(report_id)
+
+
+def _list_unmatched_report_spans(
+    repository: Any, *, document_id: str, report_id: str
+) -> list[dict[str, Any]]:
+    if hasattr(repository, "list_unmapped_cnki_report_spans"):
+        return repository.list_unmapped_cnki_report_spans(report_id)
+
+    spans = _list_report_spans(repository, report_id)
+    if not spans or not hasattr(repository, "list_block_report_mappings"):
+        return []
+    mapped_span_ids = {
+        item.get("span_id")
+        for item in repository.list_block_report_mappings(document_id)
+        if str(item.get("report_id")) == str(report_id)
+    }
+    return [span for span in spans if span.get("span_id") not in mapped_span_ids]
+
+
+def _record_official_report_learning_if_allowed(
+    *,
+    repository: Any,
+    settings: Settings,
+    document: dict[str, Any],
+    report: dict[str, Any],
+    spans: list[dict[str, Any]],
+    predicted_run_id: str | None,
+    learning_consent: bool,
+    learning_scope: str = "none",
+    learning_user_id: str | None = None,
+) -> tuple[bool, bool]:
+    effective_scope = _normalize_learning_scope(learning_scope, learning_consent)
+    if effective_scope == "none":
+        return False, False
+
+    details = {
+        "fragments": [
+            {
+                "type": span.get("risk_type") or "unknown",
+                "source_text": span.get("text") or "",
+                "similar_text": span.get("matched_source") or "",
+                "matched_section_index": None,
+                "match_ratio": span.get("similarity") or span.get("aigc_score"),
+            }
+            for span in spans[:80]
+        ]
+    }
+    feedback_like = {
+        "id": f"official-report:{report['id']}",
+        "document_id": document["id"],
+        "predicted_run_id": predicted_run_id,
+        "cnki_dup_percent": report.get("total_copy_ratio"),
+        "cnki_aigc_percent": report.get("aigc_ratio"),
+        "report_date": report.get("generated_at"),
+        "created_at": report.get("parsed_at"),
+    }
+    try:
+        learning_sample = build_feedback_learning_sample(
+            repository=repository,
+            document=document,
+            feedback=feedback_like,
+            predicted_run_id=predicted_run_id,
+            details=details,
+        )
+        if learning_sample:
+            learning_sample["learning_scope"] = effective_scope
+        if not learning_sample:
+            return False, False
+        if effective_scope == "anonymous_global":
+            saved = append_feedback_learning_sample(
+                settings.feedback_learning_store_path,
+                learning_sample,
+            )
+        else:
+            saved = append_private_feedback_learning_sample(
+                settings.feedback_private_learning_dir,
+                learning_user_id,
+                learning_sample,
+            )
+        refreshed = (
+            refresh_feedback_learning_skill(
+                settings.feedback_learning_store_path,
+                settings.feedback_learning_skill_path,
+            )
+            if saved and effective_scope == "anonymous_global"
+            else False
+        )
+        return saved, refreshed
+    except Exception:
+        return False, False
+
+
+def _normalize_learning_scope(scope: str | None, consent: bool = False) -> str:
+    if scope == "private_account":
+        return "private_account"
+    if scope == "anonymous_global" or consent:
+        return "anonymous_global"
+    if scope == "none":
+        return scope
+    return "none"
+
+
 # ------------------------------------------------------------------
 # Document Blocks
 # ------------------------------------------------------------------
+
+@router.post(
+    "/runs/{run_id}/report-spans/bind",
+    response_model=ManualReportSpanBindResponse,
+)
+async def bind_report_span_to_block(
+    run_id: str,
+    payload: ManualReportSpanBindRequest,
+    auth: AuthContext = Depends(get_auth_context),
+) -> ManualReportSpanBindResponse:
+    repository = get_repository()
+    db_run = repository.get_run(run_id)
+    if db_run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+
+    document_id = str(db_run["document_id"])
+    ensure_document_access(
+        document_id=document_id, auth=auth, repository=repository
+    )
+
+    latest_report = _latest_cnki_report(repository, document_id)
+    if latest_report is None:
+        raise HTTPException(status_code=404, detail="official report not found")
+    report_id = str(latest_report["id"])
+
+    if hasattr(repository, "get_cnki_report_span"):
+        span = repository.get_cnki_report_span(report_id, payload.span_id)
+    else:
+        span = next(
+            (item for item in _list_report_spans(repository, report_id) if item.get("span_id") == payload.span_id),
+            None,
+        )
+    if span is None:
+        raise HTTPException(status_code=404, detail="report span not found")
+
+    if hasattr(repository, "list_block_report_mappings"):
+        existing_mappings = repository.list_block_report_mappings(document_id)
+        for mapping in existing_mappings:
+            if (
+                str(mapping.get("report_id")) == report_id
+                and mapping.get("span_id") == payload.span_id
+            ):
+                raise HTTPException(status_code=409, detail="report span already mapped")
+    else:
+        existing_mappings = []
+
+    block = repository.get_document_block(document_id, payload.block_id)
+    if block is None:
+        raise HTTPException(status_code=404, detail="document block not found")
+
+    repository.insert_block_report_mapping(
+        document_id=document_id,
+        block_id=payload.block_id,
+        span_id=payload.span_id,
+        report_id=report_id,
+        match_method="manual",
+        match_confidence=1.0,
+        matched_text=block.get("text"),
+    )
+    updated_block = repository.update_block_report_risk(
+        document_id=document_id,
+        block_id=payload.block_id,
+        report_risk=_report_risk_from_span(span, match_confidence=1.0),
+    )
+
+    unmatched = _list_unmatched_report_spans(
+        repository, document_id=document_id, report_id=report_id
+    )
+    mapped_count = len(
+        [
+            item
+            for item in repository.list_block_report_mappings(document_id)
+            if str(item.get("report_id")) == report_id
+        ]
+    ) if hasattr(repository, "list_block_report_mappings") else len(existing_mappings) + 1
+
+    return ManualReportSpanBindResponse(
+        report_id=report_id,
+        span_id=payload.span_id,
+        block_id=payload.block_id,
+        mapped_count=mapped_count,
+        unmatched_count=len(unmatched),
+        unmatched_spans=[_span_response(item) for item in unmatched],
+        block=_build_block_response(updated_block or block, None),
+    )
+
 
 def _build_block_response(
     block: dict[str, Any], patch: dict[str, Any] | None
@@ -1365,15 +1686,29 @@ async def get_run_blocks(
     result = [_build_block_response(b, patch_map.get(b["block_id"])) for b in blocks]
     reports = repository.list_cnki_reports_by_document(str(db_run["document_id"]))
     report_summary = None
+    unmatched_spans: list[dict[str, Any]] = []
     if reports:
         latest_report = reports[0]
         counts = {"high": 0, "medium": 0, "low": 0}
-        for block in blocks:
-            report_risk = block.get("report_risk")
-            if isinstance(report_risk, dict):
-                level = report_risk.get("risk_level")
+        report_id = str(latest_report.get("id") or "")
+        spans = _list_report_spans(repository, report_id) if report_id else []
+        if spans:
+            for span in spans:
+                level = span.get("risk_level")
                 if level in counts:
                     counts[level] += 1
+            unmatched_spans = _list_unmatched_report_spans(
+                repository,
+                document_id=str(db_run["document_id"]),
+                report_id=report_id,
+            )
+        else:
+            for block in blocks:
+                report_risk = block.get("report_risk")
+                if isinstance(report_risk, dict):
+                    level = report_risk.get("risk_level")
+                    if level in counts:
+                        counts[level] += 1
         report_summary = {
             "reportType": latest_report.get("report_type"),
             "totalCopyRatio": latest_report.get("total_copy_ratio"),
@@ -1381,10 +1716,14 @@ async def get_run_blocks(
             "highRiskCount": counts["high"],
             "mediumRiskCount": counts["medium"],
             "lowRiskCount": counts["low"],
-            "unmatchedCount": 0,
+            "unmatchedCount": len(unmatched_spans),
         }
 
-    return {"blocks": result, "reportSummary": report_summary}
+    return {
+        "blocks": result,
+        "reportSummary": report_summary,
+        "unmatchedSpans": [_span_response(item) for item in unmatched_spans],
+    }
 
 
 # ------------------------------------------------------------------

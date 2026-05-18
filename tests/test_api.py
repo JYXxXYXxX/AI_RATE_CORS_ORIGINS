@@ -679,6 +679,52 @@ def test_private_document_access_is_restricted() -> None:
             app.dependency_overrides[get_calibrator] = original_calibrator_override
 
 
+def test_admin_task_summary_requires_admin_token() -> None:
+    import os
+
+    original_admin_token = os.environ.get("AI_RATE_ADMIN_TOKEN")
+    os.environ["AI_RATE_ADMIN_TOKEN"] = "test-admin-token"
+    try:
+        unauthorized = client.get("/v1/admin/tasks/summary")
+        assert unauthorized.status_code == 403
+
+        authorized = client.get(
+            "/v1/admin/tasks/summary",
+            headers={"X-Admin-Token": "test-admin-token"},
+        )
+        assert authorized.status_code == 200
+        payload = authorized.json()
+        assert {"total", "queued", "processing", "completed", "failed"}.issubset(
+            payload.keys()
+        )
+        assert payload["total"] >= payload["queued"]
+    finally:
+        if original_admin_token is None:
+            os.environ.pop("AI_RATE_ADMIN_TOKEN", None)
+        else:
+            os.environ["AI_RATE_ADMIN_TOKEN"] = original_admin_token
+
+
+def test_prod_rejects_local_analysis_queue_backend() -> None:
+    from fastapi import BackgroundTasks
+
+    from app.task_queue import dispatch_analysis_task
+
+    settings = Settings(service_env="prod", async_queue_backend="local")
+    try:
+        dispatch_analysis_task(
+            settings=settings,
+            task_id="00000000-0000-0000-0000-000000000001",
+            document_id="00000000-0000-0000-0000-000000000002",
+            user_id=None,
+            background_tasks=BackgroundTasks(),
+        )
+    except RuntimeError as exc:
+        assert "production" in str(exc)
+    else:
+        raise AssertionError("prod local queue backend should be rejected")
+
+
 def test_billing_order_lifecycle_is_idempotent() -> None:
     original_settings_override = app.dependency_overrides.get(get_settings)
     original_calibrator_override = app.dependency_overrides.get(get_calibrator)
