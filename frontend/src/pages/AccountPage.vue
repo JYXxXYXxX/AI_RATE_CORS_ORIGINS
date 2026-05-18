@@ -2,14 +2,14 @@
   <div class="account-page">
     <section class="account-hero">
       <div>
-        <p class="eyebrow">Account</p>
-        <h1>账户</h1>
-        <p>查看账号状态、最近使用入口和文档工作流。</p>
+        <p class="eyebrow">{{ copy.eyebrow }}</p>
+        <h1>{{ copy.title }}</h1>
+        <p>{{ copy.subtitle }}</p>
       </div>
       <div class="identity-card">
         <div class="identity-avatar">{{ userInitial }}</div>
         <div>
-          <strong>{{ auth.user?.display_name || 'PataFix 用户' }}</strong>
+          <strong>{{ auth.user?.display_name || copy.defaultUser }}</strong>
           <span>{{ auth.user?.email }}</span>
         </div>
       </div>
@@ -17,62 +17,119 @@
 
     <div class="account-grid">
       <section class="card profile-card">
-        <h2>基本信息</h2>
+        <h2>{{ copy.profile }}</h2>
         <div class="info-list">
           <div class="info-item">
-            <span class="info-label">昵称</span>
-            <span>{{ auth.user?.display_name || '未设置' }}</span>
+            <span class="info-label">{{ copy.nickname }}</span>
+            <span>{{ auth.user?.display_name || copy.notSet }}</span>
           </div>
           <div class="info-item">
-            <span class="info-label">邮箱</span>
+            <span class="info-label">{{ copy.email }}</span>
             <span>{{ auth.user?.email }}</span>
           </div>
           <div class="info-item">
-            <span class="info-label">注册时间</span>
+            <span class="info-label">{{ copy.created }}</span>
             <span>{{ formatDate(auth.user?.created_at) }}</span>
           </div>
           <div class="info-item">
-            <span class="info-label">状态</span>
-            <span class="status-badge">{{ auth.user?.status || '正常' }}</span>
+            <span class="info-label">{{ copy.status }}</span>
+            <span class="status-badge">{{ auth.user?.status || copy.normal }}</span>
           </div>
         </div>
       </section>
 
       <section class="card action-card">
-        <h2>快捷操作</h2>
+        <h2>{{ copy.actions }}</h2>
         <div class="action-list">
           <router-link to="/app/new" class="action-item">
-            <strong>上传新论文</strong>
-            <span>开始一次新的查重 / AIGC 分析</span>
+            <strong>{{ copy.uploadNew }}</strong>
+            <span>{{ copy.uploadDesc }}</span>
           </router-link>
           <router-link to="/app/dashboard" class="action-item">
-            <strong>查看历史报告</strong>
-            <span>回到工作台继续处理已有论文</span>
+            <strong>{{ copy.history }}</strong>
+            <span>{{ copy.historyDesc }}</span>
           </router-link>
         </div>
       </section>
     </div>
 
     <section class="card note-card">
-      <h2>当前版本说明</h2>
-      <p>付费入口已隐藏，论文检测、报告查看和在线改写保持开放。后续如果接入额度或套餐，这里会作为账户中心继续扩展。</p>
+      <h2>{{ copy.version }}</h2>
+      <p>{{ copy.versionDesc }}</p>
     </section>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
+type Locale = 'zh' | 'en'
+const locale = ref<Locale>((localStorage.getItem('patafix-language') as Locale) || 'zh')
+
+const copy = computed(() => locale.value === 'en'
+  ? {
+      eyebrow: 'Account',
+      title: 'Account',
+      subtitle: 'Review account status, quick actions, and document workflow.',
+      defaultUser: 'PataFix user',
+      profile: 'Profile',
+      nickname: 'Nickname',
+      notSet: 'Not set',
+      email: 'Email',
+      created: 'Created',
+      status: 'Status',
+      normal: 'Active',
+      actions: 'Quick actions',
+      uploadNew: 'Upload new paper',
+      uploadDesc: 'Start a new similarity / AIGC scan',
+      history: 'View history',
+      historyDesc: 'Return to the workspace and continue existing papers',
+      version: 'Current version',
+      versionDesc: 'Payment entry is hidden for now. Paper scan, report view, and online rewriting remain open; this area can later expand into credits and plans.'
+    }
+  : {
+      eyebrow: 'Account',
+      title: '账户',
+      subtitle: '查看账号状态、最近使用入口和文档工作流。',
+      defaultUser: 'PataFix 用户',
+      profile: '基本信息',
+      nickname: '昵称',
+      notSet: '未设置',
+      email: '邮箱',
+      created: '注册时间',
+      status: '状态',
+      normal: '正常',
+      actions: '快捷操作',
+      uploadNew: '上传新论文',
+      uploadDesc: '开始一次新的查重 / AIGC 分析',
+      history: '查看历史报告',
+      historyDesc: '回到工作台继续处理已有论文',
+      version: '当前版本说明',
+      versionDesc: '付费入口已隐藏，论文检测、报告查看和在线改写保持开放。后续如果接入额度或套餐，这里会作为账户中心继续扩展。'
+    })
+
 const userInitial = computed(() => {
   const name = auth.user?.display_name || auth.user?.email || 'U'
   return name.charAt(0).toUpperCase()
 })
 
+onMounted(() => {
+  window.addEventListener('patafix:language-change', handleLanguageChange)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('patafix:language-change', handleLanguageChange)
+})
+
 function formatDate(iso: string | undefined) {
   if (!iso) return '-'
-  return new Date(iso).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+  return new Date(iso).toLocaleDateString(locale.value === 'en' ? 'en-US' : 'zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+}
+
+function handleLanguageChange(event: Event) {
+  locale.value = (event as CustomEvent<Locale>).detail || 'zh'
 }
 </script>
 

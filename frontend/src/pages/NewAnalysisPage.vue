@@ -1,8 +1,8 @@
 <template>
   <div class="new-analysis">
     <div class="page-header">
-      <h1>新建分析</h1>
-      <p>上传论文文件，系统将自动生成详细风险预检报告</p>
+      <h1>{{ copy.title }}</h1>
+      <p>{{ copy.subtitle }}</p>
     </div>
 
     <div class="upload-card">
@@ -36,8 +36,8 @@
         </template>
         <template v-else>
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          <p class="drop-text">拖入文件或<strong>点击选择</strong></p>
-          <p class="drop-hint">支持 .txt、.md、.docx、.doc、.pdf，最大 50MB</p>
+          <p class="drop-text" v-html="copy.dropText"></p>
+          <p class="drop-hint">{{ copy.dropHint }}</p>
         </template>
       </div>
 
@@ -46,8 +46,8 @@
         <div class="cnki-header" @click="cnkiExpanded = !cnkiExpanded">
           <div class="cnki-title">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-            <span>上传知网检测报告（可选，启用报告驱动模式）</span>
-            <el-tag v-if="cnkiReportFile" type="success" size="small" effect="dark">已上传</el-tag>
+            <span>{{ copy.cnkiTitle }}</span>
+            <el-tag v-if="cnkiReportFile" type="success" size="small" effect="dark">{{ copy.uploaded }}</el-tag>
           </div>
           <svg
             width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -56,7 +56,7 @@
         </div>
 
         <div v-show="cnkiExpanded" class="cnki-body">
-          <p class="cnki-hint">上传知网查重报告或 AIGC 检测报告后，系统会以知网结果为最高优先级风险来源，直接定位需要改写的段落。支持 PDF、HTML、Word 格式。</p>
+          <p class="cnki-hint">{{ copy.cnkiHint }}</p>
 
           <div
             v-if="!cnkiReportFile"
@@ -75,8 +75,8 @@
               @change="handleCnkiSelect"
             />
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <p class="drop-text">拖入知网检测报告</p>
-            <p class="drop-hint">支持 .pdf、.html、.docx，最大 10MB</p>
+            <p class="drop-text">{{ copy.cnkiDrop }}</p>
+            <p class="drop-hint">{{ copy.cnkiDropHint }}</p>
           </div>
 
           <div v-else class="cnki-preview">
@@ -106,60 +106,60 @@
                   <el-tag v-for="f in cnkiPreview.matched_fields" :key="f" type="success" size="small" effect="plain">
                     {{ fieldLabel(f) }}
                   </el-tag>
-                  <span v-if="!cnkiPreview.matched_fields.length" class="ocr-warning">未自动识别到关键指标</span>
+                  <span v-if="!cnkiPreview.matched_fields.length" class="ocr-warning">{{ copy.noOcr }}</span>
                 </div>
               </div>
               <div class="form-row">
                 <div class="form-field">
-                  <label>知网查重率（%）</label>
+                  <label>{{ copy.cnkiDup }}</label>
                   <input
                     v-model.number="cnkiForm.cnkiDupPercent"
                     type="number"
                     step="0.1"
                     min="0"
                     max="100"
-                    placeholder="例如 12.5"
+                    :placeholder="copy.percentPlaceholder"
                   />
                 </div>
                 <div class="form-field">
-                  <label>知网 AIGC 率（%）</label>
+                  <label>{{ copy.cnkiAigc }}</label>
                   <input
                     v-model.number="cnkiForm.cnkiAigcPercent"
                     type="number"
                     step="0.1"
                     min="0"
                     max="100"
-                    placeholder="例如 8.3"
+                    :placeholder="copy.aigcPlaceholder"
                   />
                 </div>
               </div>
               <div class="form-field">
-                <label>报告日期</label>
+                <label>{{ copy.reportDate }}</label>
                 <input v-model="cnkiForm.reportDate" type="date" />
               </div>
               <div class="form-field">
-                <label>备注（可选）</label>
-                <input v-model="cnkiForm.notes" type="text" placeholder="例如：第 1 次正式检测" />
+                <label>{{ copy.notes }}</label>
+                <input v-model="cnkiForm.notes" type="text" :placeholder="copy.notesPlaceholder" />
               </div>
               <div class="learning-consent">
                 <div class="learning-options">
                   <label class="learning-option" :class="{ active: cnkiForm.learningScope === 'none' }">
                     <input v-model="cnkiForm.learningScope" type="radio" value="none" />
-                    <span>默认不参与共享学习</span>
-                    <small>仅用于本次检测与改写，不进入校准样本。</small>
+                    <span>{{ copy.learningNone }}</span>
+                    <small>{{ copy.learningNoneDesc }}</small>
                   </label>
                   <label class="learning-option" :class="{ active: cnkiForm.learningScope === 'private_account' }">
                     <input v-model="cnkiForm.learningScope" type="radio" value="private_account" />
-                    <span>仅用于本人账号优化</span>
-                    <small>帮助后续更贴合你的学校标准，不贡献给全局模型。</small>
+                    <span>{{ copy.learningPrivate }}</span>
+                    <small>{{ copy.learningPrivateDesc }}</small>
                   </label>
                   <label class="learning-option" :class="{ active: cnkiForm.learningScope === 'anonymous_global' }">
                     <input v-model="cnkiForm.learningScope" type="radio" value="anonymous_global" />
-                    <span>匿名贡献给系统校准</span>
-                    <small>只保存匿名特征、官方风险等级和改写效果信号。</small>
+                    <span>{{ copy.learningGlobal }}</span>
+                    <small>{{ copy.learningGlobalDesc }}</small>
                   </label>
                 </div>
-                <p>系统不保存论文原文作为训练样本；官方报告只用于本次对齐风险颜色、定位高风险句子和生成更准确的改写建议。</p>
+                <p>{{ copy.learningPrivacy }}</p>
               </div>
             </div>
           </div>
@@ -168,22 +168,22 @@
 
       <form class="analysis-form" @submit.prevent="handleSubmit">
         <div class="form-field">
-          <label>标题（可选）</label>
-          <input v-model="form.title" type="text" placeholder="默认使用文件名" />
+          <label>{{ copy.paperTitle }}</label>
+          <input v-model="form.title" type="text" :placeholder="copy.paperTitlePlaceholder" />
         </div>
         <div class="form-row">
           <div class="form-field">
-            <label>学科</label>
-            <input v-model="form.subject" type="text" placeholder="例如 教育学" />
+            <label>{{ copy.subject }}</label>
+            <input v-model="form.subject" type="text" :placeholder="copy.subjectPlaceholder" />
           </div>
           <div class="form-field">
-            <label>层级</label>
+            <label>{{ copy.degree }}</label>
             <select v-model="form.degreeLevel">
-              <option value="">请选择</option>
-              <option value="本科">本科</option>
-              <option value="硕士">硕士</option>
-              <option value="博士">博士</option>
-              <option value="期刊论文">期刊论文</option>
+              <option value="">{{ copy.select }}</option>
+              <option value="本科">{{ copy.undergraduate }}</option>
+              <option value="硕士">{{ copy.master }}</option>
+              <option value="博士">{{ copy.doctor }}</option>
+              <option value="期刊论文">{{ copy.journal }}</option>
             </select>
           </div>
         </div>
@@ -193,7 +193,7 @@
           class="btn btn-primary btn-full btn-lg"
           :disabled="!selectedFile || analysis.submitting"
         >
-          {{ analysis.submitting ? '分析中...' : '开始分析' }}
+          {{ analysis.submitting ? copy.analyzing : copy.start }}
         </button>
 
         <p v-if="analysis.error" class="form-error">{{ analysis.error }}</p>
@@ -202,7 +202,7 @@
       <!-- 上传进度条 -->
       <div v-if="analysis.submitting && analysis.uploadProgress > 0 && analysis.uploadProgress < 100" class="progress-section">
         <div class="progress-header">
-          <span>正在上传文件...</span>
+          <span>{{ copy.uploading }}</span>
           <strong>{{ analysis.uploadProgress }}%</strong>
         </div>
         <div class="progress-bar">
@@ -225,7 +225,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAnalysisStore } from '../stores/analysis'
 import { previewCnkiFeedbackOcr } from '../api'
@@ -233,6 +233,126 @@ import type { CnkiFeedbackOcrPreviewResponse, LearningScope } from '../types'
 
 const router = useRouter()
 const analysis = useAnalysisStore()
+type Locale = 'zh' | 'en'
+const locale = ref<Locale>((localStorage.getItem('patafix-language') as Locale) || 'zh')
+
+const copy = computed(() => locale.value === 'en'
+  ? {
+      title: 'New scan',
+      subtitle: 'Upload a paper and let the system generate a detailed risk precheck report.',
+      dropText: 'Drop a file or <strong>click to choose</strong>',
+      dropHint: 'Supports .txt, .md, .docx, .doc, .pdf, up to 50MB',
+      cnkiTitle: 'Upload official report (optional, enables report-driven mode)',
+      uploaded: 'Uploaded',
+      cnkiHint: 'After uploading an official similarity or AIGC report, the system treats it as the highest-priority risk source and locates paragraphs that need rewriting.',
+      cnkiDrop: 'Drop official report',
+      cnkiDropHint: 'Supports .pdf, .html, .docx, up to 10MB',
+      noOcr: 'No key metrics recognized automatically',
+      cnkiDup: 'Official similarity rate (%)',
+      cnkiAigc: 'Official AIGC rate (%)',
+      percentPlaceholder: 'e.g. 12.5',
+      aigcPlaceholder: 'e.g. 8.3',
+      reportDate: 'Report date',
+      notes: 'Notes (optional)',
+      notesPlaceholder: 'e.g. first official scan',
+      learningNone: 'Default: no shared learning',
+      learningNoneDesc: 'Only used for this scan and rewrite; not added to calibration samples.',
+      learningPrivate: 'Optimize only my account',
+      learningPrivateDesc: 'Helps future scans match your school standard without contributing globally.',
+      learningGlobal: 'Contribute anonymous calibration',
+      learningGlobalDesc: 'Stores only anonymous features, official risk levels, and rewrite outcome signals.',
+      learningPrivacy: 'The system does not save paper text as training samples. Official reports are used to align colors, locate high-risk sentences, and improve suggestions.',
+      paperTitle: 'Title (optional)',
+      paperTitlePlaceholder: 'Defaults to file name',
+      subject: 'Subject',
+      subjectPlaceholder: 'e.g. Education',
+      degree: 'Level',
+      select: 'Select',
+      undergraduate: 'Undergraduate',
+      master: 'Master',
+      doctor: 'Doctorate',
+      journal: 'Journal paper',
+      analyzing: 'Analyzing...',
+      start: 'Start scan',
+      uploading: 'Uploading file...',
+      oversizedPaper: 'File size cannot exceed 50MB',
+      unsupportedPaper: 'Unsupported file type: ',
+      supportedPaper: 'Please upload .txt, .md, .docx, .doc, or .pdf',
+      oversizedReport: 'Report size cannot exceed 10MB',
+      unsupportedReport: 'Unsupported report type: ',
+      supportedReport: 'Please upload .pdf, .html, or .docx',
+      stages: {
+        queued: 'Queued...',
+        extracting_text: 'Extracting text...',
+        segmenting_and_scoring: 'Scoring sections...',
+        analyzing: 'Deep analysis...',
+        completed: 'Completed',
+        failed: 'Failed'
+      },
+      fields: {
+        cnki_dup_percent: 'Similarity',
+        cnki_aigc_percent: 'AIGC',
+        report_date: 'Report date'
+      }
+    }
+  : {
+      title: '新建分析',
+      subtitle: '上传论文文件，系统将自动生成详细风险预检报告',
+      dropText: '拖入文件或<strong>点击选择</strong>',
+      dropHint: '支持 .txt、.md、.docx、.doc、.pdf，最大 50MB',
+      cnkiTitle: '上传知网检测报告（可选，启用报告驱动模式）',
+      uploaded: '已上传',
+      cnkiHint: '上传知网查重报告或 AIGC 检测报告后，系统会以知网结果为最高优先级风险来源，直接定位需要改写的段落。支持 PDF、HTML、Word 格式。',
+      cnkiDrop: '拖入知网检测报告',
+      cnkiDropHint: '支持 .pdf、.html、.docx，最大 10MB',
+      noOcr: '未自动识别到关键指标',
+      cnkiDup: '知网查重率（%）',
+      cnkiAigc: '知网 AIGC 率（%）',
+      percentPlaceholder: '例如 12.5',
+      aigcPlaceholder: '例如 8.3',
+      reportDate: '报告日期',
+      notes: '备注（可选）',
+      notesPlaceholder: '例如：第 1 次正式检测',
+      learningNone: '默认不参与共享学习',
+      learningNoneDesc: '仅用于本次检测与改写，不进入校准样本。',
+      learningPrivate: '仅用于本人账号优化',
+      learningPrivateDesc: '帮助后续更贴合你的学校标准，不贡献给全局模型。',
+      learningGlobal: '匿名贡献给系统校准',
+      learningGlobalDesc: '只保存匿名特征、官方风险等级和改写效果信号。',
+      learningPrivacy: '系统不保存论文原文作为训练样本；官方报告只用于本次对齐风险颜色、定位高风险句子和生成更准确的改写建议。',
+      paperTitle: '标题（可选）',
+      paperTitlePlaceholder: '默认使用文件名',
+      subject: '学科',
+      subjectPlaceholder: '例如 教育学',
+      degree: '层级',
+      select: '请选择',
+      undergraduate: '本科',
+      master: '硕士',
+      doctor: '博士',
+      journal: '期刊论文',
+      analyzing: '分析中...',
+      start: '开始分析',
+      uploading: '正在上传文件...',
+      oversizedPaper: '文件大小不能超过 50MB',
+      unsupportedPaper: '不支持的文件格式：',
+      supportedPaper: '请上传 .txt、.md、.docx、.doc 或 .pdf 格式',
+      oversizedReport: '文件大小不能超过 10MB',
+      unsupportedReport: '不支持的文件格式：',
+      supportedReport: '请上传 .pdf、.html、.docx 格式',
+      stages: {
+        queued: '排队中...',
+        extracting_text: '提取正文...',
+        segmenting_and_scoring: '分段评分中...',
+        analyzing: '深度分析中...',
+        completed: '完成',
+        failed: '失败'
+      },
+      fields: {
+        cnki_dup_percent: '查重率',
+        cnki_aigc_percent: 'AIGC 率',
+        report_date: '报告日期'
+      }
+    })
 
 const selectedFile = ref<File | null>(null)
 const isDragging = ref(false)
@@ -266,6 +386,14 @@ const form = reactive({
 
 const MAX_SIZE = 50 * 1024 * 1024
 
+onMounted(() => {
+  window.addEventListener('patafix:language-change', handleLanguageChange)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('patafix:language-change', handleLanguageChange)
+})
+
 function triggerFileInput() {
   if (selectedFile.value) return
   fileInputRef.value?.click()
@@ -286,13 +414,13 @@ function handleDrop(e: DragEvent) {
 
 function setFile(file: File) {
   if (file.size > MAX_SIZE) {
-    alert('文件大小不能超过 50MB')
+    alert(copy.value.oversizedPaper)
     return
   }
   const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
   const allowed = ['.txt', '.md', '.docx', '.doc', '.pdf']
   if (!allowed.includes(ext)) {
-    alert('不支持的文件格式：' + ext + '\n请上传 .txt、.md、.docx、.doc 或 .pdf 格式')
+    alert(copy.value.unsupportedPaper + ext + '\n' + copy.value.supportedPaper)
     return
   }
   selectedFile.value = file
@@ -323,13 +451,13 @@ function handleCnkiDrop(e: DragEvent) {
 
 async function setCnkiFile(file: File) {
   if (file.size > 10 * 1024 * 1024) {
-    alert('文件大小不能超过 10MB')
+    alert(copy.value.oversizedReport)
     return
   }
   const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
   const allowed = ['.pdf', '.html', '.htm', '.docx']
   if (!allowed.includes(ext)) {
-    alert('不支持的文件格式：' + ext + '\n请上传 .pdf、.html、.docx 格式')
+    alert(copy.value.unsupportedReport + ext + '\n' + copy.value.supportedReport)
     return
   }
   cnkiReportFile.value = file
@@ -355,12 +483,7 @@ function removeCnkiFile() {
 }
 
 function fieldLabel(field: string): string {
-  const map: Record<string, string> = {
-    cnki_dup_percent: '查重率',
-    cnki_aigc_percent: 'AIGC 率',
-    report_date: '报告日期'
-  }
-  return map[field] || field
+  return copy.value.fields[field as keyof typeof copy.value.fields] || field
 }
 
 function formatFileSize(bytes: number) {
@@ -370,15 +493,7 @@ function formatFileSize(bytes: number) {
 }
 
 function stageLabel(stage: string) {
-  const labels: Record<string, string> = {
-    queued: '排队中...',
-    extracting_text: '提取正文...',
-    segmenting_and_scoring: '分段评分中...',
-    analyzing: '深度分析中...',
-    completed: '完成',
-    failed: '失败'
-  }
-  return labels[stage] || stage
+  return copy.value.stages[stage as keyof typeof copy.value.stages] || stage
 }
 
 async function handleSubmit() {
@@ -411,6 +526,10 @@ async function handleSubmit() {
       router.push(`/app/report/${runId}`)
     }
   }
+}
+
+function handleLanguageChange(event: Event) {
+  locale.value = (event as CustomEvent<Locale>).detail || 'zh'
 }
 </script>
 
