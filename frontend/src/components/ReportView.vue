@@ -69,9 +69,9 @@
           <small>{{ report.local_metrics.segment_count }} 个分析片段</small>
         </article>
         <article class="metric-card">
-          <span>本地 AIGC 分</span>
-          <strong>{{ (report.local_metrics.ai_like_score * 100).toFixed(1) }}%</strong>
-          <small>高风险片段 {{ report.local_metrics.high_risk_segment_count }} 个</small>
+          <span>优先改写段</span>
+          <strong>{{ actionableSectionCount }} 段</strong>
+          <small>{{ mediumOrHigherSectionCount }} 段中高风险，已按优先级展开</small>
         </article>
       </template>
     </div>
@@ -359,7 +359,7 @@
     </div>
   </section>
 
-  <section v-if="reportUnlocked" class="dual-grid">
+  <section v-if="reportUnlocked && visibleSimilarityMatches.length" class="dual-grid">
     <!-- Top 风险段落已折叠：priority_sections 已覆盖 -->
     <section class="card" v-if="false">
       <div class="card-head">
@@ -374,7 +374,7 @@
         <h3>这些地方更值得定向处理</h3>
       </div>
       <article
-        v-for="match in report.top_similarity_matches"
+        v-for="match in visibleSimilarityMatches"
         :key="`${match.section_index}-${match.matched_source}-${match.matched_title}`"
         class="match-card"
       >
@@ -393,29 +393,7 @@
     </section>
   </section>
 
-  <section v-if="report.provider_results.length || report.feedback_timeline.length" class="dual-grid">
-    <section class="card">
-      <div class="card-head">
-        <p class="eyebrow">外部结果时间线</p>
-        <h3>已经接入过哪些外部判断</h3>
-      </div>
-      <article v-for="item in report.provider_results" :key="item.payload_id" class="timeline-card">
-        <div class="segment-head">
-          <strong>{{ item.provider_label }}</strong>
-          <el-tag effect="plain">{{ providerSourceText(item.source_type) }}</el-tag>
-        </div>
-        <div class="mini-metrics">
-          <span>查重 {{ optionalPercent(item.duplication_percent) }}</span>
-          <span>AIGC {{ optionalPercent(item.aigc_percent) }}</span>
-          <span>置信度 {{ confidenceText(item.confidence) }}</span>
-        </div>
-        <p class="helper-text">版本：{{ item.version || '未填写' }}</p>
-        <p v-if="item.notes" class="helper-text">{{ item.notes }}</p>
-        <p class="timeline-time">{{ formatDate(item.created_at) }}</p>
-      </article>
-      <p v-if="!report.provider_results.length" class="helper-text">还没有导入或抓取外部结果。</p>
-    </section>
-
+  <section v-if="report.feedback_timeline.length" class="dual-grid">
     <section class="card">
       <div class="card-head">
         <p class="eyebrow">知网实测记录</p>
@@ -486,7 +464,7 @@
     </div>
   </section>
 
-  <section class="card">
+  <section v-if="false" class="card">
     <div class="card-head">
       <p class="eyebrow">模型状态</p>
       <h3>当前系统到底在用哪一版代理模型</h3>
@@ -502,7 +480,7 @@
       </div>
       <div class="soft-card status-tile">
         <span>自动重训</span>
-        <strong>{{ modelStatus?.auto_train_enabled ? `开启 / 每 ${modelStatus.auto_train_every_feedbacks} 条` : '未开启' }}</strong>
+        <strong>{{ modelStatus?.auto_train_enabled ? `开启 / 每 ${modelStatus?.auto_train_every_feedbacks ?? 0} 条` : '未开启' }}</strong>
       </div>
     </div>
     <div class="dual-grid">
@@ -544,7 +522,7 @@
     </div>
   </section>
 
-  <section v-if="reportUnlocked" class="info-row">
+  <section v-if="false && reportUnlocked" class="info-row">
     <div class="card mentor-card">
       <div class="card-head">
         <p class="eyebrow">导师沟通摘要</p>
@@ -792,11 +770,23 @@ const significantChapters = computed(() => {
   return props.report.chapter_heatmap.filter(c => c.combined_score >= 0.20)
 })
 
+const actionableSectionCount = computed(() => {
+  return (props.report.priority_sections?.length ?? 0) || props.report.top_risk_sections.length
+})
+
+const mediumOrHigherSectionCount = computed(() => {
+  return props.report.top_risk_sections.filter(section => section.risk_level !== 'low').length
+})
+
 const hiddenChapters = computed(() => {
   return props.report.chapter_heatmap.filter(c => c.combined_score < 0.20)
 })
 
 const hiddenChaptersCount = computed(() => hiddenChapters.value.length)
+
+const visibleSimilarityMatches = computed(() => {
+  return props.report.top_similarity_matches.filter(isReadableSimilarityMatch).slice(0, 6)
+})
 
 // 解锁状态（付费功能已隐藏，始终开放）
 const reportUnlocked = ref(true)
@@ -1144,6 +1134,22 @@ function dominantRiskLabel(subScores: SubScores): string {
   ]
   dims.sort((a, b) => b[1] - a[1])
   return dims[0][0]
+}
+
+function isReadableSimilarityMatch(match: UnifiedReportResponse['top_similarity_matches'][number]) {
+  const snippet = (match.matched_snippet || '').trim()
+  if (!snippet) return false
+  if (snippet.includes('�')) return false
+  if ((snippet.match(/\?/g) || []).length >= 4) return false
+
+  const asciiRuns = snippet.match(/[A-Za-z0-9_]+/g) || []
+  const asciiChars = asciiRuns.reduce((sum, item) => sum + item.length, 0)
+  const shortRuns = asciiRuns.filter(item => item.length <= 2)
+  if (asciiChars / Math.max(snippet.length, 1) >= 0.14 && shortRuns.length >= 6) {
+    return false
+  }
+
+  return true
 }
 
 function riskText(level: 'low' | 'medium' | 'high') {

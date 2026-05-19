@@ -497,9 +497,9 @@ def _chapter_advice(title: str, combined: float) -> str:
 
 
 def _level_from_score(score: float) -> str:
-    if score >= 0.62:
+    if score >= 0.46:
         return "high"
-    if score >= 0.34:
+    if score >= 0.20:
         return "medium"
     return "low"
 

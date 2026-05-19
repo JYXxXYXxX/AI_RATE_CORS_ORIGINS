@@ -8,6 +8,8 @@ from fastapi import HTTPException
 
 from app.routes import documents
 from app.routes.deps import AuthContext
+from app.services.block_matcher import match_spans_to_blocks
+from app.services.cnki_report_parser import CnkiRiskSpan
 from app.schemas_unified import ReanalyzeRequest
 
 
@@ -122,6 +124,36 @@ class FakeRewriteService:
             "rewritten_paragraph": "改写后的段落。",
             "overall_advice": "优先处理官方标记片段。",
         }
+
+
+def test_block_matcher_accepts_repository_block_dicts() -> None:
+    spans = [
+        CnkiRiskSpan(
+            span_id="span-1",
+            text="本系统使用 SpringBoot 和 Vue 完成预算提醒与账单管理模块。",
+            risk_type="similarity",
+            risk_level="high",
+            similarity=82.0,
+        )
+    ]
+    blocks = [
+        {
+            "block_id": "b1",
+            "block_type": "paragraph",
+            "text": "本系统使用 SpringBoot 和 Vue 完成预算提醒与账单管理模块，并补充了统计分析能力。",
+            "source_type": "docx",
+            "source_map": {"paragraphIndex": 8},
+            "display_order": 8,
+            "char_count": 40,
+        }
+    ]
+
+    mappings, unmatched = match_spans_to_blocks(spans, blocks)
+
+    assert len(mappings) == 1
+    assert mappings[0].block_id == "b1"
+    assert mappings[0].match_method in {"exact", "normalized", "fuzzy"}
+    assert unmatched == []
 
 
 def test_report_mode_reanalyze_requires_new_official_report(monkeypatch: pytest.MonkeyPatch) -> None:

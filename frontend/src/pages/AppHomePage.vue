@@ -160,6 +160,7 @@
 
       <div class="quick-tool">
         <div class="quick-input-card">
+          <div class="mode-badge">{{ copy.quickModeBadge }}</div>
           <div class="mode-tabs" aria-label="改写模式">
             <button
               v-for="item in modeOptions"
@@ -175,15 +176,17 @@
 
           <label class="quick-label" for="home-quick-rewrite-input">
             {{ copy.inputLabel }}
-            <span>{{ quickInput.length }} {{ copy.words }}</span>
+            <span :class="{ 'near-limit': isQuickLimitNear }">{{ quickInput.length }}/{{ QUICK_LIMIT }} {{ copy.words }}</span>
           </label>
           <textarea
             id="home-quick-rewrite-input"
             v-model="quickInput"
             class="quick-textarea"
             rows="8"
+            :maxlength="QUICK_LIMIT"
             :placeholder="copy.placeholder"
           />
+          <p class="quick-helper">{{ copy.quickHelper }}</p>
 
           <div class="quick-actions">
             <button type="button" class="home-button primary" :disabled="quickLoading || !quickInput.trim()" @click="handleQuickRewrite">
@@ -269,6 +272,7 @@ import type { QuickRewriteMode, QuickRewritePhrase, QuickRewriteResult } from '.
 
 const router = useRouter()
 const analysis = useAnalysisStore()
+const QUICK_LIMIT = 450
 
 const latestRunId = computed(() => analysis.history.find(item => item.run_id)?.run_id || '')
 const quickInput = ref('')
@@ -276,6 +280,7 @@ const quickMode = ref<QuickRewriteMode>('auto')
 const quickLoading = ref(false)
 const quickError = ref('')
 const quickResult = ref<QuickRewriteResult | null>(null)
+const isQuickLimitNear = computed(() => quickInput.value.length >= QUICK_LIMIT - 40)
 type HomeLocale = 'zh' | 'en'
 const locale = ref<HomeLocale>((localStorage.getItem('patafix-language') as HomeLocale) || 'zh')
 
@@ -311,6 +316,8 @@ const copies = {
     quickEyebrow: 'try one sentence',
     quickTitle: '短句风险优化',
     quickDesc: '先粘贴一段论文内容，系统会标出高风险词组，并给出更像人工写作、可直接替换的版本。',
+    quickModeBadge: '智能直改模式',
+    quickHelper: '限制 450 字以内，系统会直接给出可替换句，不再让你自己补材料。',
     inputLabel: '输入论文段落',
     words: '字',
     placeholder: '粘贴摘要、绪论、研究意义或系统介绍中的一小段',
@@ -363,6 +370,8 @@ const copies = {
     quickEyebrow: 'try one sentence',
     quickTitle: 'Short passage optimizer',
     quickDesc: 'Paste a thesis paragraph to see risky phrases and generate a more natural replacement.',
+    quickModeBadge: 'Direct rewrite mode',
+    quickHelper: 'Up to 450 characters. The system returns a directly usable rewrite instead of manual follow-up advice.',
     inputLabel: 'Paper paragraph',
     words: 'chars',
     placeholder: 'Paste a short abstract, introduction, significance, or system-description paragraph',
@@ -502,7 +511,10 @@ const rewrittenSegments = computed(() =>
 const afterRiskDisplay = computed(() => {
   if (!quickResult.value) return '--'
   const score = quickResult.value.afterRisk.score
-  return `${Math.max(0, score - 6)}-${Math.min(100, score + 8)}`
+  const before = quickResult.value.beforeRisk.score
+  const low = Math.max(0, score - 6)
+  const high = Math.min(Math.max(0, before - 1), score + 8)
+  return `${Math.min(low, high)}-${Math.max(low, high)}`
 })
 const afterRiskLevelLabel = computed(() => {
   if (!quickResult.value) return ''
@@ -546,10 +558,14 @@ async function handleQuickRewrite() {
     ElMessage.warning('请先输入一段论文内容')
     return
   }
+  if (text.length > QUICK_LIMIT) {
+    ElMessage.warning(locale.value === 'en' ? `Please keep it within ${QUICK_LIMIT} characters.` : `请控制在 ${QUICK_LIMIT} 字以内。`)
+    return
+  }
   quickLoading.value = true
   quickError.value = ''
   try {
-    quickResult.value = await quickRewrite({ text, mode: quickMode.value })
+    quickResult.value = await quickRewrite({ text, mode: 'auto' })
   } catch (error) {
     quickError.value = error instanceof Error ? error.message : '检测失败，请稍后再试'
     ElMessage.error(quickError.value)
@@ -634,6 +650,8 @@ function setupRevealAnimations() {
 
 <style scoped>
 .home-page {
+  display: flex;
+  flex-direction: column;
   max-width: 1180px;
   margin: 0 auto;
   padding: 34px 28px 48px;
@@ -655,8 +673,8 @@ function setupRevealAnimations() {
 
 .home-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 420px;
-  gap: 28px;
+  grid-template-columns: minmax(0, 1.08fr) minmax(360px, 0.92fr);
+  gap: 18px;
   align-items: stretch;
 }
 
@@ -672,7 +690,7 @@ function setupRevealAnimations() {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 44px;
+  padding: 40px;
   border-radius: 26px;
 }
 
@@ -2044,6 +2062,7 @@ function setupRevealAnimations() {
 }
 
 .case-carousel-section {
+  order: 2;
   padding: 24px 0 24px 24px;
   overflow: hidden;
 }
@@ -2164,6 +2183,7 @@ function setupRevealAnimations() {
 }
 
 .quick-rewrite-panel {
+  order: 1;
   padding: 28px;
 }
 
@@ -2172,11 +2192,13 @@ function setupRevealAnimations() {
   grid-template-columns: minmax(280px, 0.82fr) minmax(0, 1.18fr);
   gap: 18px;
   margin-top: 22px;
+  align-items: start;
 }
 
 .quick-input-card,
 .quick-output-card {
   min-width: 0;
+  height: fit-content;
   padding: 18px;
   border: 1px solid rgba(58, 67, 61, 0.1);
   border-radius: 8px;
@@ -2184,10 +2206,20 @@ function setupRevealAnimations() {
 }
 
 .mode-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: none;
+}
+
+.mode-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
   margin-bottom: 14px;
+  padding: 7px 11px;
+  border-radius: 999px;
+  background: rgba(47, 111, 83, 0.1);
+  color: #245642;
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .mode-tab {
@@ -2223,9 +2255,13 @@ function setupRevealAnimations() {
   font-weight: 700;
 }
 
+.quick-label span.near-limit {
+  color: #b23a34;
+}
+
 .quick-textarea {
   width: 100%;
-  min-height: 218px;
+  min-height: 180px;
   resize: vertical;
   border: 1px solid rgba(58, 67, 61, 0.14);
   border-radius: 8px;
@@ -2242,6 +2278,13 @@ function setupRevealAnimations() {
   box-shadow: 0 0 0 3px rgba(47, 111, 83, 0.12);
 }
 
+.quick-helper {
+  margin: 10px 0 0;
+  color: #7d857b;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .quick-actions {
   display: flex;
   flex-wrap: wrap;
@@ -2256,7 +2299,7 @@ function setupRevealAnimations() {
 }
 
 .quick-empty {
-  min-height: 318px;
+  min-height: 276px;
   display: grid;
   align-content: center;
   gap: 8px;
@@ -2350,20 +2393,7 @@ function setupRevealAnimations() {
 }
 
 .principle-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.principle-row span {
-  max-width: 100%;
-  padding: 7px 9px;
-  border-radius: 8px;
-  color: #5b3f13;
-  background: rgba(216, 173, 95, 0.16);
-  font-size: 12px;
-  font-weight: 800;
+  display: none;
 }
 
 .home-grid {
@@ -2710,10 +2740,20 @@ function setupRevealAnimations() {
   color: #9fc2ff;
 }
 
+:global(html[data-theme='dark']) .mode-badge {
+  background: rgba(138, 180, 255, 0.14);
+  color: #9fc2ff;
+}
+
 :global(html[data-theme='dark']) .quick-textarea {
   border-color: rgba(232, 235, 245, 0.13);
   background: rgba(6, 7, 10, 0.68);
   color: #f4f1eb;
+}
+
+:global(html[data-theme='dark']) .quick-helper,
+:global(html[data-theme='dark']) .quick-label span {
+  color: #b7becb;
 }
 
 :global(html[data-theme='dark']) .hero-board {

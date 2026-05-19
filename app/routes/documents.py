@@ -120,13 +120,13 @@ async def upload_document_with_report(
     learning_consent: bool = Form(default=False),
     learning_scope: str = Form(default="none"),
     settings: Settings = Depends(get_settings),
+    pipeline: UnifiedPipeline = Depends(get_unified_pipeline),
     auth: AuthContext = Depends(get_auth_context),
 ) -> UploadWithReportResponse:
     """上传论文 + 知网检测报告，启用报告驱动模式。"""
     repository = get_repository()
 
     # 1. 上传论文（复用 pipeline 逻辑）
-    pipeline = get_unified_pipeline()
     try:
         result = await pipeline.upload_document(
             file=file,
@@ -162,11 +162,15 @@ async def upload_document_with_report(
         raise HTTPException(status_code=400, detail=f"报告解析失败: {exc}") from exc
 
     # 3. 获取论文 blocks
-    blocks = parse_document_to_blocks(
-        document["original_file_path"], document.get("source_type", "upload")
-    )
-    if blocks:
-        repository.insert_document_blocks(document_id, [b.to_dict() for b in blocks])
+    existing_blocks = repository.list_document_blocks(document_id)
+    if existing_blocks:
+        blocks = existing_blocks
+    else:
+        blocks = parse_document_to_blocks(
+            document["original_file_path"], document.get("source_type", "upload")
+        )
+        if blocks:
+            repository.insert_document_blocks(document_id, [b.to_dict() for b in blocks])
 
     # 4. 三级匹配
     block_list = blocks if blocks else []
@@ -592,6 +596,17 @@ def analyze_uploaded_document_async(
     repository = get_repository()
     ensure_document_access(document_id=document_id, auth=auth, repository=repository)
     user_id = str(auth.user["id"]) if auth.user is not None else None
+    repository.recover_stale_document_tasks(document_id, max_age_minutes=15)
+    recovered_runs = repository.recover_orphan_processing_runs(
+        document_id, max_age_minutes=0
+    )
+    if recovered_runs:
+        document = repository.get_document(document_id)
+        repository.mark_document_status(
+            document_id,
+            "failed",
+            section_count=(document or {}).get("section_count", 0),
+        )
     active_tasks = repository.list_active_analysis_tasks(document_id)
     if active_tasks:
         task = active_tasks[0]

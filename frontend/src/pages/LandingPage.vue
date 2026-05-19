@@ -261,9 +261,10 @@ const rewrittenSegments = computed(() =>
 const afterRiskDisplay = computed(() => {
   if (!quickResult.value) return '--'
   const score = quickResult.value.afterRisk.score
+  const before = quickResult.value.beforeRisk.score
   const low = Math.max(0, score - 6)
-  const high = Math.min(100, score + 8)
-  return `${low}-${high}`
+  const high = Math.min(Math.max(0, before - 1), score + 8)
+  return `${Math.min(low, high)}-${Math.max(low, high)}`
 })
 const afterRiskLevelLabel = computed(() => {
   if (!quickResult.value) return ''

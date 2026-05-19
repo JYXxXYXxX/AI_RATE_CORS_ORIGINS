@@ -91,13 +91,13 @@ AI_RATE_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/paper_risk_pl
 
 启动成功后你会看到这些地址：
 
-- 前端：`http://localhost:5174`
+- 前端：`http://localhost:3000`
 - 后端文档：`http://localhost:8010/docs`
 - 健康检查：`http://localhost:8010/health`
 
 ### 第 6 步：第一次出报告
 
-打开 `http://localhost:5174`，然后按这个顺序操作：
+打开 `http://localhost:3000`，然后按这个顺序操作：
 
 1. 上传一篇 `txt / md / docx / pdf` 论文文件
 2. 可选填写标题、学科、层级
@@ -196,7 +196,7 @@ Windows 下推荐直接运行：
 
 启动成功后：
 
-- 前端：http://localhost:5174
+- 前端：http://localhost:3000
 - 后端文档：http://localhost:8010/docs
 - 健康检查：http://localhost:8010/health
 
@@ -208,7 +208,7 @@ Windows 下推荐直接运行：
 
 启动后直接这样验证：
 
-1. 打开 `http://localhost:5174`
+1. 打开 `http://localhost:3000`
 2. 直接上传一篇 `txt / md / docx / pdf` 论文文件
 3. 等待异步分析完成并查看详细报告
 4. 在左侧工作流区域继续做外部结果导入、知网回填和模型训练

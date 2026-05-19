@@ -1,9 +1,10 @@
 <template>
   <div class="auth-page">
     <div class="auth-card">
-      <router-link to="/" class="auth-logo">PataFix论文检测</router-link>
+      <router-link to="/" class="auth-logo">PataFix</router-link>
+
       <h1>登录</h1>
-      <p class="auth-hint">登录后即可使用分析额度</p>
+      <p class="auth-hint">登录后即可继续上传论文、查看报告和在线改写。</p>
 
       <form class="auth-form" @submit.prevent="handleLogin">
         <div class="form-field">
@@ -21,8 +22,12 @@
       </form>
 
       <p class="auth-switch">
-        还没有账号？<router-link to="/register">注册</router-link>
+        还没有账号？<router-link to="/register">去注册</router-link>
       </p>
+
+      <div class="auth-footer">
+        <router-link to="/" class="back-link">返回首页</router-link>
+      </div>
     </div>
   </div>
 </template>
@@ -63,10 +68,10 @@ async function handleLogin() {
 
 .auth-card {
   width: 100%;
-  max-width: 400px;
-  padding: 40px 36px;
+  max-width: 420px;
+  padding: 34px 34px 32px;
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.94);
   border: 1px solid rgba(31, 54, 73, 0.08);
   box-shadow: 0 16px 45px rgba(29, 45, 61, 0.08);
   backdrop-filter: blur(14px);
@@ -74,12 +79,17 @@ async function handleLogin() {
 
 .auth-logo {
   display: block;
-  text-align: center;
-  font-size: 15px;
-  font-weight: 700;
+  width: fit-content;
+  margin: 0 auto 22px;
   color: #2f7d67;
   text-decoration: none;
-  margin-bottom: 28px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.auth-logo:hover,
+.auth-switch a:hover {
+  text-decoration: underline;
 }
 
 .auth-card h1 {
@@ -94,6 +104,7 @@ async function handleLogin() {
   color: #53606f;
   font-size: 14px;
   margin: 0 0 28px;
+  line-height: 1.7;
 }
 
 .auth-form {
@@ -180,7 +191,20 @@ async function handleLogin() {
   text-decoration: none;
 }
 
-.auth-switch a:hover {
+.auth-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+.back-link {
+  color: #2f7d67;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.back-link:hover {
   text-decoration: underline;
 }
 </style>

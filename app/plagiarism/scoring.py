@@ -38,6 +38,7 @@ _LEGIBLE_RE = re.compile(
 _WEIRD_SCRIPT_RE = re.compile(
     r"[\u0370-\u04ff\u0530-\u058f\u0600-\u06ff\u0750-\u077f\u10a0-\u10ff\u1f00-\u1fff]+"
 )
+_ASCII_RUN_RE = re.compile(r"[A-Za-z0-9_]+")
 
 
 def _is_garbled(text: str, threshold: float = 0.60) -> bool:
@@ -56,7 +57,22 @@ def _is_garbled(text: str, threshold: float = 0.60) -> bool:
     # 策略2：可读字符占比过低
     legible = sum(len(m.group(0)) for m in _LEGIBLE_RE.finditer(text))
     ratio = legible / len(text)
-    return ratio < threshold
+    if ratio < threshold:
+        return True
+
+    # 策略3：大量碎片化英数字穿插在中文中，通常是解析错位后的乱码
+    ascii_runs = _ASCII_RUN_RE.findall(text)
+    if ascii_runs:
+        ascii_chars = sum(len(item) for item in ascii_runs)
+        short_runs = [item for item in ascii_runs if len(item) <= 2]
+        single_runs = [item for item in ascii_runs if len(item) == 1]
+        ascii_ratio = ascii_chars / max(len(text), 1)
+        if ascii_ratio >= 0.14 and len(short_runs) >= 6:
+            return True
+        if len(ascii_runs) >= 8 and len(single_runs) / len(ascii_runs) >= 0.6:
+            return True
+
+    return False
 
 
 # ---------------------------------------------------------------------------

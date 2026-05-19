@@ -87,7 +87,7 @@ const copy = computed(() => locale.value === 'en'
       history: 'View history',
       historyDesc: 'Return to the workspace and continue existing papers',
       version: 'Current version',
-      versionDesc: 'Payment entry is hidden for now. Paper scan, report view, and online rewriting remain open; this area can later expand into credits and plans.'
+      versionDesc: 'This account center currently focuses on paper scan records, report access, and rewrite progress.'
     }
   : {
       eyebrow: 'Account',
@@ -107,7 +107,7 @@ const copy = computed(() => locale.value === 'en'
       history: '查看历史报告',
       historyDesc: '回到工作台继续处理已有论文',
       version: '当前版本说明',
-      versionDesc: '付费入口已隐藏，论文检测、报告查看和在线改写保持开放。后续如果接入额度或套餐，这里会作为账户中心继续扩展。'
+      versionDesc: '当前账户中心只保留检测记录、报告查看和在线改写相关信息。'
     })
 
 const userInitial = computed(() => {

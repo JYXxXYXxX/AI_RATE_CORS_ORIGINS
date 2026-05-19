@@ -582,12 +582,12 @@ function handleLanguageChange(event: Event) {
 
 <style scoped>
 .new-analysis {
-  max-width: 620px;
+  max-width: 760px;
   margin: 0 auto;
 }
 
 .page-header {
-  margin-bottom: 28px;
+  margin-bottom: 22px;
 }
 
 .page-header h1 {
@@ -603,7 +603,7 @@ function handleLanguageChange(event: Event) {
 }
 
 .upload-card {
-  padding: 32px;
+  padding: 26px;
   border-radius: 20px;
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(31, 54, 73, 0.06);
@@ -615,14 +615,14 @@ function handleLanguageChange(event: Event) {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 160px;
-  padding: 32px;
+  min-height: 136px;
+  padding: 24px;
   border: 2px dashed rgba(31, 54, 73, 0.15);
   border-radius: 14px;
   cursor: pointer;
   color: #8b95a2;
   transition: all 0.2s ease;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 .drop-zone:hover,
@@ -712,6 +712,7 @@ function handleLanguageChange(event: Event) {
 .analysis-form {
   display: grid;
   gap: 18px;
+  margin-top: 4px;
 }
 
 .form-field {

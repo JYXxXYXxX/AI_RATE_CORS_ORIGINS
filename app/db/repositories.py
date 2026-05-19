@@ -20,6 +20,12 @@ def get_repository() -> "UnifiedRepository":
 def _strip_nul_bytes(value: Any) -> Any:
     if isinstance(value, str):
         return value.replace("\x00", "")
+    if isinstance(value, dict):
+        return {key: _strip_nul_bytes(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_strip_nul_bytes(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_strip_nul_bytes(item) for item in value)
     return value
 
 
@@ -637,6 +643,29 @@ class UnifiedRepository:
             (document_id, limit),
         )
 
+    def recover_stale_document_tasks(
+        self, document_id: str, max_age_minutes: int = 15
+    ) -> int:
+        query = """
+            UPDATE analysis_tasks
+            SET status = 'failed',
+                progress = 100,
+                finished_at = now(),
+                error_message = COALESCE(
+                    error_message,
+                    '服务恢复：检测到残留 queued/processing 任务，已自动释放'
+                )
+            WHERE document_id = %s
+              AND status IN ('queued', 'processing')
+              AND created_at < now() - make_interval(mins => %s)
+        """
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (document_id, max_age_minutes))
+                count = cur.rowcount
+            conn.commit()
+        return count
+
     def mark_analysis_task_processing(
         self, task_id: str, *, progress: int = 35
     ) -> None:
@@ -703,6 +732,31 @@ class UnifiedRepository:
         with self.pool.connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(query, (max_age_minutes,))
+                count = cur.rowcount
+            conn.commit()
+        return count
+
+    def recover_orphan_processing_runs(
+        self, document_id: str, max_age_minutes: int = 15
+    ) -> int:
+        query = """
+            UPDATE analysis_runs AS runs
+            SET status = 'failed',
+                finished_at = now(),
+                error_message = '服务恢复：检测到残留 processing run，已自动释放'
+            WHERE runs.document_id = %s
+              AND runs.status = 'processing'
+              AND COALESCE(runs.started_at, runs.created_at) < now() - make_interval(mins => %s)
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM analysis_tasks AS tasks
+                    WHERE tasks.document_id = runs.document_id
+                      AND tasks.status IN ('queued', 'processing')
+              )
+        """
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (document_id, max_age_minutes))
                 count = cur.rowcount
             conn.commit()
         return count
@@ -831,9 +885,9 @@ class UnifiedRepository:
                 section["section_index"],
                 section.get("paragraph_index"),
                 section.get("section_type"),
-                section.get("section_title"),
-                section.get("text_preview"),
-                section["content"],
+                _strip_nul_bytes(section.get("section_title")),
+                _strip_nul_bytes(section.get("text_preview")),
+                _strip_nul_bytes(section["content"]),
                 section["char_count"],
                 section.get("embedding"),
             )
@@ -927,8 +981,8 @@ class UnifiedRepository:
                             score.get("raw_score"),
                             score.get("normalized_score"),
                             score.get("risk_level"),
-                            Jsonb(score.get("reasons", [])),
-                            Jsonb(score.get("signals", [])),
+                            Jsonb(_strip_nul_bytes(score.get("reasons", []))),
+                            Jsonb(_strip_nul_bytes(score.get("signals", []))),
                         ),
                     )
             conn.commit()
@@ -978,13 +1032,13 @@ class UnifiedRepository:
                         (
                             run_id,
                             match["document_section_id"],
-                            match.get("matched_source"),
-                            match.get("matched_title"),
-                            match.get("matched_snippet"),
+                            _strip_nul_bytes(match.get("matched_source")),
+                            _strip_nul_bytes(match.get("matched_title")),
+                            _strip_nul_bytes(match.get("matched_snippet")),
                             match["similarity_score"],
                             match.get("overlap_chars", 0),
                             match.get("match_type"),
-                            match.get("source_url"),
+                            _strip_nul_bytes(match.get("source_url")),
                         ),
                     )
             conn.commit()
@@ -997,7 +1051,12 @@ class UnifiedRepository:
             INSERT INTO provider_payloads (run_id, provider, payload_type, payload)
             VALUES (%s, %s, %s, %s)
             """,
-            (run_id, provider, payload_type, Jsonb(jsonable_encoder(payload))),
+            (
+                run_id,
+                provider,
+                payload_type,
+                Jsonb(_strip_nul_bytes(jsonable_encoder(payload))),
+            ),
         )
 
     def insert_provider_payload_row(
@@ -1013,7 +1072,12 @@ class UnifiedRepository:
             VALUES (%s, %s, %s, %s)
             RETURNING *
             """,
-            (run_id, provider, payload_type, Jsonb(jsonable_encoder(payload))),
+            (
+                run_id,
+                provider,
+                payload_type,
+                Jsonb(_strip_nul_bytes(jsonable_encoder(payload))),
+            ),
         )
 
     def list_provider_payloads(self, run_id: str) -> list[dict[str, Any]]:
@@ -1075,7 +1139,7 @@ class UnifiedRepository:
                 predicted_cnki_aigc_low,
                 predicted_cnki_aigc_high,
                 confidence,
-                Jsonb(jsonable_encoder(summary)),
+                Jsonb(_strip_nul_bytes(jsonable_encoder(summary))),
             ),
         )
 
@@ -1088,7 +1152,12 @@ class UnifiedRepository:
             RETURNING *
         """
         return self._fetchone(
-            query, (document_id, run_id, Jsonb(jsonable_encoder(report_json)))
+            query,
+            (
+                document_id,
+                run_id,
+                Jsonb(_strip_nul_bytes(jsonable_encoder(report_json))),
+            ),
         )
 
     def register_model(
@@ -1259,31 +1328,34 @@ class UnifiedRepository:
                 report_date,
                 evidence_path,
                 notes,
-                json.dumps(details) if details else "{}",
+                json.dumps(_strip_nul_bytes(details)) if details else "{}",
                 verified,
             ),
         )
 
     def _fetchone(self, query: str, params: Sequence[Any]) -> dict[str, Any] | None:
+        sanitized_params = _strip_nul_bytes(tuple(params))
         with self.pool.connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(query, params)
+                cur.execute(query, sanitized_params)
                 row = cur.fetchone()
             conn.commit()
         return _normalize_row(row)
 
     def _fetchall(self, query: str, params: Sequence[Any]) -> list[dict[str, Any]]:
+        sanitized_params = _strip_nul_bytes(tuple(params))
         with self.pool.connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(query, params)
+                cur.execute(query, sanitized_params)
                 rows = cur.fetchall()
             conn.commit()
         return [_normalize_row(row) for row in rows]
 
     def _execute(self, query: str, params: Sequence[Any]) -> None:
+        sanitized_params = _strip_nul_bytes(tuple(params))
         with self.pool.connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(query, params)
+                cur.execute(query, sanitized_params)
             conn.commit()
 
     # ------------------------------------------------------------------

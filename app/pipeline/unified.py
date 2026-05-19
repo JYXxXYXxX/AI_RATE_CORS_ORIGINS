@@ -152,6 +152,16 @@ class UnifiedPipeline:
 
         # 检查是否已有完成的分析结果，避免重复推理（force=true 时跳过缓存）
         if not force:
+            self.repository.recover_stale_document_tasks(document_id, max_age_minutes=15)
+            recovered_runs = self.repository.recover_orphan_processing_runs(
+                document_id, max_age_minutes=15
+            )
+            if recovered_runs:
+                self.repository.mark_document_status(
+                    document_id,
+                    "failed",
+                    section_count=document.get("section_count", 0),
+                )
             existing_runs = self.repository.list_completed_runs(document_id)
             if existing_runs:
                 latest_run = existing_runs[0]

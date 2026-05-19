@@ -15,11 +15,14 @@ import difflib
 import re
 import unicodedata
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from app.services.cnki_report_parser import CnkiRiskSpan
     from app.services.document_blocks import DocumentBlock
+
+
+BlockLike = "DocumentBlock | dict[str, Any]"
 
 
 @dataclass
@@ -29,6 +32,25 @@ class RiskMapping:
     match_method: str  # 'exact' | 'normalized' | 'fuzzy' | 'manual'
     match_confidence: float
     matched_text: str
+
+
+def _block_value(block: Any, key: str, default: Any = None) -> Any:
+    if isinstance(block, dict):
+        return block.get(key, default)
+    return getattr(block, key, default)
+
+
+def _block_type(block: Any) -> str:
+    return str(_block_value(block, "block_type", ""))
+
+
+def _block_text(block: Any) -> str:
+    value = _block_value(block, "text", "")
+    return value if isinstance(value, str) else ""
+
+
+def _block_id(block: Any) -> str:
+    return str(_block_value(block, "block_id", ""))
 
 
 # ---------------------------------------------------------------------------
@@ -70,32 +92,35 @@ def normalize_text(text: str) -> str:
 
 
 def exact_match(
-    span_text: str, blocks: list[DocumentBlock]
+    span_text: str, blocks: list[DocumentBlock | dict[str, Any]]
 ) -> list[RiskMapping]:
     """在 block.text 中精确查找 span_text 子串。"""
     mappings: list[RiskMapping] = []
     for block in blocks:
-        if block.block_type not in ("paragraph", "heading", "title"):
+        block_type = _block_type(block)
+        block_text = _block_text(block)
+        block_id = _block_id(block)
+        if block_type not in ("paragraph", "heading", "title"):
             continue
-        if span_text in block.text:
+        if span_text in block_text:
             mappings.append(
                 RiskMapping(
                     span_id="",
-                    block_id=block.block_id,
+                    block_id=block_id,
                     match_method="exact",
                     match_confidence=1.0,
-                    matched_text=block.text,
+                    matched_text=block_text,
                 )
             )
-        elif block.text in span_text:
+        elif block_text in span_text:
             # span 包含了整个 block
             mappings.append(
                 RiskMapping(
                     span_id="",
-                    block_id=block.block_id,
+                    block_id=block_id,
                     match_method="exact",
                     match_confidence=1.0,
-                    matched_text=block.text,
+                    matched_text=block_text,
                 )
             )
     return mappings
@@ -107,7 +132,7 @@ def exact_match(
 
 
 def normalized_match(
-    span_text: str, blocks: list[DocumentBlock]
+    span_text: str, blocks: list[DocumentBlock | dict[str, Any]]
 ) -> list[RiskMapping]:
     """归一化后的子串匹配。"""
     norm_span = normalize_text(span_text)
@@ -116,27 +141,30 @@ def normalized_match(
 
     mappings: list[RiskMapping] = []
     for block in blocks:
-        if block.block_type not in ("paragraph", "heading", "title"):
+        block_type = _block_type(block)
+        block_text = _block_text(block)
+        block_id = _block_id(block)
+        if block_type not in ("paragraph", "heading", "title"):
             continue
-        norm_block = normalize_text(block.text)
+        norm_block = normalize_text(block_text)
         if norm_span in norm_block:
             mappings.append(
                 RiskMapping(
                     span_id="",
-                    block_id=block.block_id,
+                    block_id=block_id,
                     match_method="normalized",
                     match_confidence=1.0,
-                    matched_text=block.text,
+                    matched_text=block_text,
                 )
             )
         elif norm_block in norm_span and len(norm_block) >= 10:
             mappings.append(
                 RiskMapping(
                     span_id="",
-                    block_id=block.block_id,
+                    block_id=block_id,
                     match_method="normalized",
                     match_confidence=1.0,
-                    matched_text=block.text,
+                    matched_text=block_text,
                 )
             )
     return mappings
@@ -149,7 +177,7 @@ def normalized_match(
 
 def fuzzy_match(
     span_text: str,
-    blocks: list[DocumentBlock],
+    blocks: list[DocumentBlock | dict[str, Any]],
     threshold: float = 0.75,
 ) -> list[RiskMapping]:
     """使用 difflib.SequenceMatcher 计算文本相似度。
@@ -165,9 +193,12 @@ def fuzzy_match(
 
     mappings: list[RiskMapping] = []
     for block in blocks:
-        if block.block_type not in ("paragraph", "heading", "title"):
+        block_type = _block_type(block)
+        block_text = _block_text(block)
+        block_id = _block_id(block)
+        if block_type not in ("paragraph", "heading", "title"):
             continue
-        norm_block = normalize_text(block.text)
+        norm_block = normalize_text(block_text)
         if len(norm_block) < 10:
             continue
 
@@ -186,10 +217,10 @@ def fuzzy_match(
             mappings.append(
                 RiskMapping(
                     span_id="",
-                    block_id=block.block_id,
+                    block_id=block_id,
                     match_method="fuzzy",
                     match_confidence=round(confidence, 4),
-                    matched_text=block.text,
+                    matched_text=block_text,
                 )
             )
 
@@ -217,7 +248,7 @@ def _partial_ratio(shorter: str, longer: str) -> float:
 
 def match_spans_to_blocks(
     spans: list[CnkiRiskSpan],
-    blocks: list[DocumentBlock],
+    blocks: list[DocumentBlock | dict[str, Any]],
     min_confidence: float = 0.75,
 ) -> tuple[list[RiskMapping], list[CnkiRiskSpan]]:
     """将知网报告风险片段映射到 DocumentBlock。
@@ -236,7 +267,8 @@ def match_spans_to_blocks(
     # 预过滤：只保留有意义的 block
     text_blocks = [
         b for b in blocks
-        if b.block_type in ("paragraph", "heading", "title") and len(b.text) >= 10
+        if _block_type(b) in ("paragraph", "heading", "title")
+        and len(_block_text(b)) >= 10
     ]
 
     for span in spans:
