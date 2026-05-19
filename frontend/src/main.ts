@@ -6,6 +6,9 @@ import App from './App.vue'
 import router from './router'
 import { useAuthStore } from './stores/auth'
 
+document.documentElement.dataset.theme = 'light'
+localStorage.setItem('patafix-theme', 'light')
+
 const app = createApp(App)
 const pinia = createPinia()
 

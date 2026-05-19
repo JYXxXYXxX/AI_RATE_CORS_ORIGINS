@@ -26,12 +26,6 @@
         </nav>
       </div>
       <div class="app-header-right">
-        <button class="header-toggle theme-toggle" type="button" :class="{ active: theme === 'dark' }" :aria-label="ui.themeToggle" @click="toggleTheme">
-          <span class="toggle-switch" aria-hidden="true">
-            <span class="toggle-knob">{{ theme === 'dark' ? '夜' : '日' }}</span>
-          </span>
-          <span class="toggle-label">{{ theme === 'dark' ? ui.dark : ui.light }}</span>
-        </button>
         <button class="header-toggle language-toggle" type="button" :class="{ active: language === 'en' }" :aria-label="ui.languageToggle" @click="toggleLanguage">
           <span class="language-pill" aria-hidden="true">
             <span class="language-slider" />
@@ -77,17 +71,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { HomeFilled, CirclePlusFilled, UserFilled, Coin, EditPen, DataBoard } from '@element-plus/icons-vue'
+import { HomeFilled, CirclePlusFilled, UserFilled, EditPen, DataBoard } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { useAnalysisStore } from '../stores/analysis'
 
 const auth = useAuthStore()
 const analysis = useAnalysisStore()
 const router = useRouter()
-type ThemeMode = 'light' | 'dark'
 type LanguageMode = 'zh' | 'en'
 
-const theme = ref<ThemeMode>((localStorage.getItem('patafix-theme') as ThemeMode) || 'light')
 const language = ref<LanguageMode>((localStorage.getItem('patafix-language') as LanguageMode) || 'zh')
 const pageLoaded = ref(false)
 
@@ -99,7 +91,7 @@ const userInitial = computed(() => {
 const latestRunId = computed(() =>
   analysis.history.find(item => item.run_id && item.status === 'completed')?.run_id || ''
 )
-const logoSrc = computed(() => (theme.value === 'dark' ? '/logo-icon1.png?v=3' : '/logo-icon.png?v=3'))
+const logoSrc = computed(() => '/logo-icon.png?v=3')
 const ui = computed(() => {
   if (language.value === 'en') {
     return {
@@ -111,9 +103,6 @@ const ui = computed(() => {
       login: 'Log in',
       register: 'Sign up',
       logout: 'Sign out',
-      light: 'Light',
-      dark: 'Dark',
-      themeToggle: 'Switch color theme',
       languageToggle: 'Switch language',
       footerTagline: 'Risk-aware thesis rewriting with document-format preservation.',
       footerUpload: 'Upload paper',
@@ -131,9 +120,6 @@ const ui = computed(() => {
     login: '登录',
     register: '注册',
     logout: '退出',
-    light: '日间',
-    dark: '夜间',
-    themeToggle: '切换日夜模式',
     languageToggle: '切换中英文',
     footerTagline: '面向论文查重与 AIGC 风险优化的格式保留改写工作台。',
     footerUpload: '上传论文',
@@ -157,12 +143,6 @@ async function handleLogout() {
   router.push('/login')
 }
 
-function toggleTheme() {
-  theme.value = theme.value === 'dark' ? 'light' : 'dark'
-  localStorage.setItem('patafix-theme', theme.value)
-  applyTheme()
-}
-
 function toggleLanguage() {
   language.value = language.value === 'zh' ? 'en' : 'zh'
   localStorage.setItem('patafix-language', language.value)
@@ -170,7 +150,8 @@ function toggleLanguage() {
 }
 
 function applyTheme() {
-  document.documentElement.dataset.theme = theme.value
+  document.documentElement.dataset.theme = 'light'
+  localStorage.setItem('patafix-theme', 'light')
 }
 
 function applyLanguage() {
@@ -338,63 +319,6 @@ function applyLanguage() {
   transform: translateY(-1px);
   border-color: rgba(47, 111, 83, 0.35);
   background: #f4eddd;
-}
-
-.theme-toggle {
-  min-width: 84px;
-  padding-left: 8px;
-}
-
-.toggle-switch {
-  position: relative;
-  width: 34px;
-  height: 20px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, #fff7df, #f2e4bc);
-  box-shadow: inset 0 0 0 1px rgba(69, 72, 61, 0.1);
-  transition:
-    background 0.26s ease,
-    box-shadow 0.26s ease;
-}
-
-.toggle-knob {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  display: grid;
-  place-items: center;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #ffd166;
-  color: #5b4212;
-  font-size: 9px;
-  line-height: 1;
-  box-shadow: 0 3px 8px rgba(75, 58, 24, 0.18);
-  transition:
-    transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1),
-    background 0.26s ease,
-    color 0.26s ease,
-    box-shadow 0.26s ease;
-}
-
-.theme-toggle.active .toggle-switch {
-  background: linear-gradient(135deg, #111827, #202742);
-  box-shadow: inset 0 0 0 1px rgba(159, 194, 255, 0.25);
-}
-
-.theme-toggle.active .toggle-knob {
-  transform: translateX(14px);
-  background: #8ab4ff;
-  color: #050608;
-  box-shadow: 0 3px 10px rgba(138, 180, 255, 0.3);
-}
-
-.toggle-label {
-  min-width: 28px;
-  transition:
-    opacity 0.2s ease,
-    transform 0.2s ease;
 }
 
 .language-toggle {
