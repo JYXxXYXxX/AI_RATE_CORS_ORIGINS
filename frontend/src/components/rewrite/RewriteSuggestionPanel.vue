@@ -22,12 +22,13 @@
       </button>
     </div>
 
-    <div class="card-list">
+    <div ref="cardListRef" class="card-list">
       <article
         v-for="item in visibleItems"
         :key="item.riskId"
         class="suggestion-card"
         :class="[`risk-${effectiveLevel(item)}`, { active: item.riskId === activeRiskId }]"
+        :data-risk-id="item.riskId"
         @click="$emit('select-risk', item.riskId)"
       >
         <div class="card-top">
@@ -90,7 +91,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 import type { RewriteAdviceResponse } from '../../types'
 import type { RewriteRiskItem, RiskLevel } from './types'
 
@@ -168,6 +169,21 @@ function fallbackDiagnosis(level: RiskLevel) {
   if (level === 'low') return '该句风险较低，可按需做轻量润色。'
   return '该句暂未发现明显风险。'
 }
+
+const cardListRef = ref<HTMLElement | null>(null)
+
+watch(
+  () => props.activeRiskId,
+  async () => {
+    await nextTick()
+    if (!cardListRef.value || !props.activeRiskId) return
+    const card = cardListRef.value.querySelector<HTMLElement>(
+      `.suggestion-card[data-risk-id="${props.activeRiskId}"]`
+    )
+    if (!card) return
+    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }
+)
 
 function applyItem(riskId: string) {
   emit('select-risk', riskId)
