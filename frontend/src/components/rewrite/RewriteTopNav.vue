@@ -28,20 +28,27 @@
     </div>
 
     <div class="user-actions">
-      <button class="language-pill" type="button">
+      <button
+        class="language-pill"
+        type="button"
+        :class="{ active: language === 'en' }"
+        @click="toggleLanguage"
+      >
         <span>中</span>
         <span>EN</span>
       </button>
-      <span class="avatar">1</span>
-      <span class="credit">11</span>
-      <button class="logout" type="button">退出</button>
+      <span v-if="auth.isLoggedIn" class="avatar">{{ userInitial }}</span>
+      <span v-if="auth.isLoggedIn && auth.billing" class="credit">{{ auth.credits }}</span>
+      <button v-if="auth.isLoggedIn" class="logout" type="button" @click="handleLogout">退出</button>
     </div>
   </header>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useAuthStore } from '../../stores/auth'
+import { useAnalysisStore } from '../../stores/analysis'
 
 const navItems = [
   { key: 'home', label: '首页', icon: '⌂', route: { name: 'app-home' } },
@@ -52,6 +59,7 @@ const navItems = [
 ] as const
 
 type NavItem = typeof navItems[number]
+type LanguageMode = 'zh' | 'en'
 
 const props = defineProps<{
   aigcPercent: number
@@ -64,10 +72,33 @@ defineEmits<{
 }>()
 
 const router = useRouter()
+const auth = useAuthStore()
+const analysis = useAnalysisStore()
 const boundedProgress = computed(() => Math.max(0, Math.min(100, props.aigcPercent)))
+
+const language = ref<LanguageMode>((localStorage.getItem('patafix-language') as LanguageMode) || 'zh')
+
+const userInitial = computed(() => {
+  const name = auth.user?.display_name || auth.user?.email || 'U'
+  return name.charAt(0).toUpperCase()
+})
 
 function goModule(item: NavItem) {
   if (item.route) router.push(item.route)
+}
+
+function toggleLanguage() {
+  language.value = language.value === 'zh' ? 'en' : 'zh'
+  localStorage.setItem('patafix-language', language.value)
+  document.documentElement.dataset.lang = language.value
+  window.dispatchEvent(new CustomEvent('patafix:language-change', { detail: language.value }))
+}
+
+async function handleLogout() {
+  await auth.logout()
+  analysis.resetSubmissionState()
+  analysis.history = []
+  router.push('/login')
 }
 </script>
 
