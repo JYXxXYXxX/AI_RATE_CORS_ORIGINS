@@ -15,7 +15,7 @@ from typing import Any
 from docx import Document
 from pypdf import PdfReader
 
-from app.services.document_loader import _decode_text
+from app.services.document_loader import _decode_text, convert_doc_to_docx
 from app.services.text_processing import SECTION_HEADING_RE
 
 
@@ -66,10 +66,22 @@ def parse_document_to_blocks(
     if lower == "pdf":
         return _parse_pdf_blocks(content)
     if lower == "doc":
-        # doc 先尝试当作文本提取，后续阶段会加 docx 转换
-        return _parse_text_blocks(content)
+        return _parse_doc_blocks(path, content)
 
     # txt / md / 其他
+    return _parse_text_blocks(content)
+
+
+def _parse_doc_blocks(path: Path, content: bytes) -> list[DocumentBlock]:
+    """优先将 .doc 转为 .docx 后按 OOXML 解析，失败时再退回纯文本。"""
+    try:
+        converted = convert_doc_to_docx(content, str(path.parent))
+        if converted:
+            converted_path = Path(converted)
+            if converted_path.exists():
+                return _parse_docx_blocks(converted_path.read_bytes())
+    except Exception:
+        pass
     return _parse_text_blocks(content)
 
 

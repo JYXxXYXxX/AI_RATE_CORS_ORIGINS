@@ -884,6 +884,10 @@ export function getOnlyOfficeDownloadUrl(runId: string, variant: 'original' | 'e
   return `${baseUrl}/v1/runs/${runId}/onlyoffice/download?variant=${variant}`
 }
 
+export function getOriginalDocumentUrl(documentId: string): string {
+  return `${baseUrl}/v1/documents/${documentId}/original`
+}
+
 export async function getUnlockPackages(): Promise<UnlockPackage[]> {
   const response = await fetchWithRetry(`${baseUrl}/v1/unlocks/packages`, {
     headers: authHeaders(),
