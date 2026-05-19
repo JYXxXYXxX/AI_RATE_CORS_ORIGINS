@@ -1416,3 +1416,296 @@ h3 {
   font-size: 13px;
   margin-top: 8px;
 }
+
+/* ===== 登录 / 注册页夜间模式 ===== */
+:root[data-theme='dark'] .auth-page {
+  background: #0b1220;
+}
+
+:root[data-theme='dark'] .auth-card {
+  background: rgba(19, 28, 41, 0.96);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 16px 45px rgba(0, 0, 0, 0.22);
+}
+
+:root[data-theme='dark'] .auth-logo {
+  color: #22c55e;
+}
+
+:root[data-theme='dark'] .auth-card h1 {
+  color: #f6f8fb;
+}
+
+:root[data-theme='dark'] .auth-hint {
+  color: #a1adbd;
+}
+
+:root[data-theme='dark'] .form-field label {
+  color: #c4cfdd;
+}
+
+:root[data-theme='dark'] .form-field input {
+  background: rgba(10, 15, 23, 0.92);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #f6f8fb;
+}
+
+:root[data-theme='dark'] .form-error {
+  color: #ff9f94;
+}
+
+:root[data-theme='dark'] .auth-switch {
+  color: #a1adbd;
+}
+
+:root[data-theme='dark'] .auth-switch a {
+  color: #7ce4a8;
+}
+
+:root[data-theme='dark'] .back-link {
+  color: #7ce4a8;
+}
+
+/* ===== 落地页夜间模式 ===== */
+:root[data-theme='dark'] .landing {
+  background: #0b1220;
+}
+
+:root[data-theme='dark'] .hero {
+  background: linear-gradient(180deg, #0b1220 0%, #0f1726 100%);
+}
+
+:root[data-theme='dark'] .hero-badge {
+  background: rgba(34, 197, 94, 0.12);
+  color: #b8f0cb;
+}
+
+:root[data-theme='dark'] .hero h1 {
+  color: #f6f8fb;
+}
+
+:root[data-theme='dark'] .hero-desc {
+  color: #c4cfdd;
+}
+
+:root[data-theme='dark'] .quick-rewrite {
+  background: #0f1726;
+}
+
+:root[data-theme='dark'] .quick-shell {
+  background: rgba(19, 28, 41, 0.96);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme='dark'] .quick-head h2 {
+  color: #f6f8fb;
+}
+
+:root[data-theme='dark'] .quick-head p,
+:root[data-theme='dark'] .quick-limit,
+:root[data-theme='dark'] .quick-summary,
+:root[data-theme='dark'] .quick-disclaimer,
+:root[data-theme='dark'] .quick-empty p {
+  color: #c4cfdd;
+}
+
+:root[data-theme='dark'] .quick-input-column,
+:root[data-theme='dark'] .quick-output-column {
+  background: #131c29;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme='dark'] .quick-textarea {
+  background: rgba(10, 15, 23, 0.92);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #f6f8fb;
+}
+
+:root[data-theme='dark'] .quick-input-tips {
+  background: rgba(24, 35, 52, 0.72);
+  color: #a1adbd;
+}
+
+:root[data-theme='dark'] .quick-error {
+  color: #ff9f94;
+}
+
+:root[data-theme='dark'] .quick-empty {
+  color: #a1adbd;
+}
+
+:root[data-theme='dark'] .quick-empty strong {
+  color: #f6f8fb;
+}
+
+:root[data-theme='dark'] .feature-card {
+  background: rgba(19, 28, 41, 0.96);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme='dark'] .feature-card h3 {
+  color: #f6f8fb;
+}
+
+:root[data-theme='dark'] .feature-card p {
+  color: #c4cfdd;
+}
+
+/* ===== OnlyOffice Rewrite Workspace 夜间模式 ===== */
+:root[data-theme='dark'] .rewrite-workspace {
+  background: linear-gradient(180deg, #0b1220 0%, #0f1726 100%);
+}
+
+:root[data-theme='dark'] .workspace-panel {
+  background: rgba(19, 28, 41, 0.96);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.22);
+}
+
+:root[data-theme='dark'] .workspace-panel--center {
+  background: linear-gradient(180deg, #131c29 0%, #0f1726 100%);
+}
+
+:root[data-theme='dark'] .workspace-state {
+  background: rgba(19, 28, 41, 0.96);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme='dark'] .workspace-state--error h3 {
+  color: #f6f8fb;
+}
+
+:root[data-theme='dark'] .workspace-state--error p {
+  color: #c4cfdd;
+}
+
+/* RewriteTopBar */
+:root[data-theme='dark'] .rewrite-topbar {
+  background: rgba(19, 28, 41, 0.96);
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme='dark'] .rewrite-topbar__eyebrow,
+:root[data-theme='dark'] .rewrite-topbar__filename {
+  color: #9eacbf;
+}
+
+:root[data-theme='dark'] .rewrite-topbar__title h1 {
+  color: #f6f8fb;
+}
+
+:root[data-theme='dark'] .metric-chip {
+  background: #1e2d3f;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme='dark'] .metric-chip span {
+  color: #a1adbd;
+}
+
+:root[data-theme='dark'] .topbar-link {
+  color: #7ce4a8;
+}
+
+/* RewriteOutlineNav */
+:root[data-theme='dark'] .outline-nav__eyebrow {
+  color: #9eacbf;
+}
+
+:root[data-theme='dark'] .outline-nav__header h3 {
+  color: #f6f8fb;
+}
+
+:root[data-theme='dark'] .outline-nav__count {
+  background: #1e2d3f;
+  color: #a1adbd;
+}
+
+:root[data-theme='dark'] .outline-nav__warning {
+  background: rgba(251, 140, 0, 0.12);
+  color: #ffb74d;
+}
+
+:root[data-theme='dark'] .outline-item {
+  background: #131c29;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme='dark'] .outline-item:hover {
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+}
+
+/* RewriteDocumentPane */
+:root[data-theme='dark'] .document-pane__eyebrow {
+  color: #9eacbf;
+}
+
+:root[data-theme='dark'] .document-pane__header h3 {
+  color: #f6f8fb;
+}
+
+:root[data-theme='dark'] .legend-chip {
+  background: #1e2d3f;
+  color: #a1adbd;
+}
+
+:root[data-theme='dark'] .legend-chip.is-high {
+  background: rgba(220, 38, 38, 0.15);
+  color: #ff9f94;
+}
+
+:root[data-theme='dark'] .legend-chip.is-medium {
+  background: rgba(249, 115, 22, 0.15);
+  color: #ffb74d;
+}
+
+:root[data-theme='dark'] .legend-chip.is-low {
+  background: rgba(147, 51, 234, 0.15);
+  color: #ce93d8;
+}
+
+:root[data-theme='dark'] .legend-chip.is-normal {
+  background: rgba(22, 163, 74, 0.15);
+  color: #7ce4a8;
+}
+
+/* RewriteSuggestionPanel */
+:root[data-theme='dark'] .suggestion-panel__eyebrow {
+  color: #9eacbf;
+}
+
+:root[data-theme='dark'] .suggestion-panel__header h3 {
+  color: #f6f8fb;
+}
+
+:root[data-theme='dark'] .suggestion-panel__count {
+  background: #1e2d3f;
+  color: #a1adbd;
+}
+
+:root[data-theme='dark'] .risk-tab {
+  background: #131c29;
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #c4cfdd;
+}
+
+:root[data-theme='dark'] .risk-tab.is-active {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.3);
+  color: #7ce4a8;
+}
+
+:root[data-theme='dark'] .focus-card {
+  background: #131c29;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme='dark'] .focus-card.is-high {
+  border-color: rgba(220, 38, 38, 0.25);
+  background: linear-gradient(180deg, rgba(220, 38, 38, 0.1) 0%, #131c29 100%);
+}
+
+:root[data-theme='dark'] .focus-card.is-medium {
+  border-color: rgba(249, 115, 22, 0.25);
+  background: linear-gradient(180deg, rgba(249, 115, 22, 0.1) 0%, #131c29 100%);
+}

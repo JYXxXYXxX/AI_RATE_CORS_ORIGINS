@@ -3109,3 +3109,262 @@ function goNext() {
   border-radius: 3px;
 }
 </style>
+
+<style>
+/* ===== 夜间模式全局覆盖 ===== */
+html[data-theme='dark'] .patafix-editor {
+  background: #0b1220;
+}
+
+html[data-theme='dark'] .editor-topbar {
+  background: #131c29;
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme='dark'] .editor-sidebar-left,
+html[data-theme='dark'] .editor-sidebar-right {
+  background: #131c29;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme='dark'] .editor-document {
+  background: #0b1220;
+}
+
+html[data-theme='dark'] .a4-page {
+  background: #1a2332;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* 文字颜色 */
+html[data-theme='dark'] .metric-label,
+html[data-theme='dark'] .metric-sub {
+  color: #9eacbf;
+}
+
+html[data-theme='dark'] .sidebar-tab {
+  color: #9eacbf;
+}
+
+html[data-theme='dark'] .sidebar-tab.active {
+  color: #22c55e;
+  border-bottom-color: #22c55e;
+}
+
+html[data-theme='dark'] .outline-title,
+html[data-theme='dark'] .legend-title,
+html[data-theme='dark'] .paper-title,
+html[data-theme='dark'] .chapter-title,
+html[data-theme='dark'] .panel-header h4,
+html[data-theme='dark'] .section-title,
+html[data-theme='dark'] .bottombar-count {
+  color: #f6f8fb;
+}
+
+html[data-theme='dark'] .outline-para,
+html[data-theme='dark'] .outline-text,
+html[data-theme='dark'] .risk-legend,
+html[data-theme='dark'] .legend-item,
+html[data-theme='dark'] .section-text,
+html[data-theme='dark'] .sent-explanation p,
+html[data-theme='dark'] .bottombar-center {
+  color: #c4cfdd;
+}
+
+html[data-theme='dark'] .doc-paragraph {
+  color: #e5ecf4;
+}
+
+html[data-theme='dark'] .outline-count {
+  background: #1e2d3f;
+  color: #9eacbf;
+}
+
+/* 卡片和面板 */
+html[data-theme='dark'] .advice-card,
+html[data-theme='dark'] .sentence-card,
+html[data-theme='dark'] .original-text,
+html[data-theme='dark'] .unmatched-item,
+html[data-theme='dark'] .pdf-text-layer,
+html[data-theme='dark'] .editor-bottombar {
+  background: #131c29;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* 悬停状态 */
+html[data-theme='dark'] .outline-chapter:hover,
+html[data-theme='dark'] .outline-chapter.active {
+  background: rgba(34, 197, 94, 0.12);
+}
+
+html[data-theme='dark'] .outline-para:hover,
+html[data-theme='dark'] .outline-para.active {
+  background: rgba(255, 255, 255, 0.06);
+  color: #f6f8fb;
+}
+
+/* 滚动条 */
+html[data-theme='dark'] .editor-document::-webkit-scrollbar-thumb,
+html[data-theme='dark'] .outline-tree::-webkit-scrollbar-thumb,
+html[data-theme='dark'] .advice-cards::-webkit-scrollbar-thumb {
+  background: #2a3a4f;
+}
+
+/* 各种标签 */
+html[data-theme='dark'] .filter-high { color: #ff9f94; background: rgba(229, 57, 53, 0.15); }
+html[data-theme='dark'] .filter-medium { color: #ffb74d; background: rgba(251, 140, 0, 0.15); }
+html[data-theme='dark'] .filter-low { color: #ce93d8; background: rgba(142, 36, 170, 0.15); }
+html[data-theme='dark'] .filter-normal { color: #c4cfdd; background: rgba(255, 255, 255, 0.08); }
+
+html[data-theme='dark'] .badge-high { color: #ff9f94; background: rgba(229, 57, 53, 0.15); }
+html[data-theme='dark'] .badge-medium { color: #ffb74d; background: rgba(251, 140, 0, 0.15); }
+html[data-theme='dark'] .badge-low { color: #ce93d8; background: rgba(142, 36, 170, 0.15); }
+
+/* 重写后的文本 */
+html[data-theme='dark'] .rewritten-text,
+html[data-theme='dark'] .sent-rewritten p {
+  background: rgba(46, 125, 90, 0.15);
+  border-color: rgba(46, 125, 90, 0.3);
+  color: #b8f0cb;
+}
+
+/* 风险词 */
+html[data-theme='dark'] .risk-word-tag {
+  color: #ff9f94;
+  background: rgba(229, 57, 53, 0.15);
+  border-color: rgba(229, 57, 53, 0.3);
+}
+
+html[data-theme='dark'] :deep(.risk-word),
+html[data-theme='dark'] .risk-word {
+  color: #ff9f94;
+  background: rgba(229, 57, 53, 0.2);
+  border-bottom-color: #E53935;
+}
+
+html[data-theme='dark'] :deep(.rewrite-word),
+html[data-theme='dark'] .rewrite-word {
+  color: #b8f0cb;
+  background: rgba(46, 125, 90, 0.2);
+  border-bottom-color: #2E7D5A;
+}
+
+/* PDF 相关 */
+html[data-theme='dark'] .pdf-text-header {
+  background: #1a2332;
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+  color: #9eacbf;
+}
+
+html[data-theme='dark'] .panel-close {
+  color: #9eacbf;
+}
+html[data-theme='dark'] .panel-close:hover {
+  color: #f6f8fb;
+}
+
+html[data-theme='dark'] .empty-hint {
+  color: #9eacbf;
+}
+
+/* unmatched */
+html[data-theme='dark'] .unmatched-panel {
+  background: #1a2332;
+  border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme='dark'] .unmatched-header {
+  color: #ffb74d;
+}
+
+html[data-theme='dark'] .unmatched-toggle {
+  color: #ffb74d;
+}
+
+html[data-theme='dark'] .unmatched-text {
+  color: #c4cfdd;
+}
+
+html[data-theme='dark'] .panel-loading,
+html[data-theme='dark'] .panel-error {
+  color: #c4cfdd;
+}
+
+html[data-theme='dark'] .sent-original p {
+  color: #9eacbf;
+}
+
+html[data-theme='dark'] .status-text {
+  color: #22c55e;
+}
+
+html[data-theme='dark'] .status-sub {
+  color: #9eacbf;
+}
+
+html[data-theme='dark'] .aigc-score {
+  color: #ffb74d;
+}
+
+/* color classes */
+html[data-theme='dark'] .color-high { color: #ff9f94; }
+html[data-theme='dark'] .color-medium { color: #ffb74d; }
+html[data-theme='dark'] .color-low { color: #7ce4a8; }
+html[data-theme='dark'] .color-predicted { color: #7ce4a8; }
+html[data-theme='dark'] .color-accent { color: #7ce4a8; }
+html[data-theme='dark'] .delta-down { color: #7ce4a8; }
+html[data-theme='dark'] .delta-up { color: #ff9f94; }
+
+/* doc-paragraph hover */
+html[data-theme='dark'] .doc-paragraph:hover {
+  filter: brightness(1.1);
+}
+
+/* para colors in dark */
+html[data-theme='dark'] .para-red {
+  background: rgba(229, 57, 53, 0.25);
+}
+html[data-theme='dark'] .para-orange {
+  background: rgba(251, 140, 0, 0.25);
+}
+html[data-theme='dark'] .para-purple {
+  background: rgba(142, 36, 170, 0.2);
+}
+html[data-theme='dark'] .para-normal {
+  background: rgba(67, 160, 71, 0.15);
+}
+
+/* outline-chapter risk colors in dark */
+html[data-theme='dark'] .outline-chapter.outline-risk-high { background: rgba(229, 57, 53, 0.12); }
+html[data-theme='dark'] .outline-chapter.outline-risk-medium { background: rgba(251, 140, 0, 0.12); }
+html[data-theme='dark'] .outline-chapter.outline-risk-low { background: rgba(142, 36, 170, 0.1); }
+html[data-theme='dark'] .outline-chapter.outline-risk-normal { background: rgba(67, 160, 71, 0.1); }
+
+html[data-theme='dark'] .outline-para.outline-risk-high { background: rgba(229, 57, 53, 0.12); }
+html[data-theme='dark'] .outline-para.outline-risk-medium { background: rgba(251, 140, 0, 0.12); }
+html[data-theme='dark'] .outline-para.outline-risk-low { background: rgba(142, 36, 170, 0.1); }
+html[data-theme='dark'] .outline-para.outline-risk-normal { background: rgba(67, 160, 71, 0.1); }
+
+/* priority-nav */
+html[data-theme='dark'] .priority-nav-header {
+  color: #f6f8fb;
+}
+
+html[data-theme='dark'] .priority-nav-item {
+  color: #c4cfdd;
+}
+
+html[data-theme='dark'] .priority-nav-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* outline-children border */
+html[data-theme='dark'] .outline-children {
+  border-left-color: rgba(255, 255, 255, 0.08);
+}
+
+/* RewritePage.vue root background */
+html[data-theme='dark'] .rewrite-page {
+  background: #0b1220;
+}
+</style>
