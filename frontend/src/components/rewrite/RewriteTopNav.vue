@@ -37,7 +37,7 @@
         <span>中</span>
         <span>EN</span>
       </button>
-      <span v-if="auth.isLoggedIn" class="avatar">{{ userInitial }}</span>
+      <router-link v-if="auth.isLoggedIn" to="/app/account" class="avatar">{{ userInitial }}</router-link>
       <span v-if="auth.isLoggedIn && auth.billing" class="credit">{{ auth.credits }}</span>
       <button v-if="auth.isLoggedIn" class="logout" type="button" @click="handleLogout">退出</button>
     </div>
@@ -251,6 +251,7 @@ async function handleLogout() {
   color: #fff;
   font-size: 15px;
   font-weight: 900;
+  text-decoration: none;
 }
 
 .credit {
