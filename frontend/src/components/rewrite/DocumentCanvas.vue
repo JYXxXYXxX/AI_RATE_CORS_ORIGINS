@@ -16,6 +16,9 @@
       <div v-if="loading" class="preview-state">
         正在按原始文件渲染文档，图片、表格和段落格式会随原文件保留。
       </div>
+      <div v-else-if="highlighting" class="preview-state sub">
+        正在标记风险段落，请稍候…
+      </div>
 
       <div v-else-if="errorMessage" class="preview-state error">
         <strong>原文档预览失败</strong>
@@ -63,6 +66,7 @@ defineExpose({
 
 const docxContainer = ref<HTMLElement | null>(null)
 const loading = ref(false)
+const highlighting = ref(false)
 const errorMessage = ref('')
 const objectUrl = ref('')
 const renderedKey = ref('')
@@ -157,16 +161,19 @@ async function renderOriginalDocument() {
       experimental: true,
     })
     loading.value = false
+    highlighting.value = true
     await nextTick()
     applyRiskHighlights()
     attachDocxInteractions()
     activateRiskMark()
     scrollToCurrentHash()
+    highlighting.value = false
   } catch (error) {
     console.error(error)
     errorMessage.value = '系统没有把原文件当纯文本读取，因此不会再显示 Word 内部结构或乱码。请确认原文件是有效 docx/pdf，或重新上传转换后的 docx。'
   } finally {
     loading.value = false
+    highlighting.value = false
   }
 }
 
@@ -568,6 +575,30 @@ function revokeObjectUrl() {
 .preview-state.error {
   border-color: rgba(239, 68, 68, 0.22);
   background: #fff7f7;
+}
+
+.preview-state.sub {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  width: auto;
+  margin: 0;
+  padding: 8px 18px;
+  border-radius: 999px;
+  border: 1px solid #d1e7dd;
+  background: #e8f5e9;
+  color: #1b5e20;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(27, 94, 32, 0.1);
+  animation: pulse-sub 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse-sub {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 1; }
 }
 
 :deep(.docx-wrapper) {
