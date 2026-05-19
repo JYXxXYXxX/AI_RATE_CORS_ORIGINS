@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +44,11 @@ def main() -> int:
         default="wanfang",
         choices=["wanfang", "vip", "turnitin"],
         help="Primary provider to fetch.",
+    )
+    parser.add_argument(
+        "--admin-token",
+        default=os.environ.get("AI_RATE_ADMIN_TOKEN"),
+        help="Admin token used for proxy-model training. Defaults to AI_RATE_ADMIN_TOKEN.",
     )
     args = parser.parse_args()
 
@@ -119,9 +125,13 @@ def main() -> int:
         feedback_response.raise_for_status()
         feedback_payload = feedback_response.json()
 
+        admin_headers = (
+            {"X-Admin-Token": args.admin_token} if args.admin_token else {}
+        )
         train_response = client.post(
             "/v1/models/train-proxy",
             json={"model_type": "both", "activate": True, "min_samples": 1},
+            headers=admin_headers,
         )
         train_response.raise_for_status()
         train_payload = train_response.json()

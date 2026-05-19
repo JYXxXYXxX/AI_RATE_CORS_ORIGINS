@@ -188,7 +188,7 @@ export async function uploadDocument(payload: {
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText))
         } else {
-          let detail = `请求失败：${xhr.status}`
+          let detail = formatApiError(xhr.status)
           try {
             const body = JSON.parse(xhr.responseText)
             detail = body.detail || detail
@@ -196,7 +196,7 @@ export async function uploadDocument(payload: {
           reject(new Error(detail))
         }
       }
-      xhr.onerror = () => reject(new Error('网络请求失败'))
+      xhr.onerror = () => reject(new Error('网络请求失败，请检查后端服务是否已启动'))
       xhr.send(formData)
     })
   }
@@ -259,7 +259,7 @@ export async function getUnifiedReportMarkdown(runId: string): Promise<string> {
   })
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}))
-    throw new Error(payload.detail || `请求失败：${response.status}`)
+    throw new Error(payload.detail || formatApiError(response.status))
   }
   return response.text()
 }
@@ -523,7 +523,7 @@ export async function exportRun(
         : ''
       throw new Error(`${detail.message}${firstFailure}`)
     }
-    throw new Error(`请求失败：${response.status}`)
+    throw new Error(formatApiError(response.status))
   }
   const patchStats = {
     requested: Number(response.headers.get('X-PataFix-Patch-Requested') || 0),
@@ -660,7 +660,7 @@ export async function uploadDocumentWithReport(payload: {
             unmatchedRiskSpans: (result.unmatchedRiskSpans || result.unmatched_risk_spans || []).map(normalizeOfficialRiskSpan)
           })
         } else {
-          let detail = `请求失败：${xhr.status}`
+          let detail = formatApiError(xhr.status)
           try {
             const body = JSON.parse(xhr.responseText)
             detail = body.detail || detail
@@ -668,7 +668,7 @@ export async function uploadDocumentWithReport(payload: {
           reject(new Error(detail))
         }
       }
-      xhr.onerror = () => reject(new Error('网络请求失败'))
+      xhr.onerror = () => reject(new Error('网络请求失败，请检查后端服务是否已启动'))
       xhr.send(formData)
     })
   }
@@ -850,7 +850,16 @@ function jsonHeaders(includeAuth = false) {
 async function parseResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}))
-    throw new Error(payload.detail || `请求失败：${response.status}`)
+    throw new Error(formatApiError(response.status, payload.detail))
   }
   return response.json() as Promise<T>
+}
+
+function formatApiError(status: number, detail?: unknown) {
+  if (typeof detail === 'string' && detail.trim()) return detail
+  if (status >= 500) return '服务暂时不可用，请确认本地后端已启动后再试'
+  if (status === 401) return '请先登录后再继续'
+  if (status === 403) return '当前账号暂无权限执行该操作'
+  if (status === 404) return '没有找到对应的数据'
+  return `请求失败：${status}`
 }

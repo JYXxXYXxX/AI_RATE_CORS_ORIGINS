@@ -13,6 +13,7 @@ from app.services.document_loader import extract_text
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
 TEXT_EXTENSIONS = {".txt", ".md", ".docx", ".pdf"}
+HTML_EXTENSIONS = {".html", ".htm"}
 
 
 def extract_cnki_feedback_preview(filename: str, content: bytes) -> dict[str, Any]:
@@ -21,12 +22,15 @@ def extract_cnki_feedback_preview(filename: str, content: bytes) -> dict[str, An
     if suffix in TEXT_EXTENSIONS:
         text = extract_text(filename, content)
         engine = "text-extract"
+    elif suffix in HTML_EXTENSIONS:
+        text = _extract_html_text(content)
+        engine = "html-text"
     elif suffix in IMAGE_EXTENSIONS:
         text = _extract_image_text(content, suffix)
         engine = "tesseract"
     else:
         raise ValueError(
-            "only pdf, docx, txt, md, png, jpg, jpeg, bmp, tif, tiff, webp are supported"
+            "only pdf, html, docx, txt, md, png, jpg, jpeg, bmp, tif, tiff, webp are supported"
         )
 
     normalized_text = _normalize_text(text)
@@ -184,6 +188,28 @@ def _extract_image_text(content: bytes, suffix: str) -> str:
         return result.stdout
     finally:
         temp_path.unlink(missing_ok=True)
+
+
+def _extract_html_text(content: bytes) -> str:
+    for encoding in ("utf-8", "utf-8-sig", "gb18030", "gbk"):
+        try:
+            html = content.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        html = content.decode("utf-8", errors="ignore")
+    html = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", html)
+    html = re.sub(r"(?i)<br\s*/?>|</p>|</div>|</tr>|</li>|</h\d>", "\n", html)
+    html = re.sub(r"<[^>]+>", " ", html)
+    html = (
+        html.replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", '"')
+    )
+    return html
 
 
 def _extract_percent(text: str, patterns: list[str]) -> float | None:

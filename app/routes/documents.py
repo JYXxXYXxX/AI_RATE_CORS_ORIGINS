@@ -1175,7 +1175,7 @@ async def get_section_rewrite_advice(
     # 从报告中找到对应段落的风险信息
     section_info = None
     for item in report.get("top_risk_sections", []):
-        if item.get("section_index") == section_index:
+        if item.get("section_index") == section_index or item.get("paragraph_index") == section_index:
             section_info = item
             break
     if section_info is None:
@@ -1192,6 +1192,25 @@ async def get_section_rewrite_advice(
         if sec.get("section_index") == section_index:
             target_section = sec
             break
+
+    target_block = None
+    if target_section is None:
+        blocks = repository.list_document_blocks(str(run["document_id"]))
+        for block in blocks:
+            if block.get("block_type") in {"title", "heading"}:
+                continue
+            source_map = block.get("source_map") or {}
+            if source_map.get("paragraphIndex") == section_index or block.get("display_order") == section_index:
+                target_block = block
+                target_section = {
+                    "section_index": section_index,
+                    "paragraph_index": source_map.get("paragraphIndex", block.get("display_order")),
+                    "section_title": block.get("section_title"),
+                    "section_type": block.get("section_type"),
+                    "content": block.get("effective_text") or block.get("text") or "",
+                    "text_preview": block.get("text") or "",
+                }
+                break
     if target_section is None:
         raise HTTPException(status_code=404, detail="section not found")
 
@@ -1200,8 +1219,19 @@ async def get_section_rewrite_advice(
         raise HTTPException(status_code=400, detail="section text is empty")
 
     # 判断风险类型
-    aigc_score = float(section_info.get("aigc_score", 0)) if section_info else 0.0
-    dup_score = float(section_info.get("duplication_score", 0)) if section_info else 0.0
+    if target_block and not section_info:
+        report_risk = target_block.get("report_risk") or {}
+        internal_risk = target_block.get("internal_risk") or {}
+        block_score = float(target_block.get("risk_score") or 0) / 100
+        aigc_score = float(internal_risk.get("ai_likelihood") or block_score)
+        dup_score = float(internal_risk.get("repetition_score") or 0) / 100
+        reasons = list(internal_risk.get("reasons") or [])
+        if report_risk:
+            reasons.insert(0, f"官方报告标记：{report_risk.get('risk_type', 'mixed')}")
+    else:
+        aigc_score = float(section_info.get("aigc_score", 0)) if section_info else 0.0
+        dup_score = float(section_info.get("duplication_score", 0)) if section_info else 0.0
+        reasons = section_info.get("reasons") if section_info else []
     if aigc_score >= 0.65 and aigc_score > dup_score:
         risk_type = "aigc"
     elif dup_score >= 0.50 and dup_score >= aigc_score:
@@ -1209,7 +1239,6 @@ async def get_section_rewrite_advice(
     else:
         risk_type = "mixed"
 
-    reasons = section_info.get("reasons") if section_info else []
     subject = report.get("subject")
     degree_level = report.get("degree_level")
     section_title = (

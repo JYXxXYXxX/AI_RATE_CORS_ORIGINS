@@ -45,10 +45,14 @@
           <span class="credits-num">{{ auth.credits }}</span>
           <span class="credits-label">剩余次数</span>
         </div> -->
-        <div class="user-info">
+        <div v-if="auth.isLoggedIn" class="user-info">
           <el-avatar :size="28" class="user-avatar">{{ userInitial }}</el-avatar>
           <router-link to="/app/account" class="user-name">{{ auth.user?.display_name || auth.user?.email }}</router-link>
           <button class="btn-text" @click="handleLogout">{{ ui.logout }}</button>
+        </div>
+        <div v-else class="auth-links">
+          <router-link to="/login" class="auth-link ghost">{{ ui.login }}</router-link>
+          <router-link to="/register" class="auth-link primary">{{ ui.register }}</router-link>
         </div>
       </div>
     </header>
@@ -102,6 +106,8 @@ const ui = computed(() => {
       newAnalysis: 'New scan',
       rewrite: 'Rewrite',
       account: 'Account',
+      login: 'Log in',
+      register: 'Sign up',
       logout: 'Sign out',
       light: 'Light',
       dark: 'Dark',
@@ -120,6 +126,8 @@ const ui = computed(() => {
     newAnalysis: '新建分析',
     rewrite: '在线改写',
     account: '账户',
+    login: '登录',
+    register: '注册',
     logout: '退出',
     light: '日间',
     dark: '夜间',
@@ -469,6 +477,44 @@ function applyLanguage() {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.auth-links {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.auth-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  padding: 0 13px;
+  border-radius: 10px;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 800;
+  transition:
+    transform 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.auth-link:hover {
+  transform: translateY(-1px);
+}
+
+.auth-link.ghost {
+  color: #2f3b34;
+  background: #f0eadf;
+}
+
+.auth-link.primary {
+  color: #fff;
+  background: #2f6f53;
+  box-shadow: 0 10px 22px rgba(47, 111, 83, 0.18);
 }
 
 .user-avatar {

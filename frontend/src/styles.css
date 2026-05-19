@@ -339,6 +339,40 @@ body {
   color: #9fc2ff !important;
 }
 
+/* Keep light paper/mock editor cards readable inside the dark homepage. */
+:root[data-theme='dark'] body .editor-window .score-card,
+:root[data-theme='dark'] body .editor-window .suggestion-card {
+  border-color: rgba(44, 53, 48, 0.08) !important;
+  background: #fffdf7 !important;
+}
+
+:root[data-theme='dark'] body .editor-window .score-card.danger {
+  background: #fff0ec !important;
+}
+
+:root[data-theme='dark'] body .editor-window .score-card.safe {
+  background: #e8f8f2 !important;
+}
+
+:root[data-theme='dark'] body .editor-window .score-card span,
+:root[data-theme='dark'] body .editor-window .suggestion-card b {
+  color: #334139 !important;
+}
+
+:root[data-theme='dark'] body .editor-window .score-card strong,
+:root[data-theme='dark'] body .editor-window .suggestion-card strong {
+  color: #101812 !important;
+}
+
+:root[data-theme='dark'] body .quick-label,
+:root[data-theme='dark'] body .quick-label span {
+  color: #f4f1eb !important;
+}
+
+:root[data-theme='dark'] body .risk-strip strong {
+  color: #fff9e8 !important;
+}
+
 :root[data-theme='dark'] body .case-card-top strong,
 :root[data-theme='dark'] body .risk-strip strong,
 :root[data-theme='dark'] body .panel-index {

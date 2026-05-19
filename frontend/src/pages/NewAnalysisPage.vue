@@ -95,11 +95,11 @@
               <el-skeleton :rows="2" animated />
             </div>
 
-            <div v-else-if="cnkiOcrError" class="cnki-ocr-error">
-              <el-alert :title="cnkiOcrError" type="warning" :closable="false" show-icon />
-            </div>
-
-            <div v-else class="cnki-form">
+            <div v-else>
+              <div v-if="cnkiOcrError" class="cnki-ocr-error">
+                <el-alert :title="cnkiOcrError" type="warning" :closable="false" show-icon />
+              </div>
+              <div class="cnki-form">
               <div v-if="cnkiPreview" class="cnki-ocr-result">
                 <p class="ocr-preview">{{ cnkiPreview.extracted_text_preview }}</p>
                 <div class="ocr-matched">
@@ -164,6 +164,7 @@
             </div>
           </div>
         </div>
+      </div>
       </div>
 
       <form class="analysis-form" @submit.prevent="handleSubmit">
@@ -463,8 +464,27 @@ async function setCnkiFile(file: File) {
   cnkiReportFile.value = file
   cnkiPreview.value = null
   cnkiOcrError.value = ''
-  cnkiOcrLoading.value = false
-  // 新流程：直接上传文件，不需要 OCR 预览
+  cnkiForm.cnkiDupPercent = undefined
+  cnkiForm.cnkiAigcPercent = undefined
+  cnkiForm.reportDate = ''
+  cnkiForm.removeReferenceDupPercent = undefined
+  cnkiForm.singleMaxDupPercent = undefined
+  cnkiForm.suspectedPlagiarism = undefined
+  cnkiForm.fragments = undefined
+  cnkiOcrLoading.value = true
+  try {
+    const preview = await previewCnkiFeedbackOcr(file)
+    cnkiPreview.value = preview
+    applyCnkiPreview(preview)
+    if (!preview.matched_fields.length) {
+      cnkiOcrError.value = copy.value.noOcr
+    }
+  } catch (error) {
+    cnkiPreview.value = null
+    cnkiOcrError.value = error instanceof Error ? error.message : copy.value.noOcr
+  } finally {
+    cnkiOcrLoading.value = false
+  }
 }
 
 function removeCnkiFile() {
@@ -484,6 +504,30 @@ function removeCnkiFile() {
 
 function fieldLabel(field: string): string {
   return copy.value.fields[field as keyof typeof copy.value.fields] || field
+}
+
+function applyCnkiPreview(preview: CnkiFeedbackOcrPreviewResponse) {
+  if (typeof preview.cnki_dup_percent === 'number') {
+    cnkiForm.cnkiDupPercent = preview.cnki_dup_percent
+  }
+  if (typeof preview.cnki_aigc_percent === 'number') {
+    cnkiForm.cnkiAigcPercent = preview.cnki_aigc_percent
+  }
+  if (preview.report_date) {
+    cnkiForm.reportDate = preview.report_date
+  }
+  if (typeof preview.remove_reference_dup_percent === 'number') {
+    cnkiForm.removeReferenceDupPercent = preview.remove_reference_dup_percent
+  }
+  if (typeof preview.single_max_dup_percent === 'number') {
+    cnkiForm.singleMaxDupPercent = preview.single_max_dup_percent
+  }
+  if (preview.suspected_plagiarism) {
+    cnkiForm.suspectedPlagiarism = preview.suspected_plagiarism
+  }
+  if (preview.fragments?.length) {
+    cnkiForm.fragments = preview.fragments
+  }
 }
 
 function formatFileSize(bytes: number) {

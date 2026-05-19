@@ -5,7 +5,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/',
     name: 'landing',
-    component: () => import('./pages/LandingPage.vue')
+    redirect: '/app'
   },
   {
     path: '/login',
@@ -20,7 +20,6 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/app',
     component: () => import('./layouts/AppLayout.vue'),
-    meta: { requiresAuth: true },
     children: [
       {
         path: '',
@@ -30,6 +29,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'dashboard',
         name: 'dashboard',
+        meta: { requiresAuth: true },
         component: () => import('./pages/DashboardPage.vue')
       },
       {
@@ -52,6 +52,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'account',
         name: 'account',
+        meta: { requiresAuth: true },
         component: () => import('./pages/AccountPage.vue')
       },
       {

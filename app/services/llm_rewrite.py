@@ -660,14 +660,12 @@ def _fallback_rewrite(
     for sent in sentences:
         for pat, explanation, level in patterns:
             if pat.search(sent):
-                rewritten = _simple_rewrite_sentence(sent, risk_type)
+                rewritten = _direct_rule_rewrite(sent, risk_type)
                 matched_sentences.append(
                     {
                         "original": sent,
                         "risk": level,
-                        "rewritten": rewritten
-                        if rewritten != sent
-                        else f"【请手动改写】{sent}",
+                        "rewritten": rewritten,
                         "explanation": explanation,
                     }
                 )
@@ -676,12 +674,13 @@ def _fallback_rewrite(
     # 如果没有匹配到任何规则，对最长的一句做通用提示
     if not matched_sentences and sentences:
         longest = max(sentences, key=len)
+        rewritten = _direct_rule_rewrite(longest, risk_type)
         matched_sentences.append(
             {
                 "original": longest,
                 "risk": "medium",
-                "rewritten": f"【请手动改写，参考以下策略】\n{longest}",
-                "explanation": "这句长度较长，建议拆分为2-3个短句，并在每句中加入具体数据、时间或限定条件。",
+                "rewritten": rewritten,
+                "explanation": "这句缺少明确的对象、过程或证据，系统已按“换句子骨架、补具体作用、弱化套话”的方式给出可直接替换版本。",
             }
         )
 
@@ -728,3 +727,37 @@ def _fallback_rewrite(
         "overall_advice": overall_advice,
         "fallback": True,
     }
+
+
+def _direct_rule_rewrite(sentence: str, risk_type: str) -> str:
+    """Generate a paste-ready fallback rewrite without asking the user to rewrite manually."""
+    rewritten = _simple_rewrite_sentence(sentence, risk_type)
+    if rewritten != sentence and "【请" not in rewritten:
+        return apply_learned_rewrite_style(rewritten)
+
+    try:
+        from app.services.quick_rewrite import quick_rewrite
+
+        mode = "aigc" if risk_type == "aigc" else "similarity" if risk_type == "duplication" else "auto"
+        quick = quick_rewrite(sentence, mode)
+        candidate = quick.rewritten_text.strip()
+        if candidate and candidate != sentence and "【请" not in candidate:
+            return candidate
+    except Exception:
+        pass
+
+    cleaned = apply_learned_rewrite_style(sentence)
+    if cleaned != sentence:
+        return cleaned
+
+    if "系统" in sentence or "平台" in sentence:
+        return (
+            sentence.rstrip("。；")
+            + "。在本文场景中，该部分主要服务于用户上传、风险定位和改写导出三个步骤。"
+        )
+    if "研究" in sentence:
+        return (
+            sentence.rstrip("。；")
+            + "。后续分析将结合研究对象、样本来源和具体指标展开说明。"
+        )
+    return sentence.rstrip("。；") + "。这里需要补充具体对象、时间范围或数据依据，以减少模板化表达。"
