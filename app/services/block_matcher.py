@@ -180,18 +180,24 @@ def fuzzy_match(
     blocks: list[DocumentBlock | dict[str, Any]],
     threshold: float = 0.75,
 ) -> list[RiskMapping]:
-    """使用 difflib.SequenceMatcher 计算文本相似度。
+    """使用 difflib.SequenceMatcher 计算文本相似度（优化版）。
 
     策略：
+    - 先按长度预过滤，只检查与 span 长度比例在 0.3~3.0 范围内的 block
     - 计算 span 与每个 block 的 overall ratio
     - 同时计算 span 在 block 中的 best partial match ratio
     - 取两者较高值作为 confidence
     """
     norm_span = normalize_text(span_text)
-    if len(norm_span) < 10:
+    span_len = len(norm_span)
+    if span_len < 10:
         return []
 
     mappings: list[RiskMapping] = []
+    # 按长度预过滤：block 长度应在 span 长度的 0.3~3.0 倍范围内
+    min_block_len = max(10, int(span_len * 0.3))
+    max_block_len = span_len * 3
+
     for block in blocks:
         block_type = _block_type(block)
         block_text = _block_text(block)
@@ -199,14 +205,15 @@ def fuzzy_match(
         if block_type not in ("paragraph", "heading", "title"):
             continue
         norm_block = normalize_text(block_text)
-        if len(norm_block) < 10:
+        block_len = len(norm_block)
+        if block_len < min_block_len or block_len > max_block_len:
             continue
 
         # 整体相似度
         overall_ratio = difflib.SequenceMatcher(None, norm_span, norm_block).ratio()
 
         # 最佳局部匹配（span 作为较短字符串在 block 中查找最佳匹配）
-        if len(norm_span) <= len(norm_block):
+        if span_len <= block_len:
             partial_ratio = _partial_ratio(norm_span, norm_block)
         else:
             partial_ratio = _partial_ratio(norm_block, norm_span)
@@ -228,17 +235,22 @@ def fuzzy_match(
 
 
 def _partial_ratio(shorter: str, longer: str) -> float:
-    """计算 shorter 在 longer 中的最佳子串匹配率。"""
+    """计算 shorter 在 longer 中的最佳子串匹配率（优化版）。
+
+    使用 SequenceMatcher.find_longest_match 替代滑动窗口，
+    将复杂度从 O(|longer| * |shorter|) 降到 O(|longer| * log(|shorter|))。
+    """
     if not shorter:
         return 0.0
-    best = 0.0
-    window_len = len(shorter)
-    for i in range(len(longer) - window_len + 1):
-        window = longer[i : i + window_len]
-        ratio = difflib.SequenceMatcher(None, shorter, window).ratio()
-        if ratio > best:
-            best = ratio
-    return best
+    # 限制 longer 的最大长度，避免超长文本导致性能问题
+    max_len = 2000
+    if len(longer) > max_len:
+        longer = longer[:max_len]
+    sm = difflib.SequenceMatcher(None, shorter, longer)
+    match = sm.find_longest_match(0, len(shorter), 0, len(longer))
+    if match.size == 0:
+        return 0.0
+    return match.size / len(shorter)
 
 
 # ---------------------------------------------------------------------------

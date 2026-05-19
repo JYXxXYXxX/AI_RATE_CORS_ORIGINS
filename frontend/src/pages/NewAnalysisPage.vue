@@ -18,7 +18,7 @@
         <input
           ref="fileInputRef"
           type="file"
-          accept=".txt,.md,.docx,.doc,.pdf"
+          accept=".docx"
           class="file-input-hidden"
           @change="handleFileSelect"
         />
@@ -101,6 +101,23 @@
               </div>
               <div class="cnki-form">
               <div v-if="cnkiPreview" class="cnki-ocr-result">
+                <div class="ocr-summary">
+                  <div class="ocr-summary-head">
+                    <span class="ocr-summary-label">{{ copy.recognitionSummary }}</span>
+                    <el-tag size="small" effect="plain" :type="cnkiDetectedTagType">{{ cnkiDetectedTypeLabel }}</el-tag>
+                  </div>
+                  <div class="ocr-metric-list">
+                    <span v-if="typeof cnkiPreview.cnki_dup_percent === 'number'" class="ocr-metric-chip">
+                      {{ copy.cnkiDup }}: <strong>{{ cnkiPreview.cnki_dup_percent.toFixed(2) }}%</strong>
+                    </span>
+                    <span v-if="typeof cnkiPreview.cnki_aigc_percent === 'number'" class="ocr-metric-chip">
+                      {{ copy.cnkiAigc }}: <strong>{{ cnkiPreview.cnki_aigc_percent.toFixed(2) }}%</strong>
+                    </span>
+                    <span v-if="cnkiPreview.report_date" class="ocr-metric-chip">
+                      {{ copy.reportDate }}: <strong>{{ cnkiPreview.report_date }}</strong>
+                    </span>
+                  </div>
+                </div>
                 <p class="ocr-preview">{{ cnkiPreview.extracted_text_preview }}</p>
                 <div class="ocr-matched">
                   <el-tag v-for="f in cnkiPreview.matched_fields" :key="f" type="success" size="small" effect="plain">
@@ -108,6 +125,9 @@
                   </el-tag>
                   <span v-if="!cnkiPreview.matched_fields.length" class="ocr-warning">{{ copy.noOcr }}</span>
                 </div>
+                <ul v-if="cnkiPreview.warnings?.length" class="ocr-warning-list">
+                  <li v-for="warning in cnkiPreview.warnings" :key="warning">{{ warning }}</li>
+                </ul>
               </div>
               <div class="form-row">
                 <div class="form-field">
@@ -197,6 +217,16 @@
           {{ isSubmitActive ? copy.analyzing : copy.start }}
         </button>
 
+        <button
+          v-if="analysis.isAnalysisActive"
+          type="button"
+          class="btn btn-secondary btn-full btn-lg"
+          style="margin-top: 8px;"
+          @click="handleCancel"
+        >
+          {{ copy.cancel }}
+        </button>
+
         <p v-if="analysis.error" class="form-error">{{ analysis.error }}</p>
       </form>
 
@@ -242,13 +272,18 @@ const copy = computed(() => locale.value === 'en'
       title: 'New scan',
       subtitle: 'Upload a paper and let the system generate a detailed risk precheck report.',
       dropText: 'Drop a file or <strong>click to choose</strong>',
-      dropHint: 'Supports .txt, .md, .docx, .doc, .pdf, up to 50MB',
+      dropHint: 'Supports .docx only, up to 50MB',
       cnkiTitle: 'Upload official report (optional, enables report-driven mode)',
       uploaded: 'Uploaded',
       cnkiHint: 'After uploading an official similarity or AIGC report, the system treats it as the highest-priority risk source and locates paragraphs that need rewriting.',
       cnkiDrop: 'Drop official report',
       cnkiDropHint: 'Supports .pdf, .html, .docx, up to 10MB',
       noOcr: 'No key metrics recognized automatically',
+      recognitionSummary: 'Recognition result',
+      reportTypeAigc: 'AIGC report',
+      reportTypeDup: 'Similarity report',
+      reportTypeMixed: 'Mixed report',
+      reportTypeUnknown: 'Need manual check',
       cnkiDup: 'Official similarity rate (%)',
       cnkiAigc: 'Official AIGC rate (%)',
       percentPlaceholder: 'e.g. 12.5',
@@ -278,7 +313,7 @@ const copy = computed(() => locale.value === 'en'
       uploading: 'Uploading file...',
       oversizedPaper: 'File size cannot exceed 50MB',
       unsupportedPaper: 'Unsupported file type: ',
-      supportedPaper: 'Please upload .txt, .md, .docx, .doc, or .pdf',
+      supportedPaper: 'Please upload .docx only',
       oversizedReport: 'Report size cannot exceed 10MB',
       unsupportedReport: 'Unsupported report type: ',
       supportedReport: 'Please upload .pdf, .html, or .docx',
@@ -300,13 +335,18 @@ const copy = computed(() => locale.value === 'en'
       title: '新建分析',
       subtitle: '上传论文文件，系统将自动生成详细风险预检报告',
       dropText: '拖入文件或<strong>点击选择</strong>',
-      dropHint: '支持 .txt、.md、.docx、.doc、.pdf，最大 50MB',
-      cnkiTitle: '上传知网检测报告（可选，启用报告驱动模式）',
+      dropHint: '仅支持 .docx 格式，最大 50MB',
+      cnkiTitle: '上传检测报告（可选，启用报告驱动模式）',
       uploaded: '已上传',
       cnkiHint: '上传知网查重报告或 AIGC 检测报告后，系统会以知网结果为最高优先级风险来源，直接定位需要改写的段落。支持 PDF、HTML、Word 格式。',
-      cnkiDrop: '拖入知网检测报告',
+      cnkiDrop: '拖入检测报告',
       cnkiDropHint: '支持 .pdf、.html、.docx，最大 10MB',
       noOcr: '未自动识别到关键指标',
+      recognitionSummary: '识别结果',
+      reportTypeAigc: 'AIGC 报告',
+      reportTypeDup: '查重报告',
+      reportTypeMixed: '综合报告',
+      reportTypeUnknown: '需要人工确认',
       cnkiDup: '知网查重率（%）',
       cnkiAigc: '知网 AIGC 率（%）',
       percentPlaceholder: '例如 12.5',
@@ -332,11 +372,12 @@ const copy = computed(() => locale.value === 'en'
       doctor: '博士',
       journal: '期刊论文',
       analyzing: '分析中...',
+      cancel: '取消 / 重置',
       start: '开始分析',
       uploading: '正在上传文件...',
       oversizedPaper: '文件大小不能超过 50MB',
       unsupportedPaper: '不支持的文件格式：',
-      supportedPaper: '请上传 .txt、.md、.docx、.doc 或 .pdf 格式',
+      supportedPaper: '请上传 .docx 格式',
       oversizedReport: '文件大小不能超过 10MB',
       unsupportedReport: '不支持的文件格式：',
       supportedReport: '请上传 .pdf、.html、.docx 格式',
@@ -438,7 +479,7 @@ function setFile(file: File) {
     return
   }
   const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
-  const allowed = ['.txt', '.md', '.docx', '.doc', '.pdf']
+  const allowed = ['.docx']
   if (!allowed.includes(ext)) {
     alert(copy.value.unsupportedPaper + ext + '\n' + copy.value.supportedPaper)
     return
@@ -448,6 +489,12 @@ function setFile(file: File) {
 
 function removeFile() {
   selectedFile.value = null
+}
+
+function handleCancel() {
+  analysis.resetSubmissionState()
+  selectedFile.value = null
+  cnkiReportFile.value = null
 }
 
 // CNKI report upload
@@ -524,6 +571,27 @@ function removeCnkiFile() {
 function fieldLabel(field: string): string {
   return copy.value.fields[field as keyof typeof copy.value.fields] || field
 }
+
+const cnkiDetectedTypeLabel = computed(() => {
+  const preview = cnkiPreview.value
+  if (!preview) return copy.value.reportTypeUnknown
+  const hasDup = typeof preview.cnki_dup_percent === 'number'
+  const hasAigc = typeof preview.cnki_aigc_percent === 'number'
+  if (hasDup && hasAigc) return copy.value.reportTypeMixed
+  if (hasAigc) return copy.value.reportTypeAigc
+  if (hasDup) return copy.value.reportTypeDup
+  return copy.value.reportTypeUnknown
+})
+
+const cnkiDetectedTagType = computed(() => {
+  const preview = cnkiPreview.value
+  if (!preview) return 'info'
+  const hasDup = typeof preview.cnki_dup_percent === 'number'
+  const hasAigc = typeof preview.cnki_aigc_percent === 'number'
+  if (hasDup && hasAigc) return 'warning'
+  if (hasDup || hasAigc) return 'success'
+  return 'info'
+})
 
 function applyCnkiPreview(preview: CnkiFeedbackOcrPreviewResponse) {
   if (typeof preview.cnki_dup_percent === 'number') {
@@ -910,6 +978,41 @@ function handleLanguageChange(event: Event) {
   padding: 14px;
   border: 1px solid rgba(31, 54, 73, 0.08);
 }
+.ocr-summary {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.ocr-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ocr-summary-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #344150;
+  letter-spacing: 0;
+}
+.ocr-metric-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ocr-metric-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(47, 125, 103, 0.08);
+  color: #2d4b44;
+  font-size: 12px;
+}
+.ocr-metric-chip strong {
+  color: #1b6b54;
+}
 .ocr-preview {
   margin: 0 0 10px;
   font-size: 12px;
@@ -925,6 +1028,13 @@ function handleLanguageChange(event: Event) {
 .ocr-warning {
   font-size: 12px;
   color: #c84b52;
+}
+.ocr-warning-list {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: #a45a18;
+  font-size: 12px;
+  line-height: 1.55;
 }
 .cnki-form {
   display: grid;

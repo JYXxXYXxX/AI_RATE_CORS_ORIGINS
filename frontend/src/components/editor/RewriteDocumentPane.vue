@@ -2,9 +2,10 @@
   <section class="document-pane">
     <div class="document-pane__header">
       <div>
-        <p class="document-pane__eyebrow">正文改写区</p>
-        <h3>文档阅读视图</h3>
+        <p class="document-pane__eyebrow">论文文档</p>
+        <h3>嵌入式改写视图</h3>
       </div>
+
       <div class="document-pane__legend">
         <span class="legend-chip is-high">高风险</span>
         <span class="legend-chip is-medium">中风险</span>
@@ -19,7 +20,11 @@
         :key="`page-${pageIndex}`"
         class="doc-page"
       >
-        <div class="doc-page__index">第 {{ pageIndex + 1 }} 页</div>
+        <header class="doc-page__header">
+          <span>{{ title || '论文正文' }}</span>
+          <span>第 {{ pageIndex + 1 }} 页</span>
+        </header>
+
         <div
           v-for="block in page"
           :key="block.blockId"
@@ -37,22 +42,30 @@
           ]"
           @click="selectBlock(block.blockId)"
         >
+          <span v-if="riskItemByBlockId[block.blockId]" class="doc-risk-index">
+            {{ (riskItemByBlockId[block.blockId]?.displayOrder || 0) + 1 }}
+          </span>
+
           <template v-if="normalizeType(block.type) === 'table'">
             <table class="doc-table">
               <tbody>
-                <tr v-for="(row, rowIndex) in parseTableRows(block.currentText)" :key="`${block.blockId}-row-${rowIndex}`">
-                  <td v-for="(cell, cellIndex) in row" :key="`${block.blockId}-cell-${rowIndex}-${cellIndex}`">{{ cell }}</td>
+                <tr v-for="(row, rowIndex) in parseTableRows(block.currentText)" :key="`${block.blockId}-${rowIndex}`">
+                  <td v-for="(cell, cellIndex) in row" :key="`${block.blockId}-${rowIndex}-${cellIndex}`">{{ cell }}</td>
                 </tr>
               </tbody>
             </table>
           </template>
 
           <template v-else-if="normalizeType(block.type) === 'heading' || normalizeType(block.type) === 'title'">
-            <component :is="headingTag(block.currentText, block.displayOrder)">{{ block.currentText }}</component>
+            <component
+              :is="headingTag(block.currentText, block.displayOrder)"
+              class="doc-heading"
+              v-html="highlightedHtml(block)"
+            />
           </template>
 
           <template v-else>
-            <p>{{ block.currentText }}</p>
+            <p v-html="highlightedHtml(block)"></p>
           </template>
 
           <button
@@ -64,21 +77,37 @@
             批注
           </button>
         </div>
+
+        <footer class="doc-page__footer">
+          <span>字数 {{ pageWordCount(page) }}</span>
+          <span>检测范围 全文</span>
+          <span>缩放 100%</span>
+        </footer>
       </article>
+    </div>
+
+    <div class="document-pane__summary">
+      <span>页数 {{ pages.length }}</span>
+      <span>字数 {{ wordCount }}</span>
+      <span>预估行数 {{ estimatedLines }}</span>
+      <span>格式 {{ sourceFormat.toUpperCase() }}</span>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, watch } from 'vue'
-import type { DocumentBlock, RewriteWorkspaceRiskItem } from '../../types'
+import type { DocumentBlock, RewriteWorkspaceHighlight, RewriteWorkspaceRiskItem } from '../../types'
 
 export interface RenderBlock extends DocumentBlock {
   currentText: string
 }
 
 const props = defineProps<{
+  title: string
   blocks: RenderBlock[]
+  wordCount: number
+  sourceFormat: string
   riskItemByBlockId: Record<string, RewriteWorkspaceRiskItem | undefined>
   statusByRiskId: Record<string, RewriteWorkspaceRiskItem['status']>
   activeBlockId: string
@@ -106,8 +135,7 @@ function riskLevelFor(blockId: string): 'high' | 'medium' | 'low' | 'normal' {
   const item = props.riskItemByBlockId[blockId]
   if (!item) return 'normal'
   const status = props.statusByRiskId[item.riskId]
-  if (status === 'applied') return 'normal'
-  if (status === 'ignored') return 'normal'
+  if (status === 'applied' || status === 'ignored') return 'normal'
   return item.riskLevel
 }
 
@@ -130,7 +158,7 @@ function parseTableRows(text: string) {
 }
 
 function headingTag(text: string, order: number) {
-  if (order === 0 && text.length <= 42) return 'h1'
+  if (order === 0 && text.length <= 48) return 'h1'
   if (/^\d+(\.\d+){2,}/.test(text)) return 'h4'
   if (/^\d+\.\d+/.test(text)) return 'h3'
   if (/^\d+/.test(text) || /^第.+章/.test(text)) return 'h2'
@@ -143,8 +171,8 @@ function splitIntoPages(blocks: RenderBlock[]) {
   let charCount = 0
 
   for (const block of blocks) {
-    const weight = block.currentText.length + (block.type === 'table' ? 280 : 0) + (block.type === 'heading' ? 180 : 0)
-    if (current.length && charCount + weight > 2300) {
+    const weight = block.currentText.length + (block.type === 'table' ? 280 : 0) + (block.type === 'heading' ? 200 : 0)
+    if (current.length && charCount + weight > 2100) {
       result.push(current)
       current = []
       charCount = 0
@@ -158,6 +186,51 @@ function splitIntoPages(blocks: RenderBlock[]) {
 }
 
 const pages = computed(() => splitIntoPages(props.blocks))
+const estimatedLines = computed(() =>
+  props.blocks.reduce((sum, block) => sum + Math.max(1, Math.ceil(block.currentText.length / 28)), 0)
+)
+
+function escapeHtml(text: string) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+function replaceAllSafe(text: string, target: string, replacement: string) {
+  if (!target) return text
+  return text.split(target).join(replacement)
+}
+
+function markLevelClass(level: RewriteWorkspaceHighlight['riskLevel']) {
+  return `mark-${level}`
+}
+
+function highlightedHtml(block: RenderBlock) {
+  const item = props.riskItemByBlockId[block.blockId]
+  if (!item || statusFor(block.blockId) !== 'pending' || !item.highlights?.length) {
+    return escapeHtml(block.currentText)
+  }
+
+  const unique = item.highlights
+    .filter((highlight) => highlight.text.trim())
+    .sort((a, b) => b.text.length - a.text.length)
+
+  let html = escapeHtml(block.currentText)
+  for (const highlight of unique) {
+    const escaped = escapeHtml(highlight.text)
+    html = replaceAllSafe(
+      html,
+      escaped,
+      `<mark class="doc-inline-mark ${markLevelClass(highlight.riskLevel)}">${escaped}</mark>`
+    )
+  }
+  return html
+}
+
+function pageWordCount(page: RenderBlock[]) {
+  return page.reduce((sum, block) => sum + block.currentText.replace(/\s+/g, '').length, 0)
+}
 
 watch(
   () => props.activeBlockId,
@@ -173,9 +246,10 @@ watch(
 
 <style scoped>
 .document-pane {
-  display: grid;
-  gap: 18px;
   min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 16px;
 }
 
 .document-pane__header {
@@ -187,15 +261,15 @@ watch(
 
 .document-pane__eyebrow {
   margin: 0 0 6px;
+  color: #0f8f4f;
   font-size: 12px;
-  font-weight: 700;
-  color: #6b7280;
+  font-weight: 800;
 }
 
 .document-pane__header h3 {
   margin: 0;
   color: #111827;
-  font-size: 20px;
+  font-size: 22px;
 }
 
 .document-pane__legend {
@@ -209,101 +283,129 @@ watch(
   border-radius: 999px;
   padding: 6px 12px;
   font-size: 12px;
+  font-weight: 700;
+  background: #eef2f7;
   color: #374151;
-  background: #f3f4f6;
 }
 
 .legend-chip.is-high {
-  background: rgba(220, 38, 38, 0.12);
+  background: #fee2e2;
   color: #b91c1c;
 }
 
 .legend-chip.is-medium {
-  background: rgba(249, 115, 22, 0.12);
-  color: #c2410c;
+  background: #fef3c7;
+  color: #b45309;
 }
 
 .legend-chip.is-low {
-  background: rgba(147, 51, 234, 0.12);
-  color: #7e22ce;
+  background: #ede9fe;
+  color: #6d28d9;
 }
 
 .legend-chip.is-normal {
-  background: rgba(22, 163, 74, 0.12);
+  background: #dcfce7;
   color: #166534;
 }
 
 .document-scroll {
   min-height: 0;
   overflow: auto;
-  padding-right: 8px;
+  padding: 6px 10px 6px 4px;
   display: grid;
-  gap: 28px;
+  gap: 26px;
+  background: linear-gradient(180deg, #eef0ea 0%, #e7ebf0 100%);
+  border-radius: 26px;
 }
 
 .doc-page {
-  width: min(860px, 100%);
+  width: min(920px, 100%);
   margin: 0 auto;
-  background: #fff;
+  background: #ffffff;
+  border-radius: 14px;
   border: 1px solid rgba(15, 23, 42, 0.08);
-  box-shadow: 0 24px 50px rgba(15, 23, 42, 0.08);
-  border-radius: 10px;
-  padding: 54px 72px 62px;
-  position: relative;
+  box-shadow: 0 26px 54px rgba(15, 23, 42, 0.08);
+  padding: 26px 74px 32px;
 }
 
-.doc-page__index {
-  position: absolute;
-  top: 16px;
-  right: 24px;
+.doc-page__header,
+.doc-page__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   color: #94a3b8;
   font-size: 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  padding-bottom: 14px;
+}
+
+.doc-page__footer {
+  border-bottom: 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  padding-top: 14px;
+  padding-bottom: 0;
+  margin-top: 20px;
 }
 
 .doc-block {
   position: relative;
-  margin-bottom: 16px;
-  border-radius: 8px;
+  margin: 18px 0;
+  padding: 8px 10px 8px 16px;
+  border-radius: 10px;
   transition:
+    border-color 0.18s ease,
     box-shadow 0.18s ease,
-    background-color 0.18s ease,
-    outline-color 0.18s ease;
+    background-color 0.18s ease;
 }
 
+.doc-risk-index {
+  position: absolute;
+  left: -30px;
+  top: 12px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #0f8f4f;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+}
+
+.doc-heading {
+  margin: 0;
+}
+
+.doc-block.type-title h1,
 .doc-block.type-heading h1,
 .doc-block.type-heading h2,
 .doc-block.type-heading h3,
-.doc-block.type-heading h4,
-.doc-block.type-title h1,
-.doc-block.type-title h2 {
-  margin: 0;
-  text-align: center;
-  font-family: 'SimHei', 'Microsoft YaHei', sans-serif;
+.doc-block.type-heading h4 {
   color: #111827;
+  margin: 0;
 }
 
 .doc-block.type-title h1 {
+  text-align: center;
   font-size: 28px;
   line-height: 1.45;
-  margin-bottom: 22px;
+  margin-bottom: 18px;
 }
 
 .doc-block.type-heading h2 {
   font-size: 22px;
-  line-height: 1.5;
-  margin: 20px 0 8px;
+  line-height: 1.55;
 }
 
 .doc-block.type-heading h3 {
   font-size: 18px;
-  line-height: 1.5;
-  margin: 16px 0 6px;
+  line-height: 1.55;
 }
 
 .doc-block.type-heading h4 {
   font-size: 16px;
-  line-height: 1.5;
-  margin: 14px 0 4px;
+  line-height: 1.55;
 }
 
 .doc-block.type-paragraph p {
@@ -315,6 +417,31 @@ watch(
   font-family: 'Times New Roman', 'SimSun', serif;
 }
 
+:deep(.doc-inline-mark) {
+  padding: 0 2px;
+  border-radius: 4px;
+}
+
+:deep(.doc-inline-mark.mark-high) {
+  background: rgba(239, 68, 68, 0.18);
+  color: #991b1b;
+}
+
+:deep(.doc-inline-mark.mark-medium) {
+  background: rgba(245, 158, 11, 0.18);
+  color: #9a3412;
+}
+
+:deep(.doc-inline-mark.mark-low) {
+  background: rgba(139, 92, 246, 0.16);
+  color: #6d28d9;
+}
+
+:deep(.doc-inline-mark.mark-normal) {
+  background: rgba(34, 197, 94, 0.16);
+  color: #166534;
+}
+
 .doc-table {
   width: 100%;
   border-collapse: collapse;
@@ -324,8 +451,8 @@ watch(
 .doc-table td {
   border: 1px solid #d1d5db;
   padding: 10px 12px;
-  vertical-align: top;
   line-height: 1.7;
+  vertical-align: top;
 }
 
 .doc-block.is-selectable {
@@ -333,44 +460,44 @@ watch(
 }
 
 .doc-block.is-active {
-  outline: 2px solid rgba(46, 125, 90, 0.45);
-  box-shadow: 0 10px 24px rgba(46, 125, 90, 0.1);
+  outline: 2px solid rgba(15, 143, 79, 0.34);
+  box-shadow: 0 14px 24px rgba(15, 143, 79, 0.1);
 }
 
 .doc-block.risk-high {
-  background: rgba(220, 38, 38, 0.09);
+  background: #fff3f3;
 }
 
 .doc-block.risk-medium {
-  background: rgba(249, 115, 22, 0.09);
+  background: #fff8ec;
 }
 
 .doc-block.risk-low {
-  background: rgba(147, 51, 234, 0.08);
+  background: #f6f1ff;
 }
 
 .doc-block.is-rewritten {
-  background: rgba(22, 163, 74, 0.08);
+  background: #eefcf2;
 }
 
 .doc-block.is-ignored {
-  background: rgba(148, 163, 184, 0.08);
+  background: #f8fafc;
 }
 
 .doc-comment {
   position: absolute;
   top: 10px;
-  right: -18px;
+  right: -16px;
   border: 0;
   border-radius: 999px;
-  background: #ffffff;
-  color: #2e7d5a;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
-  font-size: 12px;
-  font-weight: 700;
   padding: 6px 10px;
+  background: #ffffff;
+  color: #0f8f4f;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.12);
+  font-size: 12px;
+  font-weight: 800;
   opacity: 0;
-  transform: translateX(4px);
+  transform: translateX(6px);
   transition:
     opacity 0.16s ease,
     transform 0.16s ease;
@@ -383,16 +510,34 @@ watch(
   transform: translateX(0);
 }
 
+.document-pane__summary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  color: #64748b;
+  font-size: 13px;
+}
+
 @media (max-width: 1100px) {
   .doc-page {
-    padding: 42px 26px 52px;
+    padding: 20px 24px 28px;
+  }
+
+  .doc-risk-index {
+    left: auto;
+    right: 8px;
   }
 
   .doc-comment {
     position: static;
-    margin-top: 10px;
     opacity: 1;
     transform: none;
+    margin-top: 10px;
   }
 }
 </style>

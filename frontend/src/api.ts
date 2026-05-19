@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   AnalysisRunStatusResponse,
   AnalysisTaskCreateResponse,
   AnalysisTaskStatusResponse,
@@ -49,7 +49,7 @@ async function fetchWithRetry(
 ): Promise<Response> {
   try {
     const response = await fetch(url, options)
-    // 只重试服务端错误或网络错误（无响应）
+    // 鍙噸璇曟湇鍔＄閿欒鎴栫綉缁滈敊璇紙鏃犲搷搴旓級
     if (response.status >= 500 && retries > 0) {
       await new Promise((r) => setTimeout(r, RETRY_DELAY_MS * (MAX_RETRIES - retries + 1)))
       return fetchWithRetry(url, options, retries - 1)
@@ -199,7 +199,7 @@ export async function uploadDocument(payload: {
           reject(new Error(detail))
         }
       }
-      xhr.onerror = () => reject(new Error('网络请求失败，请检查后端服务是否已启动'))
+      xhr.onerror = () => reject(new Error('无法连接到分析服务，请确认本地后端已启动且前端代理已连通'))
       xhr.send(formData)
     })
   }
@@ -522,7 +522,7 @@ export async function exportRun(
     }
     if (detail?.message) {
       const firstFailure = Array.isArray(detail.failures) && detail.failures.length
-        ? `：${detail.failures[0].reason}`
+        ? `（${detail.failures[0].reason}）`
         : ''
       throw new Error(`${detail.message}${firstFailure}`)
     }
@@ -718,6 +718,7 @@ export async function uploadDocumentWithReport(payload: {
       const xhr = new XMLHttpRequest()
       xhr.open('POST', `${baseUrl}/v1/documents/upload-with-report`)
       xhr.withCredentials = true
+      xhr.timeout = 300000
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable) {
           payload.onProgress!(Math.round((event.loaded / event.total) * 100))
@@ -726,11 +727,7 @@ export async function uploadDocumentWithReport(payload: {
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           const result = JSON.parse(xhr.responseText)
-          resolve({
-            ...result,
-            blocks: (result.blocks || []).map(normalizeDocumentBlock),
-            unmatchedRiskSpans: (result.unmatchedRiskSpans || result.unmatched_risk_spans || []).map(normalizeOfficialRiskSpan)
-          })
+          resolve(normalizeUploadWithReportResponse(result))
         } else {
           let detail = formatApiError(xhr.status)
           try {
@@ -740,7 +737,8 @@ export async function uploadDocumentWithReport(payload: {
           reject(new Error(detail))
         }
       }
-      xhr.onerror = () => reject(new Error('网络请求失败，请检查后端服务是否已启动'))
+      xhr.onerror = () => reject(new Error('无法连接到分析服务，请确认本地后端已启动且前端代理已连通'))
+      xhr.ontimeout = () => reject(new Error('处理超时：文档或报告较大，请稍后重试'))
       xhr.send(formData)
     })
   }
@@ -752,10 +750,36 @@ export async function uploadDocumentWithReport(payload: {
     body: formData
   })
   const result = await parseResponse<any>(response)
+  return normalizeUploadWithReportResponse(result)
+}
+
+function normalizeUploadWithReportResponse(result: any): {
+  fileId: string
+  runId: string
+  reportMode: boolean
+  reportSummary: OfficialReportSummary & {
+    reportId: string
+  }
+  blocks: DocumentBlock[]
+  unmatchedRiskSpans: OfficialRiskSpan[]
+} {
+  const summary = result.reportSummary || result.report_summary || {}
   return {
-    ...result,
+    fileId: result.fileId ?? result.file_id,
+    runId: result.runId ?? result.run_id,
+    reportMode: result.reportMode ?? result.report_mode ?? true,
+    reportSummary: {
+      reportId: summary.reportId ?? summary.report_id,
+      reportType: summary.reportType ?? summary.report_type,
+      totalCopyRatio: summary.totalCopyRatio ?? summary.total_copy_ratio ?? null,
+      aigcRatio: summary.aigcRatio ?? summary.aigc_ratio ?? null,
+      highRiskCount: summary.highRiskCount ?? summary.high_risk_count ?? 0,
+      mediumRiskCount: summary.mediumRiskCount ?? summary.medium_risk_count ?? 0,
+      lowRiskCount: summary.lowRiskCount ?? summary.low_risk_count ?? 0,
+      unmatchedCount: summary.unmatchedCount ?? summary.unmatched_count ?? 0,
+    },
     blocks: (result.blocks || []).map(normalizeDocumentBlock),
-    unmatchedRiskSpans: (result.unmatchedRiskSpans || result.unmatched_risk_spans || []).map(normalizeOfficialRiskSpan)
+    unmatchedRiskSpans: (result.unmatchedRiskSpans || result.unmatched_risk_spans || []).map(normalizeOfficialRiskSpan),
   }
 }
 
@@ -888,6 +912,17 @@ export function getOriginalDocumentUrl(documentId: string): string {
   return `${baseUrl}/v1/documents/${documentId}/original`
 }
 
+export async function getOriginalDocumentBlob(documentId: string): Promise<Blob> {
+  const response = await fetchWithRetry(getOriginalDocumentUrl(documentId), {
+    headers: authHeaders(),
+    credentials: 'include'
+  })
+  if (!response.ok) {
+    throw new Error(formatApiError(response.status))
+  }
+  return response.blob()
+}
+
 export async function getUnlockPackages(): Promise<UnlockPackage[]> {
   const response = await fetchWithRetry(`${baseUrl}/v1/unlocks/packages`, {
     headers: authHeaders(),
@@ -960,7 +995,9 @@ function formatApiError(status: number, detail?: unknown) {
   if (typeof detail === 'string' && detail.trim()) return detail
   if (status >= 500) return '服务暂时不可用，请确认本地后端已启动后再试'
   if (status === 401) return '请先登录后再继续'
-  if (status === 403) return '当前账号暂无权限执行该操作'
+  if (status === 403) return '当前账号暂时无权限执行该操作'
   if (status === 404) return '没有找到对应的数据'
   return `请求失败：${status}`
 }
+
+

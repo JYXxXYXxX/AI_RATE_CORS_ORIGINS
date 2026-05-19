@@ -172,6 +172,7 @@ export const useAnalysisStore = defineStore('analysis', () => {
           }
         })
         uploadProgress.value = 100
+        if (!result.runId) throw new Error('报告驱动分析已返回，但缺少 run_id')
         runStatus.value = await getRun(result.runId)
         activeMeta.value = null
         persistActiveState()

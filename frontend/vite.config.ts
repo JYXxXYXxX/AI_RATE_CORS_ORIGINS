@@ -5,6 +5,8 @@ import ElementPlus from 'unplugin-element-plus/vite'
 import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 
+const localApiTarget = process.env.VITE_LOCAL_API_TARGET || 'http://127.0.0.1:8086'
+
 export default defineConfig({
   plugins: [
     vue(),
@@ -35,9 +37,9 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': 'http://127.0.0.1:8010',
-      '/v1': 'http://127.0.0.1:8010',
-      '/health': 'http://127.0.0.1:8010'
+      '/api': localApiTarget,
+      '/v1': localApiTarget,
+      '/health': localApiTarget
     }
   }
 })

@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings, get_settings
 from app.main import app, get_calibrator
 from app.services.calibration import CnkiCalibrator
+from tests.conftest import make_docx_bytes
 
 client = TestClient(app)
 
@@ -45,7 +46,7 @@ def test_reanalyze_after_rewrite() -> None:
         upload = client.post(
             "/v1/documents/upload",
             data={"title": "重算测试论文", "subject": "教育学", "degree_level": "本科"},
-            files={"file": ("reanalyze.txt", text.encode("utf-8"), "text/plain")},
+            files={"file": ("reanalyze.docx", make_docx_bytes(text), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
         )
         assert upload.status_code == 200
         document_id = upload.json()["document_id"]

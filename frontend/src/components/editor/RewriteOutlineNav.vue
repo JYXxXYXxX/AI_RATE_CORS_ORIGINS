@@ -2,7 +2,7 @@
   <aside class="outline-nav">
     <div class="outline-nav__header">
       <div>
-        <p class="outline-nav__eyebrow">章节导航</p>
+        <p class="outline-nav__eyebrow">快速导航</p>
         <h3>论文结构</h3>
       </div>
       <span class="outline-nav__count">{{ items.length }}</span>
@@ -18,20 +18,19 @@
         :key="item.id"
         type="button"
         class="outline-item"
-        :class="{
-          'is-active': item.id === activeId,
-          [`is-${item.riskLevel}`]: true
-        }"
+        :class="[
+          `is-${item.riskLevel}`,
+          { 'is-active': item.id === activeId, 'is-heading': item.depth <= 1 }
+        ]"
+        :style="{ '--depth': item.depth }"
         @click="$emit('select', item.id)"
       >
-        <div class="outline-item__row">
-          <span class="outline-item__dot"></span>
-          <span class="outline-item__title">{{ item.title }}</span>
-        </div>
-        <div class="outline-item__meta">
-          <span>高 {{ item.counts.high }}</span>
-          <span>中 {{ item.counts.medium }}</span>
-          <span>低 {{ item.counts.low }}</span>
+        <span class="outline-item__dot"></span>
+        <div class="outline-item__content">
+          <strong>{{ item.title }}</strong>
+          <small>
+            高风险 {{ item.counts.high }} · 中风险 {{ item.counts.medium }} · 低风险 {{ item.counts.low }}
+          </small>
         </div>
       </button>
     </div>
@@ -42,6 +41,7 @@
 export interface OutlineItem {
   id: string
   title: string
+  depth: number
   riskLevel: 'high' | 'medium' | 'low' | 'normal'
   counts: Record<'high' | 'medium' | 'low' | 'normal', number>
 }
@@ -61,6 +61,7 @@ defineEmits<{
 .outline-nav {
   display: grid;
   gap: 16px;
+  min-height: 0;
 }
 
 .outline-nav__header {
@@ -73,13 +74,13 @@ defineEmits<{
 .outline-nav__eyebrow {
   margin: 0 0 6px;
   font-size: 12px;
-  font-weight: 700;
-  color: #6b7280;
+  font-weight: 800;
+  color: #0f8f4f;
 }
 
 .outline-nav__header h3 {
   margin: 0;
-  font-size: 20px;
+  font-size: 22px;
   color: #111827;
 }
 
@@ -87,10 +88,10 @@ defineEmits<{
   min-width: 32px;
   height: 32px;
   border-radius: 999px;
-  background: #f3f4f6;
-  color: #374151;
+  background: #eff6f0;
+  color: #0f8f4f;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 800;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -111,82 +112,78 @@ defineEmits<{
 }
 
 .outline-nav__list {
-  display: grid;
-  gap: 10px;
-  max-height: calc(100vh - 240px);
+  min-height: 0;
   overflow: auto;
+  display: grid;
+  gap: 8px;
   padding-right: 4px;
 }
 
 .outline-item {
   width: 100%;
   border: 1px solid #e5e7eb;
-  border-radius: 14px;
+  border-radius: 16px;
   background: #ffffff;
-  text-align: left;
-  padding: 14px 14px 12px;
-  cursor: pointer;
-  display: grid;
-  gap: 8px;
-  transition:
-    border-color 0.18s ease,
-    box-shadow 0.18s ease,
-    transform 0.18s ease;
-}
-
-.outline-item:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
-}
-
-.outline-item__row {
+  padding: 12px 14px;
   display: flex;
   align-items: flex-start;
   gap: 10px;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.04);
+  margin-left: calc(var(--depth) * 14px);
+  width: calc(100% - (var(--depth) * 14px));
 }
 
 .outline-item__dot {
   width: 10px;
   height: 10px;
-  border-radius: 999px;
-  margin-top: 5px;
+  border-radius: 50%;
+  margin-top: 6px;
   flex: none;
   background: #9ca3af;
 }
 
-.outline-item__title {
-  color: #111827;
-  font-size: 14px;
-  line-height: 1.6;
-  font-weight: 600;
+.outline-item__content {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
 }
 
-.outline-item__meta {
-  display: flex;
-  gap: 10px;
-  color: #6b7280;
+.outline-item__content strong {
+  font-size: 14px;
+  line-height: 1.55;
+  color: #111827;
+}
+
+.outline-item__content small {
+  color: #94a3b8;
   font-size: 12px;
 }
 
+.outline-item.is-heading .outline-item__content strong {
+  font-size: 15px;
+}
+
 .outline-item.is-active {
-  border-color: rgba(46, 125, 90, 0.32);
-  box-shadow: 0 14px 28px rgba(46, 125, 90, 0.12);
-  background: linear-gradient(180deg, #ffffff 0%, #f8fffb 100%);
+  border-color: rgba(15, 143, 79, 0.28);
+  background: linear-gradient(180deg, #ffffff 0%, #f2fbf5 100%);
+  box-shadow: 0 16px 28px rgba(15, 143, 79, 0.11);
 }
 
 .outline-item.is-high .outline-item__dot {
-  background: #dc2626;
+  background: #ef4444;
 }
 
 .outline-item.is-medium .outline-item__dot {
-  background: #f97316;
+  background: #f59e0b;
 }
 
 .outline-item.is-low .outline-item__dot {
-  background: #9333ea;
+  background: #8b5cf6;
 }
 
 .outline-item.is-normal .outline-item__dot {
-  background: #16a34a;
+  background: #22c55e;
 }
 </style>

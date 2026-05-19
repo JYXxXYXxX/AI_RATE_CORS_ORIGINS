@@ -36,21 +36,8 @@ def extract_cnki_feedback_preview(filename: str, content: bytes) -> dict[str, An
     normalized_text = _normalize_text(text)
 
     # 基础字段
-    duplication_percent = _extract_percent(
-        normalized_text,
-        [
-            r"(?:总文字复制比|文字复制比|总复制比|重复率|查重率)[^\d]{0,12}(\d{1,3}(?:\.\d+)?)\s*%",
-            r"(?:duplication|similarity)[^\d]{0,12}(\d{1,3}(?:\.\d+)?)\s*%",
-        ],
-    )
-    aigc_percent = _extract_percent(
-        normalized_text,
-        [
-            # 知网 AIGC 报告常见格式：AI特征值、AI检测结果、AIGC率等
-            r"(?:AIGC|AI特征值|AI检测结果|AIGC检测结果|AI检测率|AIGC检测率|AI写作|AI生成|疑似AIGC|疑似AI|AIGC率|AI率|AI比例)[^\d]{0,16}(\d{1,3}(?:\.\d+)?)\s*%",
-            r"(?:ai writing|ai)[^\d]{0,12}(\d{1,3}(?:\.\d+)?)\s*%",
-        ],
-    )
+    duplication_percent = _extract_duplication_percent(normalized_text)
+    aigc_percent = _extract_aigc_percent(normalized_text)
     report_date = _extract_date(normalized_text)
 
     # 扩展字段：更详细的查重指标
@@ -220,6 +207,109 @@ def _extract_percent(text: str, patterns: list[str]) -> float | None:
             if 0 <= value <= 100:
                 return round(value, 2)
     return None
+
+
+def _extract_duplication_percent(text: str) -> float | None:
+    direct = _extract_percent(
+        text,
+        [
+            "(?:\u603b\u6587\u5b57\u590d\u5236\u6bd4|\u6587\u5b57\u590d\u5236\u6bd4|\u603b\u590d\u5236\u6bd4|\u91cd\u590d\u7387|\u67e5\u91cd\u7387)[^\d]{0,12}(\d{1,3}(?:\.\d+)?)\s*%",
+            r"(?:duplication|similarity)[^\d]{0,12}(\d{1,3}(?:\.\d+)?)\s*%",
+        ],
+    )
+    if direct is not None:
+        return direct
+
+    self_write = _extract_self_write_rate(text)
+    if self_write is not None:
+        return round(max(0.0, 100.0 - self_write), 2)
+
+    compact = re.sub(r"\s+", "", text)
+    compact_direct = _extract_percent(
+        compact,
+        [
+            "(?:\u603b\u6587\u5b57\u590d\u5236\u6bd4|\u6587\u5b57\u590d\u5236\u6bd4|\u603b\u590d\u5236\u6bd4|\u91cd\u590d\u7387|\u67e5\u91cd\u7387)(\d{1,3}(?:\.\d+)?)%",
+            r"(?:duplication|similarity)(\d{1,3}(?:\.\d+)?)%",
+        ],
+    )
+    if compact_direct is not None:
+        return compact_direct
+
+    compact_self_write = _extract_self_write_rate(compact)
+    if compact_self_write is not None:
+        return round(max(0.0, 100.0 - compact_self_write), 2)
+
+    return None
+
+
+def _extract_self_write_rate(text: str) -> float | None:
+    return _extract_percent(
+        text,
+        [
+            "(?:\u81ea\u5199\u7387|\u81ea\u5beb\u7387|\u539f\u521b\u7387|\u539f\u5275\u7387|\u81ea\u64b0\u7387|\u81ea\u64b0\u6bd4)[^\d]{0,8}(\d{1,3}(?:\.\d+)?)\s*%",
+        ],
+    )
+
+
+def _extract_aigc_percent(text: str) -> float | None:
+    direct = _extract_percent(
+        text,
+        [
+            r"(?:AIGC|AI特征值|AI检测结果|AIGC检测结果|AI检测率|AIGC检测率|AI写作|AI生成|疑似AIGC|疑似AI|AIGC率|AI率|AI比例)[^\d]{0,16}(\d{1,3}(?:\.\d+)?)\s*%",
+            r"(?:ai writing|ai)[^\d]{0,12}(\d{1,3}(?:\.\d+)?)\s*%",
+        ],
+    )
+    if direct is not None:
+        return direct
+
+    compact = re.sub(r"\s+", "", text)
+    compact_match = _extract_percent(
+        compact,
+        [
+            r"(?:AIGC|AI特征值|AI检测结果|AIGC检测结果|AI检测率|AIGC检测率|AI写作|AI生成|疑似AIGC|疑似AI|AIGC率|AI率|AI比例)(\d{1,3}(?:\.\d+)?)%",
+        ],
+    )
+    if compact_match is not None:
+        return compact_match
+
+    structured = _extract_aigc_percent_from_table(text)
+    if structured is not None:
+        return structured
+
+    return _extract_aigc_percent_from_table(compact)
+
+
+def _extract_aigc_percent_from_table(text: str) -> float | None:
+    compact = re.sub(r"\s+", "", text).upper()
+    if "AIGC" not in compact and "AI生成" not in text and "疑AI" not in text and "AIGC生成" not in compact:
+        return None
+
+    section = text
+    anchor_match = re.search(r"(?:AIGC|AI\s*GC|疑AI|AI生成)", text, re.IGNORECASE)
+    if anchor_match:
+        start = max(0, anchor_match.start() - 120)
+        section = text[start : start + 6000]
+
+    pairs: list[tuple[int, int]] = []
+    for numer_text, denom_text in re.findall(r"(?<!\d)(\d{1,6})/(\d{2,7})(?!\d)", section):
+        numer = int(numer_text)
+        denom = int(denom_text)
+        if denom < 100 or denom > 500000:
+            continue
+        if numer < 0 or numer > denom:
+            continue
+        pairs.append((numer, denom))
+
+    if len(pairs) < 2:
+        return None
+
+    total_numer = sum(item[0] for item in pairs)
+    total_denom = sum(item[1] for item in pairs)
+    if total_denom <= 0:
+        return None
+
+    percent = round(total_numer * 100 / total_denom, 2)
+    return percent if 0 <= percent <= 100 else None
 
 
 def _extract_date(text: str) -> str | None:

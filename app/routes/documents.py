@@ -1353,6 +1353,38 @@ async def export_rewritten_document(
         blocks = []
         patches = []
 
+    def _build_fallback_docx():
+        """基于 sections 组装新的 docx（回退方案）。"""
+        risk_map = {s.section_index: s.risk_level for s in payload.sections}
+        doc = Document()
+        if doc_title:
+            heading = doc.add_heading(doc_title, level=0)
+            heading.alignment = 1  # center
+
+        for idx, sec_title, text in assembled:
+            if sec_title:
+                doc.add_heading(sec_title, level=1)
+            p = doc.add_paragraph(text)
+            p.paragraph_format.line_spacing = 1.5
+            for run in p.runs:
+                run.font.size = Pt(12)
+                run.font.name = "宋体"
+            # 添加风险背景色
+            risk = risk_map.get(idx, "normal")
+            _set_para_shading(p, RISK_COLORS.get(risk, "C8E6C9"))
+
+        import io
+        buf = io.BytesIO()
+        doc.save(buf)
+        buf.seek(0)
+        return Response(
+            content=buf.getvalue(),
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={
+                "Content-Disposition": f'attachment; filename="{safe_title}.docx"'
+            },
+        )
+
     if blocks and original_path and Path(original_path).suffix.lower() == ".docx" and Path(original_path).exists():
         try:
             from app.services.docx_patch import (
@@ -1376,63 +1408,20 @@ async def export_rewritten_document(
                 headers=headers,
             )
         except DocxPatchError as exc:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "message": "DOCX 原文档文本替换失败。为避免破坏论文格式，系统未导出重建版文档。",
-                    "stats": {
-                        "requested_patch_count": exc.stats.requested_patch_count,
-                        "applied_count": exc.stats.applied_count,
-                        "failed_count": exc.stats.failed_count,
-                        "skipped_block_count": exc.stats.skipped_block_count,
-                    },
-                    "failures": [
-                        {
-                            "block_id": item.block_id,
-                            "paragraph_index": item.paragraph_index,
-                            "reason": item.reason,
-                            "old_text_preview": item.old_text_preview,
-                        }
-                        for item in exc.stats.failures[:10]
-                    ],
-                },
-            ) from exc
+            # Patch 部分失败时回退到 sections 重建，避免用户完全无法导出
+            import logging
+            logging.getLogger("patfix.export").warning(
+                f"DocxPatchError for run {run_id}, falling back to section rebuild: {exc}"
+            )
+            return _build_fallback_docx()
         except Exception as exc:
-            raise HTTPException(
-                status_code=409,
-                detail="DOCX 原文档导出失败。为避免破坏论文格式，系统未回退生成重建版文档。",
-            ) from exc
+            import logging
+            logging.getLogger("patfix.export").warning(
+                f"Unexpected export error for run {run_id}, falling back to section rebuild: {exc}"
+            )
+            return _build_fallback_docx()
 
-    # 回退：基于 sections 的导出（兼容旧数据）
-    risk_map = {s.section_index: s.risk_level for s in payload.sections}
-    doc = Document()
-    if doc_title:
-        heading = doc.add_heading(doc_title, level=0)
-        heading.alignment = 1  # center
-
-    for idx, sec_title, text in assembled:
-        if sec_title:
-            doc.add_heading(sec_title, level=1)
-        p = doc.add_paragraph(text)
-        p.paragraph_format.line_spacing = 1.5
-        for run in p.runs:
-            run.font.size = Pt(12)
-            run.font.name = "宋体"
-        # 添加风险背景色
-        risk = risk_map.get(idx, "normal")
-        _set_para_shading(p, RISK_COLORS.get(risk, "C8E6C9"))
-
-    import io
-    buf = io.BytesIO()
-    doc.save(buf)
-    buf.seek(0)
-    return Response(
-        content=buf.getvalue(),
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={
-            "Content-Disposition": f'attachment; filename="{safe_title}.docx"'
-        },
-    )
+    return _build_fallback_docx()
 
 
 @router.post(

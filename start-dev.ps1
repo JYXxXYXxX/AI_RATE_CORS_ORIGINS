@@ -9,6 +9,9 @@ Set-StrictMode -Version Latest
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $frontendDir = Join-Path $projectRoot "frontend"
 $runtimeDir = Join-Path $projectRoot ".dev"
+$backendPort = if ($env:AI_RATE_DEV_BACKEND_PORT) { [int]$env:AI_RATE_DEV_BACKEND_PORT } else { 8086 }
+$backendHost = if ($env:AI_RATE_DEV_BACKEND_HOST) { $env:AI_RATE_DEV_BACKEND_HOST } else { "127.0.0.1" }
+$backendBaseUrl = "http://$backendHost`:$backendPort"
 $backendPidFile = Join-Path $runtimeDir "backend.pid"
 $frontendPidFile = Join-Path $runtimeDir "frontend.pid"
 $backendLog = Join-Path $runtimeDir "backend.log"
@@ -258,10 +261,10 @@ Ensure-FrontendDependencies -NpmCmd $npmCmd
 
 Start-ManagedService `
     -Name "backend" `
-    -HealthUrl "http://127.0.0.1:8010/health" `
+    -HealthUrl "$backendBaseUrl/health" `
     -PidFile $backendPidFile `
     -FilePath $pythonExe `
-    -Arguments @("-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8010", "--reload") `
+    -Arguments @("-m", "uvicorn", "app.main:app", "--host", $backendHost, "--port", "$backendPort") `
     -WorkingDirectory $projectRoot `
     -StdOutLog $backendLog `
     -StdErrLog $backendErrLog `
@@ -280,9 +283,7 @@ Start-ManagedService `
 
 Write-Host ""
 Write-Host "Frontend: http://localhost:3000" -ForegroundColor Green
-Write-Host "Backend:  http://localhost:8010/docs" -ForegroundColor Green
+Write-Host "Backend:  $backendBaseUrl/docs" -ForegroundColor Green
 Write-Host "Mode:     free closed-loop demo (anonymous upload enabled)" -ForegroundColor Green
 Write-Host "Logs:     $runtimeDir" -ForegroundColor DarkGray
 Write-Host "Tip:      open the frontend and upload a paper directly, no login required" -ForegroundColor DarkGray
-
-

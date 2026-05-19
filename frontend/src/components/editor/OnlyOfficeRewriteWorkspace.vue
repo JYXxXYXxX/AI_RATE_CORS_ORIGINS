@@ -3,18 +3,24 @@
     <RewriteTopBar
       :title="workspace?.title || runMeta?.title || '论文在线改写'"
       :filename="workspace?.filename || runMeta?.filename || '正在加载文档...'"
-      :metrics="topMetrics"
+      :progress="Math.round(workspace?.metrics.currentAigcPercent || 0)"
+      :progress-label="currentAigcLabel"
+      :export-loading="exporting"
+      @download-report="goBack"
+      @export="exportDocument"
+    />
+
+    <RewriteWorkspaceStatsBar
+      :metrics="statsMetrics"
       :can-undo="undoStack.length > 0"
       :can-redo="redoStack.length > 0"
       :save-loading="saving"
-      :export-loading="exporting"
       :rewrite-all-loading="rewriteAllLoading"
       @back="goBack"
       @rewrite-all="applyAllVisible"
       @undo="undoLastAction"
       @redo="redoLastAction"
       @save="saveSession"
-      @export="exportDocument"
     />
 
     <div v-if="loading" class="workspace-state">
@@ -22,7 +28,7 @@
     </div>
 
     <div v-else-if="loadError" class="workspace-state workspace-state--error">
-      <h3>改写页加载失败</h3>
+      <h3>改写页面加载失败</h3>
       <p>{{ loadError }}</p>
       <el-button type="primary" @click="loadWorkspace">重新加载</el-button>
     </div>
@@ -39,7 +45,10 @@
 
       <div class="workspace-panel workspace-panel--center">
         <RewriteDocumentPane
+          :title="workspace?.title || '论文正文'"
           :blocks="renderBlocks"
+          :word-count="wordCount"
+          :source-format="(workspace?.sourceFormat || 'docx').toLowerCase()"
           :risk-item-by-block-id="riskItemByBlockId"
           :status-by-risk-id="statusByRiskId"
           :active-block-id="activeBlockId"
@@ -59,6 +68,7 @@
           :has-next="activeIndex >= 0 && activeIndex < visibleRiskItems.length - 1"
           :apply-loading="applyLoading"
           :status-by-risk-id="statusByRiskId"
+          :tab-counts="tabCounts"
           @change-tab="changeTab"
           @select-risk="selectRisk"
           @previous="selectRelative(-1)"
@@ -68,6 +78,13 @@
         />
       </div>
     </div>
+
+    <RewriteBottomActionBar
+      :export-loading="exporting"
+      @download-original="downloadOriginal"
+      @download-report="goBack"
+      @export="exportDocument"
+    />
   </div>
 </template>
 
@@ -75,8 +92,10 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import RewriteBottomActionBar from './RewriteBottomActionBar.vue'
 import RewriteDocumentPane, { type RenderBlock } from './RewriteDocumentPane.vue'
 import RewriteOutlineNav, { type OutlineItem } from './RewriteOutlineNav.vue'
+import RewriteWorkspaceStatsBar from './RewriteWorkspaceStatsBar.vue'
 import RewriteSuggestionPanel from './RewriteSuggestionPanel.vue'
 import RewriteTopBar from './RewriteTopBar.vue'
 import type {
@@ -92,6 +111,7 @@ import {
   createPatch,
   exportRun,
   getOnlyOfficeDownloadUrl,
+  getOriginalDocumentUrl,
   getRewriteAdvice,
   getRewriteWorkspace,
   getRun,
@@ -151,6 +171,17 @@ const statusByRiskId = computed<Record<string, RiskStatus>>(() => {
   return result
 })
 
+const riskItemsBySection = computed(() => {
+  const map = new Map<string, RewriteWorkspaceRiskItem[]>()
+  for (const item of riskItems.value) {
+    const key = item.sectionId || normalizeTitle(item.sectionTitle)
+    const list = map.get(key) || []
+    list.push(item)
+    map.set(key, list)
+  }
+  return map
+})
+
 const renderBlocks = computed<RenderBlock[]>(() => {
   return (blocks.value || []).map((block) => {
     const linkedRisk = riskItems.value.find((item) => item.blockId === block.blockId)
@@ -187,6 +218,8 @@ const currentDupPercent = computed(() => {
   return typeof value === 'number' ? `${Math.round(value)}%` : '--'
 })
 
+const currentAigcLabel = computed(() => `${Math.round(workspace.value?.metrics.currentAigcPercent || 0)}%`)
+
 const wordCount = computed(() =>
   renderBlocks.value.reduce((sum, block) => sum + (block.currentText?.replace(/\s+/g, '').length || 0), 0)
 )
@@ -197,13 +230,19 @@ function effectiveLevel(item: RewriteWorkspaceRiskItem): RiskTab {
   return item.riskLevel
 }
 
+const tabCounts = computed<Record<RiskTab, number>>(() => ({
+  high: riskItems.value.filter((item) => effectiveLevel(item) === 'high').length,
+  medium: riskItems.value.filter((item) => effectiveLevel(item) === 'medium').length,
+  low: riskItems.value.filter((item) => effectiveLevel(item) === 'low').length,
+  normal: riskItems.value.filter((item) => effectiveLevel(item) === 'normal').length,
+}))
+
 const visibleRiskItems = computed(() => {
   const filtered = riskItems.value.filter((item) => effectiveLevel(item) === activeTab.value)
   return filtered.sort((a, b) => a.displayOrder - b.displayOrder)
 })
 
 const activeIndex = computed(() => visibleRiskItems.value.findIndex((item) => item.riskId === activeRiskId.value))
-
 const activeSuggestion = computed(() => (activeRiskItem.value ? adviceCache.value[activeRiskItem.value.riskId] || null : null))
 
 const rewrittenCount = computed(() =>
@@ -222,55 +261,65 @@ const estimatedOptimizedPercent = computed(() => {
   return `${Math.max(0, Math.round(base - reduction))}%`
 })
 
-const topMetrics = computed(() => [
-  { label: 'AIGC 疑似度', value: `${Math.round(workspace.value?.metrics.currentAigcPercent || 0)}%` },
-  { label: '重复率', value: currentDupPercent.value },
-  { label: '优化后预计', value: estimatedOptimizedPercent.value },
-  { label: '已改写', value: `${rewrittenCount.value} / ${riskItems.value.length}` },
-  { label: '字数', value: String(wordCount.value) },
-  { label: '文档格式', value: (workspace.value?.sourceFormat || 'docx').toUpperCase() },
+const statsMetrics = computed(() => [
+  { label: 'AIGC 疑似度', value: currentAigcLabel.value, helper: '当前检测', tone: 'high' as const },
+  { label: '重复率', value: currentDupPercent.value, helper: '预测区间', tone: 'medium' as const },
+  { label: '优化后预计', value: estimatedOptimizedPercent.value, helper: '改写同步更新', tone: 'brand' as const },
+  { label: '已改写', value: `${rewrittenCount.value} / ${riskItems.value.length}`, helper: '风险句数量', tone: 'low' as const },
+  { label: '字数', value: String(wordCount.value), helper: (workspace.value?.sourceFormat || 'docx').toUpperCase() },
 ])
 
 const outlineItems = computed<OutlineItem[]>(() => {
-  const items: OutlineItem[] = []
-  const seen = new Set<string>()
+  const sourceSections = workspace.value?.sections || []
+  const result: OutlineItem[] = []
 
-  const firstBlock = renderBlocks.value[0]
-  if (firstBlock && firstBlock.text.trim()) {
-    items.push({
-      id: firstBlock.blockId,
-      title: firstBlock.text.trim(),
-      riskLevel: 'normal',
-      counts: { high: 0, medium: 0, low: 0, normal: 0 },
+  for (const section of sourceSections) {
+    const sectionRisks = riskItemsBySection.value.get(section.sectionId) || []
+    const sectionTitle = normalizeTitle(section.title) || fallbackSectionTitle(section.sectionIndex)
+    const anchorBlock = findAnchorBlock(section.sectionId, section.title)
+
+    result.push({
+      id: anchorBlock?.blockId || section.sectionId,
+      title: sectionTitle,
+      depth: sectionDepth(sectionTitle),
+      riskLevel: sectionRisks.length ? aggregateRiskLevel(sectionRisks) : section.riskLevel,
+      counts: sectionRisks.length ? aggregateCounts(sectionRisks) : section.riskCounts,
     })
   }
 
+  if (result.length) return dedupeOutlineItems(result)
+
+  return buildOutlineFromBlocks()
+})
+
+function dedupeOutlineItems(items: OutlineItem[]) {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    const key = `${item.title}-${item.id}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function buildOutlineFromBlocks(): OutlineItem[] {
+  const items: OutlineItem[] = []
+  const seenTitles = new Set<string>()
   for (const block of renderBlocks.value) {
-    const title = normalizeSectionTitle(block.sectionTitle)
-    if (!title || seen.has(title)) continue
-    seen.add(title)
-    const linked = riskItems.value.filter((item) => normalizeSectionTitle(item.sectionTitle) === title)
+    const title = normalizeTitle(block.sectionTitle || (block.type === 'heading' || block.type === 'title' ? block.text : ''))
+    if (!title || seenTitles.has(title)) continue
+    seenTitles.add(title)
+    const linked = riskItems.value.filter((item) => normalizeTitle(item.sectionTitle) === title)
     items.push({
       id: block.blockId,
       title,
+      depth: sectionDepth(title),
       riskLevel: aggregateRiskLevel(linked),
       counts: aggregateCounts(linked),
     })
   }
-
-  if (items.length > 1) {
-    return items
-  }
-
-  return (workspace.value?.sections || []).map((section) => ({
-    id: section.sectionId,
-    title: section.title,
-    riskLevel: aggregateRiskLevel(
-      riskItems.value.filter((item) => item.sectionId === section.sectionId)
-    ),
-    counts: aggregateCounts(riskItems.value.filter((item) => item.sectionId === section.sectionId)),
-  }))
-})
+  return items
+}
 
 function aggregateCounts(items: RewriteWorkspaceRiskItem[]) {
   const counts = { high: 0, medium: 0, low: 0, normal: 0 }
@@ -288,12 +337,35 @@ function aggregateRiskLevel(items: RewriteWorkspaceRiskItem[]): RiskTab {
   return 'normal'
 }
 
-function normalizeSectionTitle(value: string | null | undefined) {
+function normalizeTitle(value: string | null | undefined) {
   return String(value || '')
     .replace(/\[\d+\]/g, '')
     .replace(/\s+\d+$/g, '')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+function fallbackSectionTitle(index: number) {
+  return `第 ${index + 1} 部分`
+}
+
+function sectionDepth(title: string) {
+  if (/^\d+\.\d+\.\d+/.test(title)) return 3
+  if (/^\d+\.\d+/.test(title)) return 2
+  if (/^第.+章/.test(title) || /^\d+/.test(title) || /^(摘要|结论|参考文献|致谢|附录|Abstract)$/i.test(title)) {
+    return 1
+  }
+  return 1
+}
+
+function findAnchorBlock(sectionId: string, sectionTitle?: string | null) {
+  const normalized = normalizeTitle(sectionTitle)
+  return renderBlocks.value.find((block) => {
+    const matchesTitle = normalized && normalizeTitle(block.sectionTitle) === normalized
+    const matchesRisk = riskItems.value.some((item) => item.sectionId === sectionId && item.blockId === block.blockId)
+    const matchesHeading = normalizeTitle(block.text) === normalized && (block.type === 'heading' || block.type === 'title')
+    return Boolean(matchesTitle || matchesRisk || matchesHeading)
+  })
 }
 
 function syncInitialState(nextWorkspace: RewriteWorkspaceResponse) {
@@ -322,13 +394,15 @@ function syncSelection() {
   }
 
   const active = activeRiskItem.value
-  if (!active) return
-  if (active.sectionTitle) {
-    const outline = outlineItems.value.find((item) => item.title.trim() === active.sectionTitle?.trim())
-    activeOutlineId.value = outline?.id || active.blockId
-  } else {
-    activeOutlineId.value = active.blockId
+  if (!active) {
+    activeOutlineId.value = outlineItems.value[0]?.id || ''
+    return
   }
+
+  const bySection = outlineItems.value.find((item) =>
+    normalizeTitle(item.title) === normalizeTitle(active.sectionTitle)
+  )
+  activeOutlineId.value = bySection?.id || active.blockId
 }
 
 async function loadWorkspace() {
@@ -362,6 +436,12 @@ function goBack() {
   router.push(`/app/report/${props.runId}`)
 }
 
+function downloadOriginal() {
+  const documentId = workspace.value?.documentId || runMeta.value?.document_id
+  if (!documentId) return
+  window.open(getOriginalDocumentUrl(documentId), '_blank')
+}
+
 function changeTab(value: RiskTab) {
   activeTab.value = value
   syncSelection()
@@ -371,7 +451,7 @@ function selectRisk(riskId: string) {
   activeRiskId.value = riskId
   const item = riskItems.value.find((entry) => entry.riskId === riskId)
   if (!item) return
-  const outline = outlineItems.value.find((entry) => normalizeSectionTitle(entry.title) === normalizeSectionTitle(item.sectionTitle))
+  const outline = outlineItems.value.find((entry) => normalizeTitle(entry.title) === normalizeTitle(item.sectionTitle))
   activeOutlineId.value = outline?.id || item.blockId
 }
 
@@ -390,26 +470,35 @@ function selectBlock(blockId: string) {
 
 function selectOutline(outlineId: string) {
   activeOutlineId.value = outlineId
-  const outlineTitle = normalizeSectionTitle(outlineItems.value.find((entry) => entry.id === outlineId)?.title)
-  const byHeading = riskItems.value.find((item) => normalizeSectionTitle(item.sectionTitle) === outlineTitle)
-  if (byHeading) {
-    selectRisk(byHeading.riskId)
+  const directRisk = riskItems.value.find((item) => item.blockId === outlineId)
+  if (directRisk) {
+    selectRisk(directRisk.riskId)
     return
   }
-  const bySectionId = riskItems.value.find((item) => item.sectionId === outlineId)
-  if (bySectionId) {
-    selectRisk(bySectionId.riskId)
+
+  const outline = outlineItems.value.find((entry) => entry.id === outlineId)
+  if (!outline) return
+  const byHeading = riskItems.value.find((item) => normalizeTitle(item.sectionTitle) === normalizeTitle(outline.title))
+  if (byHeading) {
+    selectRisk(byHeading.riskId)
   }
 }
 
 async function ensureAdvice(item: RewriteWorkspaceRiskItem) {
   if (adviceCache.value[item.riskId]) return adviceCache.value[item.riskId]
-  const advice = await getRewriteAdvice(props.runId, item.sectionIndex)
+  const advice = await getRewriteAdvice(props.runId, adviceTargetIndex(item))
   adviceCache.value = {
     ...adviceCache.value,
     [item.riskId]: advice,
   }
   return advice
+}
+
+function adviceTargetIndex(item: RewriteWorkspaceRiskItem) {
+  if (workspace.value?.mode === 'report') {
+    return item.paragraphIndex ?? item.displayOrder ?? item.sectionIndex
+  }
+  return item.sectionIndex
 }
 
 function pushHistory(entry: HistoryEntry) {
@@ -550,7 +639,7 @@ async function persistSession() {
 
 function buildExportSections() {
   return renderBlocks.value
-    .filter((block) => block.type === 'paragraph' || block.type === 'heading')
+    .filter((block) => block.type === 'paragraph' || block.type === 'heading' || block.type === 'title')
     .map((block, index) => ({
       section_index: index,
       content: block.currentText,
@@ -585,7 +674,7 @@ async function exportDocument() {
       await applyOnlyOfficePatches(props.runId)
       window.open(getOnlyOfficeDownloadUrl(props.runId, 'edited'), '_blank')
       await loadWorkspace()
-      ElMessage.success('正在导出保留原格式的改写稿')
+      ElMessage.success('正在导出保留原格式的修改稿')
       return
     }
 
@@ -593,11 +682,11 @@ async function exportDocument() {
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = 'PataFix_改写稿.docx'
+    anchor.download = 'PataFix_修改稿.docx'
     anchor.click()
     URL.revokeObjectURL(url)
     await loadWorkspace()
-    ElMessage.success('已导出改写稿')
+    ElMessage.success('已导出修改稿')
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '导出失败')
   } finally {
@@ -605,7 +694,7 @@ async function exportDocument() {
   }
 }
 
-watch([visibleRiskItems, activeTab], () => {
+watch([visibleRiskItems, activeTab, outlineItems], () => {
   syncSelection()
 })
 
@@ -613,13 +702,13 @@ watch(activeRiskItem, async (item) => {
   if (!item) return
   if (!adviceCache.value[item.riskId] && effectiveLevel(item) !== 'normal') {
     try {
-      const advice = await getRewriteAdvice(props.runId, item.sectionIndex)
+      const advice = await getRewriteAdvice(props.runId, adviceTargetIndex(item))
       adviceCache.value = {
         ...adviceCache.value,
         [item.riskId]: advice,
       }
     } catch {
-      // keep panel usable even if advice loading fails
+      // Keep panel usable even if advice loading fails.
     }
   }
 })
@@ -632,40 +721,40 @@ onMounted(() => {
 <style scoped>
 .rewrite-workspace {
   min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   background:
-    linear-gradient(180deg, #f7f6f2 0%, #f3f4f6 100%);
-  display: flex;
-  flex-direction: column;
+    radial-gradient(circle at top left, rgba(15, 143, 79, 0.08), transparent 28%),
+    linear-gradient(180deg, #f6f7f1 0%, #f0f3f6 100%);
 }
 
 .rewrite-workspace__body {
-  flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr) 420px;
+  grid-template-columns: 276px minmax(0, 1fr) 392px;
   gap: 18px;
-  padding: 18px;
+  padding: 18px 24px;
 }
 
 .workspace-panel {
   min-height: 0;
-  background: rgba(255, 255, 255, 0.92);
+  border-radius: 24px;
   border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 22px;
-  box-shadow: 0 20px 44px rgba(15, 23, 42, 0.07);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.07);
   padding: 18px;
 }
 
 .workspace-panel--center {
-  background: linear-gradient(180deg, #f4f4f5 0%, #eceff3 100%);
+  background: linear-gradient(180deg, rgba(243, 245, 242, 0.96) 0%, rgba(236, 240, 245, 0.96) 100%);
 }
 
 .workspace-state {
-  margin: 18px;
-  background: rgba(255, 255, 255, 0.92);
+  margin: 18px 24px;
+  border-radius: 24px;
   border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 22px;
-  box-shadow: 0 20px 44px rgba(15, 23, 42, 0.07);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.07);
   padding: 24px;
 }
 
@@ -676,22 +765,23 @@ onMounted(() => {
 
 .workspace-state--error h3 {
   margin: 0;
+  font-size: 22px;
   color: #111827;
 }
 
 .workspace-state--error p {
   margin: 0;
   color: #4b5563;
-  line-height: 1.7;
+  line-height: 1.8;
 }
 
 @media (max-width: 1500px) {
   .rewrite-workspace__body {
-    grid-template-columns: 240px minmax(0, 1fr) 360px;
+    grid-template-columns: 248px minmax(0, 1fr) 352px;
   }
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 1220px) {
   .rewrite-workspace__body {
     grid-template-columns: 1fr;
   }

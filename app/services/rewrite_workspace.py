@@ -92,20 +92,63 @@ def _build_diagnosis(level: str, reasons: list[str], block: dict[str, Any]) -> s
     return "该段当前风险较低，可保留为参考版本。"
 
 
-def _build_rewrite_hint(level: str, reasons: list[str]) -> str:
-    if any("模板" in reason or "套话" in reason for reason in reasons):
-        return "减少套话式开头，改成带主语、对象和场景的信息表达。"
-    if any("重复" in reason for reason in reasons):
-        return "拆开重复句式，替换同构表达，避免连续使用相同论证模板。"
-    if any("语义" in reason or "空泛" in reason for reason in reasons):
-        return "补充限定词、研究对象和条件，让句子更具体。"
-    if level == "high":
-        return "优先重写整段核心句，改动句式结构和信息顺序，不要只做同义替换。"
-    if level == "medium":
-        return "保留原意，补充语境和动作细节，让表达更像人工写作。"
-    if level == "low":
-        return "局部微调即可，重点处理容易显得公式化的短句。"
-    return "当前段落可暂不处理。"
+def _build_rewrite_hint(text: str, level: str, reasons: list[str]) -> str:
+    """生成可直接替换的改写版本，而不是建议文字。"""
+    rewritten = text
+    # 1. 替换高频 AI 书面词（句骨重排 + 人话化）
+    replacements = {
+        "持续发展": "不断发展",
+        "持续迭代": "不断更新",
+        "趋于多元": "变得更加多样",
+        "提供了新的技术解决路径": "提供了新的解决思路",
+        "理论试点转向实际落地": "试点逐渐进入实际使用",
+        "应用范围持续拓展": "使用范围也在扩大",
+        "提供了坚实技术基础": "提供了技术基础",
+        "有效弥补": "补上",
+        "赋予": "加入",
+        "支撑": "支持",
+        "适配": "适合",
+        "保障": "保证",
+        "提升": "提高",
+        "优化": "改进",
+        "落地价值": "实际使用价值",
+        "落地形式": "使用方式",
+        "落地": "应用",
+        "体系": "结构",
+        "机制": "做法",
+        "路径": "方法",
+        "赋能": "帮助",
+    }
+    for source, target in replacements.items():
+        rewritten = rewritten.replace(source, target)
+
+    # 2. 改写模板化开头
+    rewritten = re.sub(
+        r"随着([^，。；！？\n]{2,20})的发展",
+        lambda m: f"近几年，{m.group(1)}在具体场景中使用增多",
+        rewritten,
+    )
+    rewritten = re.sub(
+        r"随着([^，。；！？\n]{2,20})的普及和([^，。；！？\n]{2,20})的兴起",
+        lambda m: f"在{m.group(1)}与{m.group(2)}带动下",
+        rewritten,
+    )
+
+    # 3. 被动改主动（简单模式）
+    rewritten = re.sub(
+        r"([^，。；！？\n]{2,20})被([^，。；！？\n]{2,20})(完成|实现|发现|分析|处理|验证|证明|提出|采用|运用)",
+        lambda m: f"研究团队{m.group(3)}{m.group(1)}",
+        rewritten,
+    )
+
+    # 4. 无主语句加主语
+    if rewritten.startswith(("通过", "基于", "根据")) and "笔者" not in rewritten and "本研究" not in rewritten:
+        rewritten = "笔者" + rewritten
+
+    # 5. 如果做了有效改动，返回改动后的版本；否则返回原文，不附加建议
+    if rewritten != text:
+        return rewritten
+    return text
 
 
 def _build_principle(level: str, reasons: list[str]) -> str:
@@ -348,7 +391,7 @@ def build_rewrite_workspace(
             risk_level=level,
             aigc_score=round(score, 2),
             diagnosis=_build_diagnosis(level, reasons, block),
-            rewrite_hint=_build_rewrite_hint(level, reasons),
+            rewrite_hint=_build_rewrite_hint(text, level, reasons),
             principle=_build_principle(level, reasons),
             reasons=reasons,
             status=status,

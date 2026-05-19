@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings, get_settings
 from app.main import app, get_calibrator, get_job_store
 from app.services.calibration import CnkiCalibrator
+from tests.conftest import make_docx_bytes
 
 
 client = TestClient(app)
@@ -153,7 +154,7 @@ def test_manual_provider_import_and_proxy_training() -> None:
         upload = client.post(
             "/v1/documents/upload",
             data={"title": "训练样本论文", "subject": "教育学", "degree_level": "本科"},
-            files={"file": ("train.txt", text.encode("utf-8"), "text/plain")},
+            files={"file": ("train.docx", make_docx_bytes(text), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
         )
         assert upload.status_code == 200
         document_id = upload.json()["document_id"]
@@ -337,9 +338,9 @@ def test_provider_registry_update_and_reset() -> None:
             data={"title": "provider registry demo"},
             files={
                 "file": (
-                    "provider.txt",
-                    "链路验证文本，用于测试 provider registry。".encode("utf-8"),
-                    "text/plain",
+                    "provider.docx",
+                    make_docx_bytes("链路验证文本，用于测试 provider registry。"),
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 )
             },
         )
@@ -413,11 +414,11 @@ def test_async_analysis_and_ocr_flow_runs_without_login_or_credit_deduction() ->
             data={"title": "C端闭环论文", "subject": "教育学", "degree_level": "本科"},
             files={
                 "file": (
-                    "c_end.txt",
-                    "这是一个用于测试 C 端异步分析与匿名闭环的样本文本。它包含摘要、方法和结论描述。".encode(
-                        "utf-8"
+                    "c_end.docx",
+                    make_docx_bytes(
+                        "这是一个用于测试 C 端异步分析与匿名闭环的样本文本。它包含摘要、方法和结论描述。"
                     ),
-                    "text/plain",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 )
             },
         )
@@ -509,11 +510,11 @@ def test_async_analysis_and_ocr_flow_runs_without_login_or_credit_deduction() ->
             },
             files={
                 "file": (
-                    "c_end_auth.txt",
-                    "这是一个用于确认登录态下也不会扣减额度的样本文本。".encode(
-                        "utf-8"
+                    "c_end_auth.docx",
+                    make_docx_bytes(
+                        "这是一个用于确认登录态下也不会扣减额度的样本文本。"
                     ),
-                    "text/plain",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 )
             },
         )
@@ -626,11 +627,11 @@ def test_private_document_access_is_restricted() -> None:
             },
             files={
                 "file": (
-                    "private.txt",
-                    "这是一篇带有私有访问控制的测试论文，用来验证登录用户之外无法查看分析结果。".encode(
-                        "utf-8"
+                    "private.docx",
+                    make_docx_bytes(
+                        "这是一篇带有私有访问控制的测试论文，用来验证登录用户之外无法查看分析结果。"
                     ),
-                    "text/plain",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 )
             },
         )

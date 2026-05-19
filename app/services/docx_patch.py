@@ -74,12 +74,15 @@ def _set_para_shading(paragraph, color_hex: str) -> None:
     pPr.append(shading)
 
 
+import re
+
+
 def _try_replace_in_runs(paragraph, old_text: str, new_text: str) -> bool:
     """尝试在段落内跨 run 替换文本，保留格式。
 
     策略：
     1. 收集所有 run 的文本，拼接成完整字符串
-    2. 找到 old_text 的位置
+    2. 找到 old_text 的位置（支持忽略空白差异的模糊匹配）
     3. 计算跨越了哪些 run
     4. 第一个 run 保留样式并承载 prefix + new_text
     5. 中间 runs 清空
@@ -99,10 +102,21 @@ def _try_replace_in_runs(paragraph, old_text: str, new_text: str) -> bool:
 
     # 查找 old_text
     idx = total.find(old_text)
+    match_len = len(old_text)
     if idx == -1:
-        return False
+        # 尝试忽略空白差异的模糊匹配
+        parts = [part for part in old_text.split() if part]
+        if not parts:
+            return False
+        pattern = r"\s*".join(re.escape(part) for part in parts)
+        m = re.search(pattern, total)
+        if m:
+            idx = m.start()
+            match_len = m.end() - m.start()
+        else:
+            return False
 
-    end_idx = idx + len(old_text)
+    end_idx = idx + match_len
 
     # 计算 old_text 跨越了哪些 run
     current_pos = 0

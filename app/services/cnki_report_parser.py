@@ -145,6 +145,94 @@ def _extract_percent(text: str, pattern: re.Pattern) -> float | None:
     return None
 
 
+def _extract_total_copy_ratio(text: str) -> float | None:
+    direct = _extract_percent(text, _TOTAL_COPY_RE)
+    if direct is not None:
+        return direct
+
+    self_write = _extract_self_write_rate(text)
+    if self_write is not None:
+        return round(max(0.0, 100.0 - self_write), 2)
+
+    compact = re.sub(r"\s+", "", text)
+    match = re.search(
+        "(?:\u603b\u6587\u5b57\u590d\u5236\u6bd4|\u6587\u5b57\u590d\u5236\u6bd4|\u603b\u590d\u5236\u6bd4|\u91cd\u590d\u7387|\u67e5\u91cd\u7387)(\d{1,3}(?:\.\d+)?)%",
+        compact,
+        re.IGNORECASE,
+    )
+    if not match:
+        match = re.search(r"(?:duplication|similarity)(\d{1,3}(?:\.\d+)?)%", compact, re.IGNORECASE)
+    if match:
+        return min(float(match.group(1)), 100.0)
+
+    compact_self_write = _extract_self_write_rate(compact)
+    if compact_self_write is not None:
+        return round(max(0.0, 100.0 - compact_self_write), 2)
+
+    return None
+
+
+def _extract_self_write_rate(text: str) -> float | None:
+    match = re.search(
+        "(?:\u81ea\u5199\u7387|\u81ea\u5beb\u7387|\u539f\u521b\u7387|\u539f\u5275\u7387|\u81ea\u64b0\u7387|\u81ea\u64b0\u6bd4)[^\d]{0,8}(\d{1,3}(?:\.\d+)?)\s*%",
+        text,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+    return min(float(match.group(1)), 100.0)
+
+
+def _extract_aigc_ratio(text: str) -> float | None:
+    direct = _extract_percent(text, _AIGC_RE)
+    if direct is not None:
+        return direct
+
+    compact = re.sub(r"\s+", "", text)
+    compact_match = re.search(
+        r"(?:AIGC|AI特征值|AI检测结果|AIGC检测结果|AI检测率|AIGC检测率|AI写作|AI生成|疑似AIGC|疑似AI|AIGC率|AI率|AI比例)(\d{1,3}(?:\.\d+)?)%",
+        compact,
+        re.IGNORECASE,
+    )
+    if compact_match:
+        return min(float(compact_match.group(1)), 100.0)
+
+    return _extract_aigc_ratio_from_table(text)
+
+
+def _extract_aigc_ratio_from_table(text: str) -> float | None:
+    compact = re.sub(r"\s+", "", text).upper()
+    if "AIGC" not in compact and "AI生成" not in text and "疑AI" not in text and "AIGC生成" not in compact:
+        return None
+
+    section = text
+    anchor_match = re.search(r"(?:AIGC|AI\s*GC|疑AI|AI生成)", text, re.IGNORECASE)
+    if anchor_match:
+        start = max(0, anchor_match.start() - 120)
+        section = text[start : start + 6000]
+
+    pairs: list[tuple[int, int]] = []
+    for numer_text, denom_text in re.findall(r"(?<!\d)(\d{1,6})/(\d{2,7})(?!\d)", section):
+        numer = int(numer_text)
+        denom = int(denom_text)
+        if denom < 100 or denom > 500000:
+            continue
+        if numer < 0 or numer > denom:
+            continue
+        pairs.append((numer, denom))
+
+    if len(pairs) < 2:
+        return None
+
+    total_numer = sum(item[0] for item in pairs)
+    total_denom = sum(item[1] for item in pairs)
+    if total_denom <= 0:
+        return None
+
+    percent = round(total_numer * 100 / total_denom, 2)
+    return percent if 0 <= percent <= 100 else None
+
+
 def _extract_date(text: str) -> str | None:
     m = _DATE_RE.search(text)
     return m.group(1) if m else None
@@ -173,8 +261,8 @@ def _parse_pdf_report(file_path: str) -> CnkiReport:
 
     report = CnkiReport(
         report_type=report_type,
-        total_copy_ratio=_extract_percent(full_text, _TOTAL_COPY_RE),
-        aigc_ratio=_extract_percent(full_text, _AIGC_RE),
+        total_copy_ratio=_extract_total_copy_ratio(full_text),
+        aigc_ratio=_extract_aigc_ratio(full_text),
         remove_reference_ratio=_extract_percent(full_text, _REMOVE_REF_RE),
         single_max_ratio=_extract_percent(full_text, _SINGLE_MAX_RE),
         generated_at=_extract_date(full_text),
@@ -254,8 +342,8 @@ def _parse_html_report(file_path: str) -> CnkiReport:
 
     report = CnkiReport(
         report_type=report_type,
-        total_copy_ratio=_extract_percent(parser.all_text, _TOTAL_COPY_RE),
-        aigc_ratio=_extract_percent(parser.all_text, _AIGC_RE),
+        total_copy_ratio=_extract_total_copy_ratio(parser.all_text),
+        aigc_ratio=_extract_aigc_ratio(parser.all_text),
         remove_reference_ratio=_extract_percent(parser.all_text, _REMOVE_REF_RE),
         single_max_ratio=_extract_percent(parser.all_text, _SINGLE_MAX_RE),
         generated_at=_extract_date(parser.all_text),
@@ -331,8 +419,8 @@ def _parse_docx_report(file_path: str) -> CnkiReport:
 
     report = CnkiReport(
         report_type=report_type,
-        total_copy_ratio=_extract_percent(full_text, _TOTAL_COPY_RE),
-        aigc_ratio=_extract_percent(full_text, _AIGC_RE),
+        total_copy_ratio=_extract_total_copy_ratio(full_text),
+        aigc_ratio=_extract_aigc_ratio(full_text),
         remove_reference_ratio=_extract_percent(full_text, _REMOVE_REF_RE),
         single_max_ratio=_extract_percent(full_text, _SINGLE_MAX_RE),
         generated_at=_extract_date(full_text),

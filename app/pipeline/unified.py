@@ -95,27 +95,16 @@ class UnifiedPipeline:
         if not content:
             raise ValueError("文件为空")
 
-        filename = file.filename or "paper.txt"
+        filename = file.filename or "paper.docx"
         if len(filename) > 255:
             raise ValueError("文件名过长（最大 255 字符）")
+        if not filename.lower().endswith(".docx"):
+            raise ValueError("仅支持 .docx 格式文件")
+        original_path = self._write_binary(
+            self.settings.upload_storage_dir, filename, content
+        )
         extract_filename = filename
         extract_content = content
-        if filename.lower().endswith(".doc"):
-            converted = convert_doc_to_docx(content, self.settings.upload_storage_dir)
-            if converted:
-                converted_path = Path(converted)
-                extract_filename = converted_path.name
-                extract_content = converted_path.read_bytes()
-                filename = converted_path.name
-                original_path = str(converted_path.resolve())
-            else:
-                original_path = self._write_binary(
-                    self.settings.upload_storage_dir, filename, content
-                )
-        else:
-            original_path = self._write_binary(
-                self.settings.upload_storage_dir, filename, content
-            )
         raw_text = extract_text(extract_filename, extract_content)
         cleaned_text = clean_body_text(raw_text)
         if _looks_like_garbled_text(cleaned_text):

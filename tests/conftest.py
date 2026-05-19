@@ -2,17 +2,31 @@
 
 from __future__ import annotations
 
+import io
 import shutil
 from functools import lru_cache
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from docx import Document as DocxDocument
 from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import app, get_calibrator
 from app.services.calibration import CnkiCalibrator
+
+
+def make_docx_bytes(text: str) -> bytes:
+    """生成仅包含简单段落的最小 .docx 文件字节，供测试上传使用。"""
+    doc = DocxDocument()
+    for paragraph in text.split("\n\n"):
+        if paragraph.strip():
+            doc.add_paragraph(paragraph.strip())
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf.read()
 
 
 @pytest.fixture

@@ -671,6 +671,7 @@ function looksBinaryLikeText(text: string): boolean {
 function returnToOnlyOffice() {
   const nextQuery = { ...route.query }
   delete nextQuery.fallback
+  nextQuery.onlyoffice = '1'
   router.replace({
     name: 'rewrite',
     params: { runId: props.runId },

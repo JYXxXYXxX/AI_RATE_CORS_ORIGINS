@@ -1,63 +1,67 @@
 <template>
   <header class="rewrite-topbar">
-    <div class="rewrite-topbar__left">
-      <button type="button" class="topbar-link" @click="$emit('back')">
-        <el-icon><ArrowLeft /></el-icon>
-        <span>返回报告</span>
-      </button>
-      <div class="rewrite-topbar__title">
-        <p class="rewrite-topbar__eyebrow">PataFix 在线改写</p>
-        <h1>{{ title }}</h1>
-        <p class="rewrite-topbar__filename">{{ filename }}</p>
+    <div class="rewrite-topbar__brand">
+      <div class="brand-mark">P</div>
+      <div class="brand-copy">
+        <strong>PataFix</strong>
+        <span>AIGC 在线改写工作区</span>
       </div>
     </div>
 
-    <div class="rewrite-topbar__metrics">
-      <div v-for="metric in metrics" :key="metric.label" class="metric-chip">
-        <span>{{ metric.label }}</span>
-        <strong>{{ metric.value }}</strong>
+    <nav class="rewrite-topbar__nav">
+      <button
+        v-for="item in navItems"
+        :key="item"
+        type="button"
+        class="nav-pill"
+        :class="{ 'is-active': item === '改写' }"
+      >
+        {{ item }}
+      </button>
+    </nav>
+
+    <div class="rewrite-topbar__progress">
+      <span class="progress-label">AIGC 总体疑似度</span>
+      <div class="progress-track">
+        <div class="progress-fill" :style="{ width: `${progress}%` }"></div>
       </div>
+      <strong>{{ progressLabel }}</strong>
     </div>
 
     <div class="rewrite-topbar__actions">
-      <el-button @click="$emit('rewrite-all')" :loading="rewriteAllLoading">一键改写</el-button>
-      <el-button @click="$emit('undo')" :disabled="!canUndo">
-        <el-icon><RefreshLeft /></el-icon>
-        撤销
-      </el-button>
-      <el-button @click="$emit('redo')" :disabled="!canRedo">
-        <el-icon><RefreshRight /></el-icon>
-        重做
-      </el-button>
-      <el-button @click="$emit('save')" :loading="saveLoading">保存</el-button>
-      <el-button type="primary" @click="$emit('export')" :loading="exportLoading">
-        <el-icon><Download /></el-icon>
+      <button type="button" class="action-btn" @click="$emit('download-report')">下载报告</button>
+      <button
+        type="button"
+        class="action-btn action-btn--primary"
+        :disabled="exportLoading"
+        @click="$emit('export')"
+      >
         导出文档
-      </el-button>
+      </button>
+      <div class="user-pill">
+        <span class="user-avatar">PF</span>
+        <div class="user-copy">
+          <strong>{{ title }}</strong>
+          <span>{{ filename }}</span>
+        </div>
+      </div>
     </div>
   </header>
 </template>
 
 <script setup lang="ts">
-import { ArrowLeft, Download, RefreshLeft, RefreshRight } from '@element-plus/icons-vue'
+const navItems = ['检测', '改写', '降 AIGC', '工具箱']
 
 defineProps<{
   title: string
   filename: string
-  metrics: Array<{ label: string; value: string }>
-  canUndo: boolean
-  canRedo: boolean
-  saveLoading: boolean
+  progress: number
+  progressLabel: string
   exportLoading: boolean
-  rewriteAllLoading: boolean
 }>()
 
 defineEmits<{
-  (e: 'back'): void
-  (e: 'rewrite-all'): void
-  (e: 'undo'): void
-  (e: 'redo'): void
-  (e: 'save'): void
+  (e: 'download-report'): void
   (e: 'export'): void
 }>()
 </script>
@@ -65,117 +69,181 @@ defineEmits<{
 <style scoped>
 .rewrite-topbar {
   display: grid;
-  grid-template-columns: minmax(260px, 1.1fr) minmax(360px, 1fr) auto;
+  grid-template-columns: auto auto minmax(260px, 340px) auto;
+  align-items: center;
   gap: 18px;
-  padding: 18px 24px;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(14px);
+  padding: 14px 24px;
+  background: linear-gradient(180deg, #0a1511 0%, #0d1f18 100%);
+  color: #f4f7f1;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.rewrite-topbar__left {
+.rewrite-topbar__brand {
   display: flex;
   align-items: center;
-  gap: 16px;
-  min-width: 0;
-}
-
-.topbar-link {
-  border: 0;
-  background: transparent;
-  color: #2e7d5a;
-  font-size: 14px;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  padding: 0;
-}
-
-.rewrite-topbar__title {
-  min-width: 0;
-}
-
-.rewrite-topbar__eyebrow,
-.rewrite-topbar__filename {
-  margin: 0;
-  color: #6b7280;
-}
-
-.rewrite-topbar__eyebrow {
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.rewrite-topbar__title h1 {
-  margin: 4px 0;
-  font-size: 24px;
-  line-height: 1.25;
-  color: #111827;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.rewrite-topbar__filename {
-  font-size: 13px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.rewrite-topbar__metrics {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 12px;
 }
 
-.metric-chip {
-  min-height: 72px;
-  border-radius: 16px;
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
-  padding: 12px;
+.brand-mark {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(31, 164, 91, 0.9) 0%, rgba(15, 143, 79, 1) 100%);
   display: grid;
-  gap: 8px;
+  place-items: center;
+  font-size: 18px;
+  font-weight: 800;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
-.metric-chip span {
+.brand-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.brand-copy strong {
+  font-size: 17px;
+  letter-spacing: 0.02em;
+}
+
+.brand-copy span {
+  color: rgba(226, 232, 240, 0.72);
   font-size: 12px;
-  color: #6b7280;
 }
 
-.metric-chip strong {
-  font-size: 20px;
-  color: #0f172a;
+.rewrite-topbar__nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nav-pill {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(241, 245, 249, 0.78);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.nav-pill.is-active {
+  background: rgba(31, 164, 91, 0.18);
+  border-color: rgba(31, 164, 91, 0.34);
+  color: #f8fffb;
+}
+
+.rewrite-topbar__progress {
+  display: grid;
+  gap: 6px;
+}
+
+.progress-label {
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.72);
+}
+
+.progress-track {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #1fa45b 0%, #44d07c 100%);
+}
+
+.rewrite-topbar__progress strong {
+  font-size: 16px;
+  color: #ffffff;
 }
 
 .rewrite-topbar__actions {
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
   justify-content: flex-end;
+  gap: 10px;
 }
 
-@media (max-width: 1440px) {
+.action-btn {
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.04);
+  color: #eff6f0;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.action-btn--primary {
+  background: linear-gradient(180deg, #1fa45b 0%, #128347 100%);
+  border-color: rgba(31, 164, 91, 0.9);
+}
+
+.action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.user-pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  min-width: 220px;
+}
+
+.user-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(31, 164, 91, 0.24);
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.user-copy {
+  min-width: 0;
+  display: grid;
+}
+
+.user-copy strong,
+.user-copy span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-copy strong {
+  font-size: 13px;
+}
+
+.user-copy span {
+  color: rgba(226, 232, 240, 0.68);
+  font-size: 11px;
+}
+
+@media (max-width: 1500px) {
   .rewrite-topbar {
     grid-template-columns: 1fr;
   }
 
-  .rewrite-topbar__metrics {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
   .rewrite-topbar__actions {
     justify-content: flex-start;
-  }
-}
-
-@media (max-width: 900px) {
-  .rewrite-topbar__metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    flex-wrap: wrap;
   }
 }
 </style>

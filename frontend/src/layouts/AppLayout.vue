@@ -1,7 +1,7 @@
 <template>
-  <div class="app-layout">
+  <div class="app-layout" :class="{ 'app-layout--immersive': isImmersiveRewrite }">
     <div class="page-load-bar" :class="{ loaded: pageLoaded }" aria-hidden="true" />
-    <header class="app-header">
+    <header v-if="!isImmersiveRewrite" class="app-header">
       <div class="app-header-left">
         <router-link to="/app" class="app-logo">
           <img class="app-logo-mark" :src="logoSrc" width="28" height="28" alt="PataFix" />
@@ -53,7 +53,7 @@
     <main class="app-main">
       <router-view />
     </main>
-    <footer class="app-footer">
+    <footer v-if="!isImmersiveRewrite" class="app-footer">
       <div class="footer-brand">
         <strong>PataFix</strong>
         <span>{{ ui.footerTagline }}</span>
@@ -70,7 +70,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { HomeFilled, CirclePlusFilled, UserFilled, EditPen, DataBoard } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { useAnalysisStore } from '../stores/analysis'
@@ -78,6 +78,7 @@ import { useAnalysisStore } from '../stores/analysis'
 const auth = useAuthStore()
 const analysis = useAnalysisStore()
 const router = useRouter()
+const route = useRoute()
 type LanguageMode = 'zh' | 'en'
 
 const language = ref<LanguageMode>((localStorage.getItem('patafix-language') as LanguageMode) || 'zh')
@@ -91,6 +92,7 @@ const userInitial = computed(() => {
 const latestRunId = computed(() =>
   analysis.history.find(item => item.run_id && item.status === 'completed')?.run_id || ''
 )
+const isImmersiveRewrite = computed(() => route.name === 'rewrite')
 const logoSrc = computed(() => '/logo-icon.png?v=3')
 const ui = computed(() => {
   if (language.value === 'en') {
@@ -140,6 +142,8 @@ onMounted(() => {
 
 async function handleLogout() {
   await auth.logout()
+  analysis.resetSubmissionState()
+  analysis.history = []
   router.push('/login')
 }
 
@@ -171,6 +175,10 @@ function applyLanguage() {
   transition:
     background 0.28s ease,
     color 0.28s ease;
+}
+
+.app-layout--immersive {
+  background: #f4f5ef;
 }
 
 .page-load-bar {

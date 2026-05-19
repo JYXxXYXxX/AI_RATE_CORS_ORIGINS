@@ -14,17 +14,18 @@
         :key="tab.value"
         type="button"
         class="risk-tab"
-        :class="{ 'is-active': activeTab === tab.value }"
+        :class="[{ 'is-active': activeTab === tab.value }, `is-${tab.value}`]"
         @click="$emit('change-tab', tab.value)"
       >
-        {{ tab.label }}
+        <span>{{ tab.label }}</span>
+        <strong>{{ tabCounts[tab.value] }}</strong>
       </button>
     </div>
 
     <section v-if="activeItem" class="focus-card" :class="`is-${effectiveLevel(activeItem)}`">
       <div class="focus-card__meta">
-        <span class="focus-card__level">{{ levelLabel(effectiveLevel(activeItem)) }}</span>
-        <span class="focus-card__score">AIGC {{ Math.round(activeItem.aigcScore) }}%</span>
+        <span class="focus-card__level">{{ levelLabel(effectiveLevel(activeItem), activeStatus) }}</span>
+        <span class="focus-card__score">AIGC 疑似度 {{ Math.round(activeItem.aigcScore) }}%</span>
       </div>
 
       <div class="focus-card__section">
@@ -37,7 +38,7 @@
         <p>{{ activeItem.originalText }}</p>
       </div>
 
-      <div class="focus-card__section">
+      <div class="focus-card__section focus-card__section--rewrite">
         <h4>改写建议</h4>
         <p>{{ suggestionText }}</p>
       </div>
@@ -48,10 +49,17 @@
       </div>
 
       <div class="focus-card__actions">
-        <el-button @click="$emit('previous')" :disabled="!hasPrevious">上一条</el-button>
-        <el-button @click="$emit('next')" :disabled="!hasNext">下一条</el-button>
-        <el-button type="primary" @click="$emit('apply')" :loading="applyLoading">替换原文</el-button>
-        <el-button @click="$emit('ignore')">忽略</el-button>
+        <button type="button" class="mini-btn" :disabled="!hasPrevious" @click="$emit('previous')">上一条</button>
+        <button type="button" class="mini-btn" :disabled="!hasNext" @click="$emit('next')">下一条</button>
+        <button
+          type="button"
+          class="mini-btn mini-btn--primary"
+          :disabled="applyLoading"
+          @click="$emit('apply')"
+        >
+          替换原文
+        </button>
+        <button type="button" class="mini-btn mini-btn--ghost" @click="$emit('ignore')">忽略</button>
       </div>
     </section>
 
@@ -61,14 +69,14 @@
         :key="item.riskId"
         type="button"
         class="suggestion-item"
-        :class="{
-          'is-active': item.riskId === activeRiskId,
-          [`is-${effectiveLevel(item)}`]: true
-        }"
+        :class="[
+          { 'is-active': item.riskId === activeRiskId },
+          `is-${effectiveLevel(item)}`
+        ]"
         @click="$emit('select-risk', item.riskId)"
       >
         <div class="suggestion-item__top">
-          <span class="suggestion-item__level">{{ levelLabel(effectiveLevel(item)) }}</span>
+          <span class="suggestion-item__level">{{ levelLabel(effectiveLevel(item), statusByRiskId[item.riskId] || item.status) }}</span>
           <span class="suggestion-item__score">{{ Math.round(item.aigcScore) }}%</span>
         </div>
         <strong>{{ item.sectionTitle || `段落 ${item.displayOrder + 1}` }}</strong>
@@ -100,6 +108,7 @@ const props = defineProps<{
   hasNext: boolean
   applyLoading: boolean
   statusByRiskId: Record<string, RewriteWorkspaceRiskItem['status']>
+  tabCounts: Record<'high' | 'medium' | 'low' | 'normal', number>
 }>()
 
 defineEmits<{
@@ -117,11 +126,13 @@ function effectiveLevel(item: RewriteWorkspaceRiskItem) {
   return item.riskLevel
 }
 
-function levelLabel(level: 'high' | 'medium' | 'low' | 'normal') {
+function levelLabel(level: 'high' | 'medium' | 'low' | 'normal', status: RewriteWorkspaceRiskItem['status']) {
+  if (status === 'applied') return '已改写'
+  if (status === 'ignored') return '已忽略'
   if (level === 'high') return '高风险'
   if (level === 'medium') return '中风险'
   if (level === 'low') return '低风险'
-  return props.activeStatus === 'applied' ? '已改写' : '正常'
+  return '正常'
 }
 
 const suggestionText = computed(() =>
@@ -129,15 +140,16 @@ const suggestionText = computed(() =>
 )
 
 const principleText = computed(() =>
-  props.suggestion?.overall_advice || props.activeItem?.principle || '通过调整句式结构、补充语义细节来降低模板化痕迹。'
+  props.suggestion?.overall_advice || props.activeItem?.principle || '通过调整句式结构、补充细节和弱化模板表达来降低风险。'
 )
 </script>
 
 <style scoped>
 .suggestion-panel {
-  display: grid;
-  gap: 16px;
   min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 14px;
 }
 
 .suggestion-panel__header {
@@ -149,25 +161,25 @@ const principleText = computed(() =>
 
 .suggestion-panel__eyebrow {
   margin: 0 0 6px;
+  color: #0f8f4f;
   font-size: 12px;
-  font-weight: 700;
-  color: #6b7280;
+  font-weight: 800;
 }
 
 .suggestion-panel__header h3 {
   margin: 0;
-  font-size: 20px;
+  font-size: 22px;
   color: #111827;
 }
 
 .suggestion-panel__count {
-  min-width: 32px;
-  height: 32px;
+  min-width: 34px;
+  height: 34px;
   border-radius: 999px;
-  background: #f3f4f6;
-  color: #374151;
+  background: #eff6f0;
+  color: #0f8f4f;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 800;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -180,82 +192,155 @@ const principleText = computed(() =>
 }
 
 .risk-tab {
+  min-height: 54px;
+  border-radius: 14px;
   border: 1px solid #e5e7eb;
-  background: #fff;
-  color: #374151;
-  border-radius: 12px;
-  min-height: 40px;
-  font-size: 13px;
-  font-weight: 600;
+  background: #ffffff;
+  padding: 10px 12px;
+  display: grid;
+  gap: 4px;
+  text-align: left;
   cursor: pointer;
 }
 
+.risk-tab span {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.risk-tab strong {
+  font-size: 18px;
+  color: #111827;
+}
+
 .risk-tab.is-active {
-  border-color: rgba(46, 125, 90, 0.36);
-  background: #effaf4;
-  color: #166534;
+  box-shadow: 0 14px 24px rgba(15, 23, 42, 0.08);
+}
+
+.risk-tab.is-active.is-high {
+  border-color: rgba(239, 68, 68, 0.24);
+  background: #fff4f4;
+}
+
+.risk-tab.is-active.is-medium {
+  border-color: rgba(245, 158, 11, 0.24);
+  background: #fff9ef;
+}
+
+.risk-tab.is-active.is-low {
+  border-color: rgba(139, 92, 246, 0.24);
+  background: #f7f2ff;
+}
+
+.risk-tab.is-active.is-normal {
+  border-color: rgba(34, 197, 94, 0.24);
+  background: #eefcf2;
 }
 
 .focus-card {
-  border-radius: 18px;
+  border-radius: 20px;
   border: 1px solid #e5e7eb;
-  background: #fff;
+  background: #ffffff;
   padding: 18px;
   display: grid;
   gap: 14px;
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.06);
 }
 
 .focus-card.is-high {
-  border-color: rgba(220, 38, 38, 0.2);
-  background: linear-gradient(180deg, rgba(254, 242, 242, 0.95) 0%, #ffffff 100%);
+  border-color: rgba(239, 68, 68, 0.22);
+  background: linear-gradient(180deg, rgba(255, 245, 245, 0.98) 0%, #ffffff 100%);
 }
 
 .focus-card.is-medium {
-  border-color: rgba(249, 115, 22, 0.2);
-  background: linear-gradient(180deg, rgba(255, 247, 237, 0.95) 0%, #ffffff 100%);
+  border-color: rgba(245, 158, 11, 0.22);
+  background: linear-gradient(180deg, rgba(255, 249, 238, 0.98) 0%, #ffffff 100%);
 }
 
 .focus-card.is-low {
-  border-color: rgba(147, 51, 234, 0.2);
-  background: linear-gradient(180deg, rgba(250, 245, 255, 0.95) 0%, #ffffff 100%);
+  border-color: rgba(139, 92, 246, 0.2);
+  background: linear-gradient(180deg, rgba(247, 242, 255, 0.98) 0%, #ffffff 100%);
 }
 
 .focus-card.is-normal {
-  border-color: rgba(22, 163, 74, 0.18);
-  background: linear-gradient(180deg, rgba(240, 253, 244, 0.95) 0%, #ffffff 100%);
+  border-color: rgba(34, 197, 94, 0.2);
+  background: linear-gradient(180deg, rgba(239, 252, 243, 0.98) 0%, #ffffff 100%);
 }
 
 .focus-card__meta {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
 }
 
-.focus-card__level,
+.focus-card__level {
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(15, 23, 42, 0.06);
+  color: #111827;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .focus-card__score {
   font-size: 13px;
+  color: #475569;
   font-weight: 700;
-  color: #374151;
+}
+
+.focus-card__section {
+  display: grid;
+  gap: 6px;
 }
 
 .focus-card__section h4 {
-  margin: 0 0 6px;
+  margin: 0;
   font-size: 13px;
   color: #6b7280;
 }
 
 .focus-card__section p {
   margin: 0;
-  color: #111827;
   font-size: 14px;
-  line-height: 1.75;
+  color: #111827;
+  line-height: 1.8;
+}
+
+.focus-card__section--rewrite p {
+  color: #0f8f4f;
 }
 
 .focus-card__actions {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
+}
+
+.mini-btn {
+  min-height: 40px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #ffffff;
+  color: #111827;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.mini-btn--primary {
+  background: #0f8f4f;
+  color: #ffffff;
+  border-color: #0f8f4f;
+}
+
+.mini-btn--ghost {
+  color: #64748b;
+}
+
+.mini-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .suggestion-panel__list {
@@ -268,8 +353,8 @@ const principleText = computed(() =>
 
 .suggestion-item {
   border: 1px solid #e5e7eb;
-  border-radius: 14px;
-  background: #fff;
+  border-radius: 16px;
+  background: #ffffff;
   padding: 14px;
   text-align: left;
   display: grid;
@@ -278,8 +363,8 @@ const principleText = computed(() =>
 }
 
 .suggestion-item.is-active {
-  border-color: rgba(46, 125, 90, 0.32);
-  box-shadow: 0 12px 24px rgba(46, 125, 90, 0.1);
+  border-color: rgba(15, 143, 79, 0.22);
+  box-shadow: 0 14px 26px rgba(15, 143, 79, 0.1);
 }
 
 .suggestion-item__top {
@@ -298,13 +383,30 @@ const principleText = computed(() =>
 .suggestion-item strong {
   color: #111827;
   font-size: 14px;
+  line-height: 1.5;
 }
 
 .suggestion-item p {
   margin: 0;
-  color: #4b5563;
+  color: #475569;
   font-size: 13px;
-  line-height: 1.7;
+  line-height: 1.75;
+}
+
+.suggestion-item.is-high {
+  border-left: 4px solid #ef4444;
+}
+
+.suggestion-item.is-medium {
+  border-left: 4px solid #f59e0b;
+}
+
+.suggestion-item.is-low {
+  border-left: 4px solid #8b5cf6;
+}
+
+.suggestion-item.is-normal {
+  border-left: 4px solid #22c55e;
 }
 
 @media (max-width: 1100px) {

@@ -1,7 +1,7 @@
 <template>
   <div class="rewrite-page">
-    <PataFixEditor v-if="useFallback" :run-id="runId" />
-    <OnlyOfficeRewriteWorkspace v-else :run-id="runId" />
+    <OnlyOfficeRewriteWorkspace v-if="useOnlyOffice" :run-id="runId" />
+    <RewriteWorkspacePage v-else :run-id="runId" />
   </div>
 </template>
 
@@ -9,22 +9,21 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import OnlyOfficeRewriteWorkspace from '../components/editor/OnlyOfficeRewriteWorkspace.vue'
-import PataFixEditor from '../components/editor/PataFixEditor.vue'
+import RewriteWorkspacePage from './RewriteWorkspacePage.vue'
 
 defineProps<{
   runId: string
 }>()
 
 const route = useRoute()
-const useFallback = computed(() => route.query.fallback === '1')
+const useOnlyOffice = computed(() => route.query.onlyoffice === '1')
 </script>
 
 <style scoped>
 .rewrite-page {
+  min-height: 100vh;
   height: 100vh;
-  display: flex;
-  flex-direction: column;
+  background: #f4f5ef;
   overflow: hidden;
-  background: #FAF9F6;
 }
 </style>
