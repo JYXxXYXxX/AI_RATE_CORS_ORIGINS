@@ -14,8 +14,7 @@
 
     <div class="preview-shell">
       <div v-if="loading" class="preview-state">
-        正在按原始文件渲染文档，图片、表格和段落格式会随原文件保留。<br>
-        <small>文档较大时可能需要 5–15 秒，请稍候…</small>
+        正在按原始文件渲染文档，图片、表格和段落格式会随原文件保留。
       </div>
       <div v-else-if="highlighting" class="preview-state sub">
         正在标记风险段落，请稍候…
@@ -144,38 +143,23 @@ async function renderOriginalDocument() {
 
     await nextTick()
     if (!docxContainer.value) return
-    const renderPromise = renderAsync(blob, docxContainer.value, docxContainer.value, {
+    await renderAsync(blob, docxContainer.value, docxContainer.value, {
       className: 'docx',
       inWrapper: true,
       ignoreWidth: false,
       ignoreHeight: false,
       ignoreFonts: true,
-      breakPages: false,
-      renderHeaders: false,
-      renderFooters: false,
-      renderFootnotes: false,
-      renderEndnotes: false,
+      breakPages: true,
+      renderHeaders: true,
+      renderFooters: true,
+      renderFootnotes: true,
+      renderEndnotes: true,
       renderAltChunks: true,
       renderComments: false,
       renderChanges: false,
       useBase64URL: true,
       experimental: true,
     })
-
-    const timeoutPromise = new Promise<void>((_, reject) => {
-      setTimeout(() => reject(new Error('render-timeout')), 15000)
-    })
-
-    try {
-      await Promise.race([renderPromise, timeoutPromise])
-    } catch (err: any) {
-      if (err?.message === 'render-timeout') {
-        errorMessage.value = '文档较大，浏览器渲染超时。建议下载原文档查看，或尝试分段处理。'
-        loading.value = false
-        return
-      }
-      throw err
-    }
     loading.value = false
     highlighting.value = true
     await nextTick()
