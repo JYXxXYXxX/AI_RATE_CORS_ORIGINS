@@ -156,6 +156,8 @@ async function renderOriginalDocument() {
       useBase64URL: true,
       experimental: true,
     })
+    loading.value = false
+    await nextTick()
     applyRiskHighlights()
     attachDocxInteractions()
     activateRiskMark()
