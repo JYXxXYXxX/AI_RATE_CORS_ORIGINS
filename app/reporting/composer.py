@@ -5,6 +5,8 @@ import re
 from collections import defaultdict
 from typing import Any
 
+from app.plagiarism.scoring import _is_garbled as _is_garbled_text
+
 
 _SECTION_TYPE_MAP: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"摘要|abstract", re.IGNORECASE), "abstract"),
@@ -48,6 +50,19 @@ _DIM_NAMES: dict[str, str] = {
     "citation_risk": "引用不规范",
 }
 
+_GARBLED_PREVIEW_HINTS = (
+    "usernormal",
+    "normal.dotm",
+    "microsoft office word",
+    "worddocument",
+    "standalone",
+    "xmlns",
+    "bibliography",
+    "_toc",
+    "_hyperlink",
+)
+_COMMON_PROSE_MARKERS = "的是了一在和与及为对将并等可通过本文我们研究系统设计实现功能模块数据用户"
+
 
 def compose_report(
     *,
@@ -60,13 +75,31 @@ def compose_report(
     section_reports = _merge_section_reports(
         ai_report.segment_reports, duplication.section_scores
     )
-    chapter_heatmap = _build_chapter_heatmap(section_reports)
-    actionable_sections = _actionable_sections(section_reports)
+    readable_sections = [
+        dict(section) for section in section_reports if _is_readable_section(section)
+    ]
+    chapter_heatmap = _build_chapter_heatmap(readable_sections)
+    actionable_sections = _actionable_sections(readable_sections)
+    overall_risk = _overall_risk(proxy_prediction, actionable_sections)
+    if len(actionable_sections) < 3 and overall_risk in ("high", "medium"):
+        actionable_sections = _backfill_actionable_sections(
+            readable_sections,
+            actionable_sections,
+            overall_risk=overall_risk,
+            predicted_aigc_high=float(proxy_prediction["predicted_cnki_aigc_high"]),
+            predicted_dup_high=float(proxy_prediction["predicted_cnki_dup_high"]),
+        )
     top_risk_sections = sorted(
         actionable_sections, key=lambda item: item["combined_score"], reverse=True
     )[:8]
     priority_sections = _build_priority_sections(actionable_sections)
-    priority_summary = _build_priority_summary(priority_sections)
+    warnings = _build_report_warnings(
+        document=document,
+        section_reports=section_reports,
+        priority_sections=priority_sections,
+        overall_risk=overall_risk,
+    )
+    priority_summary = _build_priority_summary(priority_sections, warnings)
     top_similarity_matches = _serialize_matches(duplication.matches, section_reports)[
         :10
     ]
@@ -75,7 +108,11 @@ def compose_report(
     submission_checklist = _build_submission_checklist(
         top_risk_sections, top_similarity_matches
     )
-    first_fix_targets = [item["title"] for item in revision_plan[:3]]
+    first_fix_targets = _build_first_fix_targets(
+        revision_plan,
+        warnings,
+        has_risk_sections=bool(top_risk_sections),
+    )
     risk_score = _risk_score(proxy_prediction, top_risk_sections)
     overall_risk = _overall_risk(proxy_prediction, top_risk_sections)
 
@@ -121,6 +158,7 @@ def compose_report(
         "revision_plan": revision_plan,
         "mentor_brief": mentor_brief,
         "submission_checklist": submission_checklist,
+        "warnings": warnings,
         "disclaimer": ai_report.disclaimer,
         "retained_content_policy": ai_report.retained_content_policy,
     }
@@ -146,6 +184,119 @@ def _is_actionable_section(section: dict[str, Any]) -> bool:
 
 def _actionable_sections(section_reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [dict(section) for section in section_reports if _is_actionable_section(section)]
+
+
+def _looks_like_unreadable_preview(text: str) -> bool:
+    preview = (text or "").strip()
+    if not preview:
+        return True
+
+    lowered = preview.lower()
+    if any(token in lowered for token in _GARBLED_PREVIEW_HINTS):
+        return True
+
+    compact = "".join(preview.split())
+    if len(compact) < 24:
+        return False
+
+    replacement_like = compact.count("�") + compact.count("锟")
+    if replacement_like / max(len(compact), 1) >= 0.03:
+        return True
+
+    accent_latin_chars = sum(1 for ch in compact if 0x00C0 <= ord(ch) <= 0x024F)
+    if accent_latin_chars / max(len(compact), 1) >= 0.06:
+        return True
+
+    chinese_chars = sum(1 for ch in compact if "\u4e00" <= ch <= "\u9fff")
+    prose_marker_hits = sum(1 for ch in compact if ch in _COMMON_PROSE_MARKERS)
+    if chinese_chars >= 12 and prose_marker_hits < max(2, chinese_chars // 40):
+        return True
+
+    english_words = re.findall(r"[A-Za-z]{2,}", preview)
+    if len(english_words) >= 8:
+        english_stopword_hits = sum(
+            1
+            for word in english_words
+            if word.lower()
+            in {
+                "the",
+                "and",
+                "for",
+                "with",
+                "that",
+                "this",
+                "from",
+                "into",
+                "were",
+                "was",
+                "are",
+                "is",
+                "of",
+                "to",
+                "in",
+                "on",
+                "by",
+            }
+        )
+        if english_stopword_hits == 0:
+            return True
+
+    return _is_garbled_text(preview, threshold=0.76)
+
+
+def _is_readable_section(section: dict[str, Any]) -> bool:
+    preview = str(section.get("text_preview") or "")
+    return not _looks_like_unreadable_preview(preview)
+
+
+def _backfill_actionable_sections(
+    section_reports: list[dict[str, Any]],
+    actionable_sections: list[dict[str, Any]],
+    *,
+    overall_risk: str,
+    predicted_aigc_high: float,
+    predicted_dup_high: float,
+) -> list[dict[str, Any]]:
+    existing_indices = {int(item["section_index"]) for item in actionable_sections}
+    candidates = [
+        dict(section)
+        for section in section_reports
+        if int(section.get("section_index", -1)) not in existing_indices
+        and _infer_section_type(section.get("section_title")) not in ("references", "acknowledgement")
+        and bool(section.get("text_preview"))
+        and int(section.get("char_count", 0) or 0) >= 45
+    ]
+    candidates.sort(
+        key=lambda item: (
+            float(item.get("aigc_score", 0.0)),
+            float(item.get("combined_score", 0.0)),
+            float(item.get("sub_scores", {}).get("overall_risk", 0.0)) if item.get("sub_scores") else 0.0,
+            int(item.get("char_count", 0) or 0),
+        ),
+        reverse=True,
+    )
+    if not candidates:
+        return actionable_sections
+
+    target_count = 4 if overall_risk == "high" else 3
+    fallback = candidates[:target_count]
+    for rank, section in enumerate(fallback, start=1):
+        proxy_reason = _proxy_backfill_reason(
+            overall_risk=overall_risk,
+            predicted_aigc_high=predicted_aigc_high,
+            predicted_dup_high=predicted_dup_high,
+            rank=rank,
+        )
+        reasons = [proxy_reason, *_meaningful_reasons(section.get("reasons", []))]
+        section["reasons"] = reasons[:4]
+        if overall_risk == "high":
+            section["risk_level"] = "high" if rank <= 2 else "medium"
+            section["combined_score"] = max(float(section.get("combined_score", 0.0)), 0.52 if rank <= 2 else 0.34)
+        else:
+            section["risk_level"] = "medium"
+            section["combined_score"] = max(float(section.get("combined_score", 0.0)), 0.32)
+        section["proxy_backfill"] = True
+    return [*actionable_sections, *fallback]
 
 
 def _merge_section_reports(
@@ -453,9 +604,20 @@ def _build_priority_sections(
 
 def _build_priority_summary(
     priority_sections: list[dict[str, Any]],
+    warnings: list[str] | None = None,
 ) -> str:
     if not priority_sections:
+        if warnings:
+            return warnings[0]
         return "暂未检测到需要优先优化的段落。"
+
+    if any(section.get("proxy_backfill") for section in priority_sections):
+        high_count = sum(1 for section in priority_sections if section.get("risk_level") == "high")
+        medium_count = sum(1 for section in priority_sections if section.get("risk_level") == "medium")
+        return (
+            f"系统已按全文高风险信号回填 {len(priority_sections)} 段最可疑片段"
+            f"（高风险 {high_count} 段、中风险 {medium_count} 段），建议优先逐段复查。"
+        )
 
     type_counts: dict[str, int] = defaultdict(int)
     for s in priority_sections:
@@ -486,6 +648,93 @@ def _build_priority_summary(
             parts.append(f"同时存在{_DIM_NAMES.get(top_dims[1][0], top_dims[1][0])}问题")
 
     return "，".join(parts) + "。"
+
+
+def _build_report_warnings(
+    *,
+    document: dict[str, Any],
+    section_reports: list[dict[str, Any]],
+    priority_sections: list[dict[str, Any]],
+    overall_risk: str,
+) -> list[str]:
+    if not section_reports:
+        return []
+
+    unreadable_count = sum(
+        1 for section in section_reports if not _is_readable_section(section)
+    )
+    unreadable_ratio = unreadable_count / max(len(section_reports), 1)
+    if unreadable_ratio < 0.35:
+        return []
+
+    source_name = str(document.get("filename") or "").lower()
+    if source_name.endswith(".doc"):
+        recovery_hint = "建议先将原文件另存为 .docx 后重新上传，再重新分析。"
+    else:
+        recovery_hint = "建议检查原文件编码或转存为 .docx / 纯文本后重新分析。"
+
+    if overall_risk in ("high", "medium") and not priority_sections:
+        return [
+            "当前文档提取结果中存在较多乱码或异常片段，系统暂时无法可靠定位高风险句段。"
+            + recovery_hint
+        ]
+
+    return [
+        "当前文档提取结果中存在较多乱码或异常片段，报告仅展示可可靠识别的句段。"
+        + recovery_hint
+    ]
+
+
+def _build_first_fix_targets(
+    revision_plan: list[dict[str, Any]],
+    warnings: list[str],
+    *,
+    has_risk_sections: bool,
+) -> list[str]:
+    if warnings and not has_risk_sections:
+        return [
+            "先修复原文提取质量，再重新生成逐段风险结果",
+            "优先将原文件另存为 .docx 后重新上传",
+            "重新分析后再查看逐句改写建议",
+        ]
+    if revision_plan:
+        return [item["title"] for item in revision_plan[:3]]
+    return []
+
+
+def _meaningful_reasons(reasons: list[str]) -> list[str]:
+    return [
+        reason
+        for reason in reasons
+        if "置信度较低" not in reason and "轻量模式" not in reason
+    ]
+
+
+def _proxy_backfill_reason(
+    *,
+    overall_risk: str,
+    predicted_aigc_high: float,
+    predicted_dup_high: float,
+    rank: int,
+) -> str:
+    if predicted_aigc_high >= predicted_dup_high:
+        if overall_risk == "high":
+            return (
+                f"全文预测 AIGC 风险仍然偏高，这一段是本次局部扫描里第 {rank} 个最可疑片段，"
+                "建议优先检查句式模板化、空泛总结和证据不足的问题。"
+            )
+        return (
+            f"这一段在本次局部扫描里排名靠前，建议优先检查句式是否过于模板化，"
+            "并补充更具体的实现细节或实验证据。"
+        )
+    if overall_risk == "high":
+        return (
+            f"全文预测重复风险仍然偏高，这一段是本次局部扫描里第 {rank} 个最可疑片段，"
+            "建议优先复查是否存在重复表述、改写不充分或引用改写不到位。"
+        )
+    return (
+        f"这一段在本次局部扫描里排名靠前，建议优先复查是否存在重复表述或引用转述不充分的问题。"
+    )
 
 
 def _chapter_advice(title: str, combined: float) -> str:

@@ -27,4 +27,28 @@ services:
         generateValue: true
       - key: AI_RATE_LLM_PROVIDER
         value: none
+      - key: AI_RATE_ASYNC_QUEUE_BACKEND
+        value: local
     healthCheckPath: /health
+
+  # 如果未来切换到 Celery，需要：
+  # 1. 在 Render Dashboard 添加一个 Redis 实例（或 Upstash Redis）
+  # 2. 把上面的 AI_RATE_ASYNC_QUEUE_BACKEND 改成 celery
+  # 3. 添加 AI_RATE_CELERY_BROKER_URL 环境变量
+  # 4. 取消注释下面的 worker 服务
+  # - type: worker
+  #   name: ai-rate-detector-worker
+  #   runtime: docker
+  #   repo: https://github.com/JYXxXYXxX/AI_RATE_CORS_ORIGINS.git
+  #   branch: main
+  #   plan: free
+  #   envVars:
+  #     - key: AI_RATE_SERVICE_ENV
+  #       value: prod
+  #     - key: AI_RATE_DATABASE_URL
+  #       sync: false
+  #     - key: AI_RATE_ASYNC_QUEUE_BACKEND
+  #       value: celery
+  #     - key: AI_RATE_CELERY_BROKER_URL
+  #       sync: false
+  #   startCommand: celery -A app.worker.celery_app worker --loglevel=INFO --queues=analysis --concurrency=2

@@ -12,9 +12,14 @@ def run_analysis_task_record(
     repository = get_repository()
     settings = get_settings()
     pipeline = UnifiedPipeline(settings, repository, get_calibrator_runtime())
-    repository.mark_analysis_task_processing(task_id, progress=45)
+    repository.mark_analysis_task_processing(task_id, progress=10)
     try:
-        result = pipeline.analyze_document(document_id)
+        result = pipeline.analyze_document(
+            document_id,
+            progress_callback=lambda value: repository.mark_analysis_task_processing(
+                task_id, progress=value
+            ),
+        )
         run = result["run"]
         repository.mark_analysis_task_completed(
             task_id,

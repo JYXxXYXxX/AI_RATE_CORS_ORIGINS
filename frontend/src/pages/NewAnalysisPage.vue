@@ -22,14 +22,14 @@
           class="file-input-hidden"
           @change="handleFileSelect"
         />
-        <template v-if="selectedFile">
+        <template v-if="selectedFile || activeFileMeta">
           <div class="file-preview">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
             <div>
-              <strong>{{ selectedFile.name }}</strong>
-              <span>{{ formatFileSize(selectedFile.size) }}</span>
+              <strong>{{ selectedFile?.name || activeFileMeta?.fileName }}</strong>
+              <span>{{ formatFileSize(selectedFile?.size || activeFileMeta?.fileSize || 0) }}</span>
             </div>
-            <button type="button" class="btn-icon" @click.stop="removeFile" title="移除文件">
+            <button v-if="selectedFile && !analysis.isAnalysisActive" type="button" class="btn-icon" @click.stop="removeFile" title="移除文件">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
@@ -192,7 +192,7 @@
         <button
           type="submit"
           class="btn btn-primary btn-full btn-lg"
-          :disabled="!selectedFile || isSubmitActive"
+          :disabled="!selectedFile || analysis.isAnalysisActive"
         >
           {{ isSubmitActive ? copy.analyzing : copy.start }}
         </button>
@@ -226,7 +226,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, reactive } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, reactive, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAnalysisStore } from '../stores/analysis'
 import { previewCnkiFeedbackOcr } from '../api'
@@ -385,12 +385,14 @@ const form = reactive({
   degreeLevel: ''
 })
 
-const isSubmitActive = computed(() => !!selectedFile.value && analysis.submitting)
+const activeFileMeta = computed(() => analysis.activeMeta)
+const isSubmitActive = computed(() => analysis.isAnalysisActive)
 
 const MAX_SIZE = 50 * 1024 * 1024
 
 onMounted(() => {
-  analysis.resetSubmissionState()
+  analysis.hydrateActiveState()
+  analysis.resumeActiveAnalysis()
   window.addEventListener('patafix:language-change', handleLanguageChange)
 })
 
@@ -398,7 +400,20 @@ onBeforeUnmount(() => {
   window.removeEventListener('patafix:language-change', handleLanguageChange)
 })
 
+watch(
+  () => analysis.runStatus?.run_id,
+  (runId) => {
+    if (!runId || analysis.isAnalysisActive) return
+    if (analysis.runStatus?.mode === 'report') {
+      router.push(`/app/rewrite/${runId}`)
+      return
+    }
+    router.push(`/app/report/${runId}`)
+  }
+)
+
 function triggerFileInput() {
+  if (analysis.isAnalysisActive) return
   if (selectedFile.value) return
   fileInputRef.value?.click()
 }
@@ -417,6 +432,7 @@ function handleDrop(e: DragEvent) {
 }
 
 function setFile(file: File) {
+  if (analysis.isAnalysisActive) return
   if (file.size > MAX_SIZE) {
     alert(copy.value.oversizedPaper)
     return

@@ -48,7 +48,7 @@
               <span />
               <span />
               <span />
-              <strong>PataFix Live Editor</strong>
+              <strong>{{ copy.editorTitle }}</strong>
             </div>
             <div class="editor-body">
               <aside class="paper-outline">
@@ -130,7 +130,7 @@
         <h2 id="case-carousel-title">{{ copy.caseTitle }}</h2>
         <span>{{ copy.caseDesc }}</span>
       </div>
-      <div class="case-carousel" aria-label="修改案例轮播">
+      <div class="case-carousel" :aria-label="copy.caseAriaLabel">
         <div class="case-track">
           <article v-for="(item, index) in carouselCards" :key="`${item.title}-${index}`" class="case-card">
             <div class="case-card-top">
@@ -161,7 +161,7 @@
       <div class="quick-tool">
         <div class="quick-input-card">
           <div class="mode-badge">{{ copy.quickModeBadge }}</div>
-          <div class="mode-tabs" aria-label="改写模式">
+          <div class="mode-tabs" :aria-label="copy.modeAriaLabel">
             <button
               v-for="item in modeOptions"
               :key="item.value"
@@ -272,9 +272,11 @@ import type { QuickRewriteMode, QuickRewritePhrase, QuickRewriteResult } from '.
 
 const router = useRouter()
 const analysis = useAnalysisStore()
-const QUICK_LIMIT = 450
+const QUICK_LIMIT = 300
 
-const latestRunId = computed(() => analysis.history.find(item => item.run_id)?.run_id || '')
+const latestRunId = computed(() =>
+  analysis.history.find(item => item.run_id && item.status === 'completed')?.run_id || ''
+)
 const quickInput = ref('')
 const quickMode = ref<QuickRewriteMode>('auto')
 const quickLoading = ref(false)
@@ -286,11 +288,12 @@ const locale = ref<HomeLocale>((localStorage.getItem('patafix-language') as Home
 
 const copies = {
   zh: {
-    heroEyebrow: 'PataFix workspace',
+    heroEyebrow: 'PataFix 首页',
     heroTitleLead: '把论文红区，划成',
     heroTitleMark: '可直接替换',
     heroTitleTail: '的修改稿。',
     heroDesc: '先上传论文生成报告，再进入在线改写。系统会保留原文档格式，只围绕风险段落给出可替换的句子。',
+    editorTitle: 'PataFix 在线编辑器',
     upload: '上传论文',
     dashboard: '查看工作台',
     next: '下一步',
@@ -308,16 +311,18 @@ const copies = {
     sealTitle: '定稿',
     conveyorRisk: '风险句',
     conveyorReady: '可交付句',
-    caseEyebrow: 'rewrite scenes',
+    caseEyebrow: '修改案例',
     caseTitle: '修改案例场景',
     caseDesc: '鼠标移到卡片上会暂停滚动，方便查看改写前后差异。',
+    caseAriaLabel: '修改案例轮播',
     before: '原句',
     after: '优化后',
-    quickEyebrow: 'try one sentence',
+    quickEyebrow: '先试一句',
     quickTitle: '短句风险优化',
     quickDesc: '先粘贴一段论文内容，系统会标出高风险词组，并给出更像人工写作、可直接替换的版本。',
     quickModeBadge: '智能直改模式',
-    quickHelper: '限制 450 字以内，系统会直接给出可替换句，不再让你自己补材料。',
+    modeAriaLabel: '改写模式',
+    quickHelper: '限制 300 字以内，系统会直接给出可替换句，不再让你自己补材料。',
     inputLabel: '输入论文段落',
     words: '字',
     placeholder: '粘贴摘要、绪论、研究意义或系统介绍中的一小段',
@@ -345,6 +350,7 @@ const copies = {
     heroTitleMark: 'ready-to-replace',
     heroTitleTail: ' rewrite draft.',
     heroDesc: 'Upload a paper, generate a report, then rewrite only the risky passages while keeping the original document format intact.',
+    editorTitle: 'PataFix Live Editor',
     upload: 'Upload paper',
     dashboard: 'Workspace',
     next: 'Next',
@@ -365,13 +371,15 @@ const copies = {
     caseEyebrow: 'rewrite scenes',
     caseTitle: 'Rewrite case studies',
     caseDesc: 'Hover over the cards to pause the carousel and compare before and after.',
+    caseAriaLabel: 'Rewrite case carousel',
     before: 'Before',
     after: 'After',
     quickEyebrow: 'try one sentence',
     quickTitle: 'Short passage optimizer',
     quickDesc: 'Paste a thesis paragraph to see risky phrases and generate a more natural replacement.',
     quickModeBadge: 'Direct rewrite mode',
-    quickHelper: 'Up to 450 characters. The system returns a directly usable rewrite instead of manual follow-up advice.',
+    modeAriaLabel: 'Rewrite mode',
+    quickHelper: 'Up to 300 characters. The system returns a directly usable rewrite instead of manual follow-up advice.',
     inputLabel: 'Paper paragraph',
     words: 'chars',
     placeholder: 'Paste a short abstract, introduction, significance, or system-description paragraph',
@@ -555,7 +563,7 @@ function goPrimary() {
 async function handleQuickRewrite() {
   const text = quickInput.value.trim()
   if (!text) {
-    ElMessage.warning('请先输入一段论文内容')
+    ElMessage.warning(locale.value === 'en' ? 'Please paste a thesis paragraph first.' : '请先输入一段论文内容')
     return
   }
   if (text.length > QUICK_LIMIT) {
@@ -565,9 +573,9 @@ async function handleQuickRewrite() {
   quickLoading.value = true
   quickError.value = ''
   try {
-    quickResult.value = await quickRewrite({ text, mode: 'auto' })
+    quickResult.value = await quickRewrite({ text, mode: quickMode.value })
   } catch (error) {
-    quickError.value = error instanceof Error ? error.message : '检测失败，请稍后再试'
+    quickError.value = error instanceof Error ? error.message : (locale.value === 'en' ? 'Scan failed. Please try again shortly.' : '检测失败，请稍后再试')
     ElMessage.error(quickError.value)
   } finally {
     quickLoading.value = false
@@ -584,9 +592,9 @@ async function copyRewritten() {
   if (!quickResult.value) return
   try {
     await navigator.clipboard.writeText(quickResult.value.rewrittenText)
-    ElMessage.success('改写结果已复制')
+    ElMessage.success(locale.value === 'en' ? 'Rewrite copied.' : '改写结果已复制')
   } catch {
-    ElMessage.error('复制失败')
+    ElMessage.error(locale.value === 'en' ? 'Copy failed.' : '复制失败')
   }
 }
 
@@ -681,9 +689,9 @@ function setupRevealAnimations() {
 .hero-copy,
 .hero-board,
 .home-panel {
-  border: 1px solid rgba(58, 67, 61, 0.1);
-  background: rgba(255, 253, 247, 0.92);
-  box-shadow: 0 18px 50px rgba(46, 56, 48, 0.08);
+  border: 1px solid rgba(85, 98, 124, 0.10);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(251, 252, 255, 0.94));
+  box-shadow: 0 18px 50px rgba(61, 74, 96, 0.08);
 }
 
 .hero-copy {
@@ -695,14 +703,14 @@ function setupRevealAnimations() {
 }
 
 .eyebrow {
-  color: #6f7e4d;
+  color: #2b7d6e;
   letter-spacing: 0.12em;
 }
 
 .hero-copy h1 {
   max-width: 680px;
   margin: 10px 0 14px;
-  color: #20251f;
+  color: #1d2736;
   font-size: 42px;
   line-height: 1.12;
   letter-spacing: 0;
@@ -762,7 +770,7 @@ function setupRevealAnimations() {
 
 .hero-copy p {
   max-width: 620px;
-  color: #62695f;
+  color: #667487;
   line-height: 1.8;
 }
 
@@ -2055,10 +2063,13 @@ function setupRevealAnimations() {
 .case-carousel-section,
 .quick-rewrite-panel {
   margin-top: 20px;
-  border: 1px solid rgba(58, 67, 61, 0.1);
+  border: 1px solid rgba(85, 98, 124, 0.10);
   border-radius: 8px;
-  background: rgba(255, 253, 247, 0.9);
-  box-shadow: 0 18px 50px rgba(46, 56, 48, 0.07);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(255, 196, 132, 0.10), transparent 28%),
+    radial-gradient(circle at 88% 100%, rgba(113, 164, 255, 0.08), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(250, 252, 255, 0.95));
+  box-shadow: 0 18px 50px rgba(61, 74, 96, 0.07);
 }
 
 .case-carousel-section {
@@ -2076,14 +2087,14 @@ function setupRevealAnimations() {
 .section-head h2,
 .quick-intro h2 {
   margin: 8px 0 8px;
-  color: #20251f;
+  color: #1d2736;
   font-size: 28px;
   line-height: 1.2;
 }
 
 .section-head span,
 .quick-intro p {
-  color: #62695f;
+  color: #667487;
   line-height: 1.7;
 }
 
@@ -2111,12 +2122,12 @@ function setupRevealAnimations() {
   gap: 12px;
   align-content: start;
   padding: 18px;
-  border: 1px solid rgba(58, 67, 61, 0.11);
+  border: 1px solid rgba(84, 98, 126, 0.11);
   border-radius: 8px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(248, 244, 235, 0.88)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(246, 249, 255, 0.90)),
     #fff;
-  box-shadow: 0 12px 28px rgba(46, 56, 48, 0.08);
+  box-shadow: 0 12px 28px rgba(61, 74, 96, 0.08);
 }
 
 .case-card-top {
@@ -2130,20 +2141,20 @@ function setupRevealAnimations() {
   width: fit-content;
   padding: 5px 9px;
   border-radius: 999px;
-  color: #2f6f53;
-  background: rgba(47, 111, 83, 0.1);
+  color: #2e6fb8;
+  background: rgba(69, 118, 202, 0.10);
   font-size: 12px;
   font-weight: 900;
 }
 
 .case-card-top strong {
-  color: #9b7750;
+  color: #ae6b4f;
   font-size: 13px;
 }
 
 .case-card h3 {
   margin: 0;
-  color: #20251f;
+  color: #1d2736;
   font-size: 18px;
 }
 
@@ -2162,7 +2173,7 @@ function setupRevealAnimations() {
 
 .case-text p {
   margin: 0;
-  color: #3f4741;
+  color: #435064;
   font-size: 14px;
 }
 
@@ -2192,17 +2203,27 @@ function setupRevealAnimations() {
   grid-template-columns: minmax(280px, 0.82fr) minmax(0, 1.18fr);
   gap: 18px;
   margin-top: 22px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .quick-input-card,
 .quick-output-card {
   min-width: 0;
-  height: fit-content;
+  height: 100%;
   padding: 18px;
-  border: 1px solid rgba(58, 67, 61, 0.1);
+  border: 1px solid rgba(84, 98, 126, 0.10);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.72);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(249, 251, 255, 0.96));
+}
+
+.quick-input-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.quick-output-card {
+  display: flex;
+  flex-direction: column;
 }
 
 .mode-tabs {
@@ -2216,8 +2237,8 @@ function setupRevealAnimations() {
   margin-bottom: 14px;
   padding: 7px 11px;
   border-radius: 999px;
-  background: rgba(47, 111, 83, 0.1);
-  color: #245642;
+  background: rgba(69, 118, 202, 0.10);
+  color: #2e6fb8;
   font-size: 12px;
   font-weight: 900;
 }
@@ -2245,13 +2266,13 @@ function setupRevealAnimations() {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 8px;
-  color: #2f3b34;
+  color: #233041;
   font-size: 14px;
   font-weight: 900;
 }
 
 .quick-label span {
-  color: #7d857b;
+  color: #7b8798;
   font-weight: 700;
 }
 
@@ -2261,26 +2282,27 @@ function setupRevealAnimations() {
 
 .quick-textarea {
   width: 100%;
-  min-height: 180px;
+  min-height: 280px;
+  flex: 1 1 auto;
   resize: vertical;
-  border: 1px solid rgba(58, 67, 61, 0.14);
+  border: 1px solid rgba(84, 98, 126, 0.14);
   border-radius: 8px;
   padding: 14px;
-  background: #fffefa;
-  color: #20251f;
+  background: #fffefd;
+  color: #1d2736;
   font: inherit;
   line-height: 1.75;
   outline: none;
 }
 
 .quick-textarea:focus {
-  border-color: #2f6f53;
-  box-shadow: 0 0 0 3px rgba(47, 111, 83, 0.12);
+  border-color: #4a86d8;
+  box-shadow: 0 0 0 3px rgba(74, 134, 216, 0.12);
 }
 
 .quick-helper {
   margin: 10px 0 0;
-  color: #7d857b;
+  color: #7b8798;
   font-size: 12px;
   line-height: 1.6;
 }
@@ -2304,19 +2326,19 @@ function setupRevealAnimations() {
   align-content: center;
   gap: 8px;
   padding: 24px;
-  border: 1px dashed rgba(47, 111, 83, 0.28);
+  border: 1px dashed rgba(74, 134, 216, 0.24);
   border-radius: 8px;
-  background: rgba(237, 244, 236, 0.7);
+  background: linear-gradient(180deg, rgba(244, 248, 255, 0.86), rgba(255, 249, 243, 0.82));
 }
 
 .quick-empty strong {
-  color: #20251f;
+  color: #1d2736;
   font-size: 18px;
 }
 
 .quick-empty p,
 .quick-summary {
-  color: #62695f;
+  color: #667487;
   line-height: 1.7;
 }
 
@@ -2330,21 +2352,21 @@ function setupRevealAnimations() {
 .risk-strip div {
   padding: 14px;
   border-radius: 8px;
-  border: 1px solid rgba(58, 67, 61, 0.08);
-  background: #f7f4ec;
+  border: 1px solid rgba(84, 98, 126, 0.08);
+  background: linear-gradient(180deg, #f8faff, #fff8f1);
 }
 
 .risk-strip span,
 .risk-strip small {
   display: block;
-  color: #667064;
+  color: #6b778a;
   font-size: 12px;
 }
 
 .risk-strip strong {
   display: block;
   margin: 7px 0 4px;
-  color: #20251f;
+  color: #1d2736;
   font-size: 28px;
   line-height: 1;
 }
@@ -2358,20 +2380,20 @@ function setupRevealAnimations() {
 .result-panel {
   min-width: 0;
   padding: 15px;
-  border: 1px solid rgba(58, 67, 61, 0.09);
+  border: 1px solid rgba(84, 98, 126, 0.09);
   border-radius: 8px;
-  background: #fffefa;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(250, 252, 255, 0.94));
 }
 
 .result-panel h3 {
   margin: 0 0 10px;
-  color: #20251f;
+  color: #1d2736;
   font-size: 16px;
 }
 
 .marked-text {
   margin: 0;
-  color: #3f4741;
+  color: #435064;
   line-height: 1.9;
   word-break: break-word;
 }
@@ -2413,22 +2435,22 @@ function setupRevealAnimations() {
 
 .home-panel:hover {
   transform: translateY(-3px);
-  box-shadow: 0 22px 54px rgba(46, 56, 48, 0.12);
+  box-shadow: 0 22px 54px rgba(61, 74, 96, 0.12);
 }
 
 .panel-index {
-  color: #9b7750;
+  color: #ae6b4f;
   font-weight: 900;
 }
 
 .home-panel h2 {
   margin: 10px 0 8px;
-  color: #20251f;
+  color: #1d2736;
   font-size: 20px;
 }
 
 .home-panel p {
-  color: #62695f;
+  color: #667487;
   line-height: 1.7;
 }
 
@@ -2663,10 +2685,11 @@ function setupRevealAnimations() {
 :global(html[data-theme='dark']) .home-panel,
 :global(html[data-theme='dark']) .case-carousel-section,
 :global(html[data-theme='dark']) .quick-rewrite-panel {
-  border-color: rgba(232, 235, 245, 0.11);
+  border-color: rgba(109, 137, 204, 0.14);
   background:
-    radial-gradient(circle at 16% 0%, rgba(138, 180, 255, 0.08), transparent 28%),
-    linear-gradient(180deg, rgba(14, 15, 20, 0.96), rgba(4, 5, 7, 0.98));
+    radial-gradient(circle at 16% 0%, rgba(138, 180, 255, 0.10), transparent 28%),
+    radial-gradient(circle at 88% 100%, rgba(255, 166, 118, 0.08), transparent 24%),
+    linear-gradient(180deg, rgba(15, 18, 27, 0.98), rgba(9, 12, 18, 0.99));
   box-shadow: 0 22px 62px rgba(0, 0, 0, 0.34);
 }
 
@@ -2677,7 +2700,7 @@ function setupRevealAnimations() {
 :global(html[data-theme='dark']) .result-panel h3,
 :global(html[data-theme='dark']) .quick-empty strong,
 :global(html[data-theme='dark']) .case-card h3 {
-  color: #f4f1eb;
+  color: #f6f8fb;
 }
 
 :global(html[data-theme='dark']) .hero-copy p,
@@ -2688,13 +2711,13 @@ function setupRevealAnimations() {
 :global(html[data-theme='dark']) .quick-summary,
 :global(html[data-theme='dark']) .marked-text,
 :global(html[data-theme='dark']) .case-text p {
-  color: #c9ced8;
+  color: #e3ebf3;
 }
 
 :global(html[data-theme='dark']) .eyebrow,
 :global(html[data-theme='dark']) .panel-index,
 :global(html[data-theme='dark']) .case-card-top strong {
-  color: #ffd166;
+  color: #ffbf7a;
 }
 
 :global(html[data-theme='dark']) .hero-crayon {
@@ -2728,32 +2751,63 @@ function setupRevealAnimations() {
 :global(html[data-theme='dark']) .quick-output-card,
 :global(html[data-theme='dark']) .result-panel,
 :global(html[data-theme='dark']) .case-card {
-  border-color: rgba(232, 235, 245, 0.12);
-  background: rgba(255, 255, 255, 0.065);
+  border-color: rgba(118, 146, 210, 0.13);
+  background: linear-gradient(180deg, rgba(22, 27, 38, 0.96), rgba(16, 20, 29, 0.98));
   color: #f4f1eb;
 }
 
 :global(html[data-theme='dark']) .mode-tab.active,
 :global(html[data-theme='dark']) .case-tag {
-  border-color: rgba(138, 180, 255, 0.38);
-  background: rgba(138, 180, 255, 0.14);
-  color: #9fc2ff;
+  border-color: rgba(111, 201, 181, 0.34);
+  background: rgba(73, 184, 158, 0.14);
+  color: #8fe0c6;
 }
 
 :global(html[data-theme='dark']) .mode-badge {
-  background: rgba(138, 180, 255, 0.14);
-  color: #9fc2ff;
+  background: rgba(73, 184, 158, 0.14);
+  color: #8fe0c6;
 }
 
 :global(html[data-theme='dark']) .quick-textarea {
-  border-color: rgba(232, 235, 245, 0.13);
-  background: rgba(6, 7, 10, 0.68);
+  border-color: rgba(122, 149, 212, 0.16);
+  background: rgba(10, 13, 20, 0.88);
   color: #f4f1eb;
 }
 
 :global(html[data-theme='dark']) .quick-helper,
 :global(html[data-theme='dark']) .quick-label span {
-  color: #b7becb;
+  color: #cad4e1;
+}
+
+:global(html[data-theme='dark']) .quick-label,
+:global(html[data-theme='dark']) .risk-strip strong,
+:global(html[data-theme='dark']) .result-panel h3 {
+  color: #f7f9fc;
+}
+
+:global(html[data-theme='dark']) .risk-strip div {
+  border-color: rgba(118, 146, 210, 0.14);
+  background: linear-gradient(180deg, rgba(24, 31, 45, 0.96), rgba(18, 24, 35, 0.98));
+}
+
+:global(html[data-theme='dark']) .quick-empty {
+  border-color: rgba(111, 201, 181, 0.22);
+  background: linear-gradient(180deg, rgba(19, 27, 39, 0.96), rgba(14, 19, 27, 0.98));
+}
+
+:global(html[data-theme='dark']) .home-panel:nth-child(1) {
+  border-color: rgba(255, 132, 120, 0.22);
+  background: linear-gradient(180deg, rgba(25, 21, 28, 0.98), rgba(14, 16, 23, 0.99));
+}
+
+:global(html[data-theme='dark']) .home-panel:nth-child(2) {
+  border-color: rgba(255, 191, 122, 0.22);
+  background: linear-gradient(180deg, rgba(28, 25, 21, 0.98), rgba(14, 16, 23, 0.99));
+}
+
+:global(html[data-theme='dark']) .home-panel:nth-child(3) {
+  border-color: rgba(109, 181, 255, 0.22);
+  background: linear-gradient(180deg, rgba(19, 23, 31, 0.98), rgba(14, 16, 23, 0.99));
 }
 
 :global(html[data-theme='dark']) .hero-board {

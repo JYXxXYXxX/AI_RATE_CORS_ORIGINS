@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+import httpx
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -14,10 +15,12 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Query,
+    Request,
     Response,
     UploadFile,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.config import Settings, get_settings
 from app.db import get_repository
@@ -53,6 +56,7 @@ from app.schemas_unified import (
     ReanalyzeSectionResult,
     ReportRiskData,
     RewriteAdviceResponse,
+    RewriteWorkspaceResponse,
     UnifiedReportResponse,
     UploadWithReportResponse,
 )
@@ -66,6 +70,19 @@ from app.services.feedback_learning import (
     build_feedback_learning_sample,
     refresh_feedback_learning_skill,
 )
+from app.services.onlyoffice import (
+    SAVE_STATUSES,
+    apply_patch_to_working_copy,
+    build_editor_config,
+    ensure_working_copy,
+    get_original_docx_path,
+    is_onlyoffice_enabled,
+    is_onlyoffice_supported,
+    make_access_token,
+    onlyoffice_edited_path,
+    validate_access_token,
+)
+from app.services.rewrite_workspace import build_rewrite_workspace
 from app.services.text_processing import preview_text, segment_document
 from app.task_queue import dispatch_analysis_task
 
@@ -722,7 +739,7 @@ def get_analysis_task_status(
         title=task.get("title"),
         filename=task.get("filename"),
         status=task["status"],
-        stage=stage_from_status(task["status"]),
+        stage=_task_stage_from_progress(task["status"], int(task.get("progress", 0))),
         progress=int(task.get("progress", 0)),
         created_at=task["created_at"],
         started_at=task.get("started_at"),
@@ -781,6 +798,16 @@ def get_run_sections(
         )
 
     return result
+
+
+def _task_stage_from_progress(status: str, progress: int) -> str:
+    if status != "processing":
+        return stage_from_status(status)
+    if progress < 28:
+        return "extracting_text"
+    if progress < 55:
+        return "segmenting_and_scoring"
+    return "analyzing"
 
 
 def _safe_download_name(value: str) -> str:
@@ -903,6 +930,259 @@ async def reanalyze_run(
         total_chars=total_chars,
         sections=sections_result,
         disclaimer="本报告为改写后重新计算的 AIGC 疑似风险与知网结果区间预测，不等同于知网、维普、万方或 Turnitin 官方结果。",
+    )
+
+
+@router.get("/runs/{run_id}/onlyoffice/config")
+async def get_onlyoffice_run_config(
+    run_id: str,
+    request: Request,
+    auth: AuthContext = Depends(get_auth_context),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    repository = get_repository()
+    db_run = repository.get_run(run_id)
+    if db_run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    document_id = str(db_run["document_id"])
+    ensure_document_access(document_id=document_id, auth=auth, repository=repository)
+
+    if not is_onlyoffice_enabled(settings):
+        return {
+            "enabled": False,
+            "supported": False,
+            "reason": "ONLYOFFICE 尚未启用，请先配置文档服务。",
+        }
+
+    document = repository.get_document(document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="document not found")
+
+    supported, reason = is_onlyoffice_supported(document)
+    if not supported:
+        return {
+            "enabled": True,
+            "supported": False,
+            "reason": reason,
+        }
+
+    config = build_editor_config(
+        settings,
+        repository=repository,
+        run={**db_run, "id": run_id},
+        document=document,
+        user_id=auth.user_id if auth.authenticated else None,
+        display_name=auth.user.get("display_name") if auth.user else None,
+        browser_base_url=str(request.base_url).rstrip("/"),
+    )
+    config["documentId"] = document_id
+    config["runId"] = run_id
+    return config
+
+
+@router.api_route("/onlyoffice/web-apps/{asset_path:path}", methods=["GET", "HEAD"])
+async def proxy_onlyoffice_web_apps(
+    asset_path: str,
+    request: Request,
+    settings: Settings = Depends(get_settings),
+):
+    server_base = str(settings.onlyoffice_document_server_url or "").rstrip("/")
+    if not server_base:
+        raise HTTPException(status_code=503, detail="ONLYOFFICE document server is not configured")
+
+    target_url = f"{server_base}/web-apps/{asset_path}"
+    if request.url.query:
+        target_url = f"{target_url}?{request.url.query}"
+
+    try:
+        async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+            upstream = await client.request(request.method, target_url)
+            upstream.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail="ONLYOFFICE asset unavailable") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"ONLYOFFICE asset proxy failed: {exc}") from exc
+
+    passthrough_headers = {}
+    for key in ("cache-control", "etag", "last-modified", "accept-ranges"):
+        value = upstream.headers.get(key)
+        if value:
+            passthrough_headers[key] = value
+
+    return Response(
+        content=b"" if request.method == "HEAD" else upstream.content,
+        status_code=upstream.status_code,
+        media_type=upstream.headers.get("content-type"),
+        headers=passthrough_headers,
+    )
+
+
+@router.post("/runs/{run_id}/onlyoffice/apply-patches")
+async def apply_onlyoffice_patches(
+    run_id: str,
+    request: Request,
+    payload: dict[str, Any] | None = None,
+    auth: AuthContext = Depends(get_auth_context),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    repository = get_repository()
+    db_run = repository.get_run(run_id)
+    if db_run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    document_id = str(db_run["document_id"])
+    ensure_document_access(document_id=document_id, auth=auth, repository=repository)
+
+    document = repository.get_document(document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="document not found")
+
+    supported, reason = is_onlyoffice_supported(document)
+    if not supported:
+        raise HTTPException(status_code=400, detail=reason or "ONLYOFFICE not supported")
+
+    block_id = None
+    if isinstance(payload, dict):
+        raw_block_id = payload.get("block_id") or payload.get("blockId")
+        if raw_block_id is not None:
+            block_id = str(raw_block_id)
+
+    stats = apply_patch_to_working_copy(
+        settings,
+        repository,
+        document=document,
+        run_id=run_id,
+        block_id=block_id,
+    )
+    config = build_editor_config(
+        settings,
+        repository=repository,
+        run={**db_run, "id": run_id},
+        document=document,
+        user_id=auth.user_id if auth.authenticated else None,
+        display_name=auth.user.get("display_name") if auth.user else None,
+        browser_base_url=str(request.base_url).rstrip("/"),
+    )
+    config["documentId"] = document_id
+    config["runId"] = run_id
+    return {
+        "ok": True,
+        "patchStats": stats,
+        "config": config,
+    }
+
+
+@router.get("/documents/{document_id}/onlyoffice/file")
+async def get_onlyoffice_file(
+    document_id: str,
+    token: str = Query(...),
+    settings: Settings = Depends(get_settings),
+):
+    if not validate_access_token(
+        settings,
+        token,
+        document_id=document_id,
+        purpose="file",
+    ):
+        raise HTTPException(status_code=403, detail="invalid onlyoffice token")
+
+    repository = get_repository()
+    document = repository.get_document(document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="document not found")
+
+    edited_path = onlyoffice_edited_path(settings, document_id)
+    file_path = edited_path if edited_path.exists() else get_original_docx_path(document)
+    if file_path is None or not file_path.exists():
+        raise HTTPException(status_code=404, detail="editable file not found")
+
+    return FileResponse(
+        path=str(file_path),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=document.get("filename") or "paper.docx",
+    )
+
+
+@router.post("/documents/{document_id}/onlyoffice/callback")
+async def onlyoffice_callback(
+    document_id: str,
+    request: Request,
+    token: str = Query(...),
+    settings: Settings = Depends(get_settings),
+):
+    if not validate_access_token(
+        settings,
+        token,
+        document_id=document_id,
+        purpose="callback",
+    ):
+        return JSONResponse({"error": 1, "message": "invalid callback token"}, status_code=403)
+
+    payload = await request.json()
+    status = int(payload.get("status") or 0)
+    if status not in SAVE_STATUSES:
+        return {"error": 0}
+
+    download_url = payload.get("url")
+    if not isinstance(download_url, str) or not download_url.strip():
+        return {"error": 1, "message": "missing file url"}
+
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.get(download_url)
+            response.raise_for_status()
+        target = onlyoffice_edited_path(settings, document_id)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(response.content)
+    except Exception as exc:
+        return {"error": 1, "message": str(exc)}
+
+    return {"error": 0}
+
+
+@router.get("/runs/{run_id}/onlyoffice/download")
+async def download_onlyoffice_variant(
+    run_id: str,
+    variant: str = Query(default="edited"),
+    auth: AuthContext = Depends(get_auth_context),
+    settings: Settings = Depends(get_settings),
+):
+    repository = get_repository()
+    db_run = repository.get_run(run_id)
+    if db_run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    document_id = str(db_run["document_id"])
+    ensure_document_access(document_id=document_id, auth=auth, repository=repository)
+
+    document = repository.get_document(document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="document not found")
+
+    if variant == "original":
+        original_path = document.get("original_file_path")
+        if not original_path or not Path(original_path).exists():
+            raise HTTPException(status_code=404, detail="original file not found")
+        return FileResponse(
+            path=str(original_path),
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            filename=document.get("filename") or "paper.docx",
+        )
+
+    supported, reason = is_onlyoffice_supported(document)
+    if not supported:
+        raise HTTPException(status_code=400, detail=reason or "ONLYOFFICE not supported")
+
+    working_path = ensure_working_copy(
+        settings,
+        repository,
+        document=document,
+        run_id=run_id,
+    )
+    filename = document.get("filename") or "paper.docx"
+    stem = Path(filename).stem or "paper"
+    return FileResponse(
+        path=str(working_path),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=f"{stem}_edited.docx",
     )
 
 
@@ -1778,6 +2058,46 @@ async def get_run_blocks(
         "reportSummary": report_summary,
         "unmatchedSpans": [_span_response(item) for item in unmatched_spans],
     }
+
+
+@router.get("/runs/{run_id}/workspace", response_model=RewriteWorkspaceResponse)
+async def get_rewrite_workspace(
+    run_id: str,
+    auth: AuthContext = Depends(get_auth_context),
+    pipeline: UnifiedPipeline = Depends(get_unified_pipeline),
+) -> RewriteWorkspaceResponse:
+    repository = get_repository()
+    db_run = repository.get_run(run_id)
+    if db_run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+
+    document_id = str(db_run["document_id"])
+    ensure_document_access(
+        document_id=document_id,
+        auth=auth,
+        repository=repository,
+    )
+
+    document = repository.get_document(document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="document not found")
+
+    blocks = repository.list_document_blocks(document_id)
+    sections = repository.list_document_sections(document_id)
+    section_scores = repository.list_section_scores(run_id)
+    patches = repository.list_latest_patches_by_run(document_id, run_id)
+    report = pipeline.get_report(run_id)
+
+    return build_rewrite_workspace(
+        run_id=run_id,
+        run=db_run,
+        document=document,
+        blocks=blocks,
+        sections=sections,
+        section_scores=section_scores,
+        patches=patches,
+        report=report,
+    )
 
 
 # ------------------------------------------------------------------

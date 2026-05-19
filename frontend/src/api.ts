@@ -15,6 +15,8 @@ import type {
   DocumentUploadResponse,
   ModelStatusResponse,
   LearningScope,
+  OnlyOfficeApplyResponse,
+  OnlyOfficeConfigResponse,
   OfficialReportSummary,
   OfficialRiskSpan,
   ProviderCatalogResponse,
@@ -27,6 +29,7 @@ import type {
   QuickRewriteResult,
   ReanalyzeResponse,
   RewriteAdviceResponse,
+  RewriteWorkspaceResponse,
   RunSectionItem,
   UnifiedReportResponse,
   UnlockOrder,
@@ -35,7 +38,7 @@ import type {
   UserSummary
 } from './types'
 
-const baseUrl = import.meta.env.VITE_API_BASE_URL || ''
+export const baseUrl = import.meta.env.VITE_API_BASE_URL || ''
 const MAX_RETRIES = 3
 const RETRY_DELAY_MS = 500
 
@@ -560,6 +563,15 @@ export async function getRunBlocks(runId: string): Promise<{
   }
 }
 
+export async function getRewriteWorkspace(runId: string): Promise<RewriteWorkspaceResponse> {
+  const response = await fetchWithRetry(`${baseUrl}/v1/runs/${runId}/workspace`, {
+    headers: authHeaders(),
+    credentials: 'include'
+  })
+  const payload = await parseResponse<any>(response)
+  return normalizeRewriteWorkspace(payload)
+}
+
 function normalizeOfficialRiskSpan(span: any): OfficialRiskSpan {
   return {
     spanId: span.spanId ?? span.span_id,
@@ -609,6 +621,66 @@ function normalizeDocumentBlock(block: any): DocumentBlock {
     sectionType: block.sectionType ?? block.section_type ?? undefined,
     charCount: block.charCount ?? block.char_count ?? 0,
     displayOrder: block.displayOrder ?? block.display_order ?? 0,
+  }
+}
+
+function normalizeRewriteWorkspace(payload: any): RewriteWorkspaceResponse {
+  return {
+    runId: payload.runId ?? payload.run_id,
+    documentId: payload.documentId ?? payload.document_id,
+    title: payload.title ?? null,
+    filename: payload.filename || '',
+    mode: payload.mode || 'estimate',
+    sourceFormat: payload.sourceFormat ?? payload.source_format ?? null,
+    warnings: payload.warnings || [],
+    metrics: {
+      currentAigcPercent: payload.metrics?.currentAigcPercent ?? payload.metrics?.current_aigc_percent ?? 0,
+      estimatedOptimizedPercent: payload.metrics?.estimatedOptimizedPercent ?? payload.metrics?.estimated_optimized_percent ?? 0,
+      rewrittenCount: payload.metrics?.rewrittenCount ?? payload.metrics?.rewritten_count ?? 0,
+      ignoredCount: payload.metrics?.ignoredCount ?? payload.metrics?.ignored_count ?? 0,
+      totalRiskCount: payload.metrics?.totalRiskCount ?? payload.metrics?.total_risk_count ?? 0,
+      highCount: payload.metrics?.highCount ?? payload.metrics?.high_count ?? 0,
+      mediumCount: payload.metrics?.mediumCount ?? payload.metrics?.medium_count ?? 0,
+      lowCount: payload.metrics?.lowCount ?? payload.metrics?.low_count ?? 0,
+    },
+    sections: (payload.sections || []).map((section: any) => ({
+      sectionId: section.sectionId ?? section.section_id,
+      sectionIndex: section.sectionIndex ?? section.section_index ?? 0,
+      paragraphIndex: section.paragraphIndex ?? section.paragraph_index ?? null,
+      title: section.title || '',
+      riskLevel: section.riskLevel ?? section.risk_level ?? 'normal',
+      itemIds: section.itemIds ?? section.item_ids ?? [],
+      itemCount: section.itemCount ?? section.item_count ?? 0,
+      riskCounts: {
+        high: section.riskCounts?.high ?? section.risk_counts?.high ?? 0,
+        medium: section.riskCounts?.medium ?? section.risk_counts?.medium ?? 0,
+        low: section.riskCounts?.low ?? section.risk_counts?.low ?? 0,
+        normal: section.riskCounts?.normal ?? section.risk_counts?.normal ?? 0,
+      }
+    })),
+    riskItems: (payload.riskItems || payload.risk_items || []).map((item: any) => ({
+      riskId: item.riskId ?? item.risk_id,
+      blockId: item.blockId ?? item.block_id,
+      sectionId: item.sectionId ?? item.section_id,
+      sectionIndex: item.sectionIndex ?? item.section_index ?? 0,
+      paragraphIndex: item.paragraphIndex ?? item.paragraph_index ?? null,
+      sectionTitle: item.sectionTitle ?? item.section_title ?? null,
+      displayOrder: item.displayOrder ?? item.display_order ?? 0,
+      originalText: item.originalText ?? item.original_text ?? '',
+      currentText: item.currentText ?? item.current_text ?? '',
+      riskLevel: item.riskLevel ?? item.risk_level ?? 'normal',
+      aigcScore: item.aigcScore ?? item.aigc_score ?? 0,
+      diagnosis: item.diagnosis || '',
+      rewriteHint: item.rewriteHint ?? item.rewrite_hint ?? '',
+      principle: item.principle || '',
+      reasons: item.reasons || [],
+      status: item.status || 'pending',
+      highlights: (item.highlights || []).map((highlight: any) => ({
+        text: highlight.text || '',
+        riskLevel: highlight.riskLevel ?? highlight.risk_level ?? 'normal',
+      })),
+      sourceMap: item.sourceMap ?? item.source_map ?? undefined,
+    })),
   }
 }
 
@@ -785,6 +857,31 @@ export async function listPatches(runId: string): Promise<DocumentPatch[]> {
     credentials: 'include'
   })
   return parseResponse<DocumentPatch[]>(response)
+}
+
+export async function getOnlyOfficeConfig(runId: string): Promise<OnlyOfficeConfigResponse> {
+  const response = await fetchWithRetry(`${baseUrl}/v1/runs/${runId}/onlyoffice/config`, {
+    headers: authHeaders(),
+    credentials: 'include'
+  })
+  return parseResponse<OnlyOfficeConfigResponse>(response)
+}
+
+export async function applyOnlyOfficePatches(
+  runId: string,
+  payload?: { blockId?: string }
+): Promise<OnlyOfficeApplyResponse> {
+  const response = await fetchWithRetry(`${baseUrl}/v1/runs/${runId}/onlyoffice/apply-patches`, {
+    method: 'POST',
+    headers: jsonHeaders(true),
+    credentials: 'include',
+    body: JSON.stringify(payload?.blockId ? { block_id: payload.blockId } : {})
+  })
+  return parseResponse<OnlyOfficeApplyResponse>(response)
+}
+
+export function getOnlyOfficeDownloadUrl(runId: string, variant: 'original' | 'edited' = 'edited'): string {
+  return `${baseUrl}/v1/runs/${runId}/onlyoffice/download?variant=${variant}`
 }
 
 export async function getUnlockPackages(): Promise<UnlockPackage[]> {

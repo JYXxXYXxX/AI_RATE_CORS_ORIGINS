@@ -12,19 +12,25 @@
 }
 
 :root[data-theme='dark'] {
-  color: #f4f1eb;
+  color: #f6f8fb;
   background:
-    radial-gradient(circle at top left, rgba(138, 180, 255, 0.12), transparent 28%),
-    radial-gradient(circle at 85% 15%, rgba(255, 122, 112, 0.1), transparent 24%),
-    linear-gradient(180deg, #050608 0%, #0b0c10 100%);
+    linear-gradient(180deg, #0b1220 0%, #0f1726 100%);
   color-scheme: dark;
-  --el-bg-color: #0b0c10;
-  --el-bg-color-overlay: #14161c;
-  --el-text-color-primary: #f4f1eb;
-  --el-text-color-regular: #c9ced8;
-  --el-border-color: rgba(232, 235, 245, 0.14);
-  --el-fill-color-light: rgba(255, 255, 255, 0.08);
-  --el-color-primary: #8ab4ff;
+  --el-bg-color: #0f1726;
+  --el-bg-color-overlay: #151f2d;
+  --el-text-color-primary: #f6f8fb;
+  --el-text-color-regular: #d8e1ec;
+  --el-text-color-secondary: #c4cfdd;
+  --el-border-color: rgba(255, 255, 255, 0.12);
+  --el-fill-color-light: rgba(255, 255, 255, 0.09);
+  --el-color-primary: #22c55e;
+  --pf-dark-text-primary: #f6f8fb;
+  --pf-dark-text-secondary: #e5ecf4;
+  --pf-dark-text-tertiary: #cad4e1;
+  --pf-dark-text-muted: #9eacbf;
+  --pf-dark-surface: #131c29;
+  --pf-dark-surface-alt: #182334;
+  --pf-dark-surface-soft: rgba(24, 35, 52, 0.72);
 }
 
 * {
@@ -39,8 +45,8 @@ body {
 }
 
 :root[data-theme='dark'] body {
-  background: #050608;
-  color: #f4f1eb;
+  background: #0b1220;
+  color: var(--pf-dark-text-primary);
 }
 
 :root[data-theme='dark'] h1,
@@ -60,7 +66,7 @@ body {
 :root[data-theme='dark'] .form-field label,
 :root[data-theme='dark'] .progress-header,
 :root[data-theme='dark'] .learning-option span {
-  color: #f4f1eb;
+  color: var(--pf-dark-text-primary);
 }
 
 :root[data-theme='dark'] p,
@@ -81,7 +87,7 @@ body {
 :root[data-theme='dark'] .learning-option small,
 :root[data-theme='dark'] .learning-consent p,
 :root[data-theme='dark'] .ocr-preview {
-  color: #c9ced8;
+  color: var(--pf-dark-text-secondary);
 }
 
 :root[data-theme='dark'] .account-hero,
@@ -107,9 +113,9 @@ body {
 :root[data-theme='dark'] .mini-record,
 :root[data-theme='dark'] .package-card,
 :root[data-theme='dark'] .payment-channel-card {
-  border-color: rgba(232, 235, 245, 0.12);
-  background: rgba(16, 17, 22, 0.92);
-  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.26);
+  border-color: rgba(255, 255, 255, 0.10);
+  background: rgba(19, 28, 41, 0.94);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.22);
 }
 
 :root[data-theme='dark'] .identity-card,
@@ -126,8 +132,8 @@ body {
 :root[data-theme='dark'] .workflow-next-step,
 :root[data-theme='dark'] .check-item,
 :root[data-theme='dark'] .top-bar {
-  border-color: rgba(232, 235, 245, 0.13);
-  background: rgba(255, 255, 255, 0.055);
+  border-color: rgba(255, 255, 255, 0.10);
+  background: rgba(24, 35, 52, 0.72);
 }
 
 :root[data-theme='dark'] .drop-zone:hover,
@@ -137,8 +143,8 @@ body {
 :root[data-theme='dark'] .learning-option.active,
 :root[data-theme='dark'] .history-row.clickable:hover,
 :root[data-theme='dark'] .action-item:hover {
-  border-color: rgba(138, 180, 255, 0.38);
-  background: rgba(138, 180, 255, 0.11);
+  border-color: rgba(34, 197, 94, 0.28);
+  background: rgba(34, 197, 94, 0.10);
 }
 
 :root[data-theme='dark'] input,
@@ -148,14 +154,14 @@ body {
 :root[data-theme='dark'] .form-field select,
 :root[data-theme='dark'] .cnki-form .form-field input,
 :root[data-theme='dark'] .config-textarea textarea {
-  border-color: rgba(232, 235, 245, 0.14);
-  background: rgba(6, 7, 10, 0.72);
-  color: #f4f1eb;
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(10, 15, 23, 0.92);
+  color: var(--pf-dark-text-primary);
 }
 
 :root[data-theme='dark'] input::placeholder,
 :root[data-theme='dark'] textarea::placeholder {
-  color: #7d8a8b;
+  color: var(--pf-dark-text-muted);
 }
 
 :root[data-theme='dark'] .progress-section,
@@ -169,41 +175,38 @@ body {
 
 :root[data-theme='dark'] .progress-bar,
 :root[data-theme='dark'] .heat {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 :root[data-theme='dark'] .status-badge,
 :root[data-theme='dark'] .order-status.paid,
 :root[data-theme='dark'] .order-status.completed {
-  background: rgba(138, 180, 255, 0.14);
-  color: #9fc2ff;
+  background: rgba(34, 197, 94, 0.14);
+  color: #b8f0cb;
 }
 
 :root[data-theme='dark'] .el-input__wrapper,
 :root[data-theme='dark'] .el-textarea__inner,
 :root[data-theme='dark'] .el-select__wrapper {
-  background: rgba(6, 7, 10, 0.72);
-  box-shadow: 0 0 0 1px rgba(232, 235, 245, 0.14) inset;
+  background: rgba(10, 15, 23, 0.92);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12) inset;
 }
 
 :root[data-theme='dark'] .el-tag {
-  --el-tag-bg-color: rgba(138, 180, 255, 0.14);
-  --el-tag-border-color: rgba(138, 180, 255, 0.3);
-  --el-tag-text-color: #9fc2ff;
+  --el-tag-bg-color: rgba(34, 197, 94, 0.12);
+  --el-tag-border-color: rgba(34, 197, 94, 0.24);
+  --el-tag-text-color: #d9fbe5;
 }
 
 :root[data-theme='dark'] body .app-layout {
-  background:
-    radial-gradient(circle at 12% 12%, rgba(138, 180, 255, 0.12), transparent 28%),
-    radial-gradient(circle at 82% 10%, rgba(255, 122, 112, 0.1), transparent 26%),
-    linear-gradient(180deg, #050608 0%, #0b0c10 52%, #030405 100%) !important;
-  color: #f4f1eb !important;
+  background: linear-gradient(180deg, #0b1220 0%, #0f1726 52%, #121b2a 100%) !important;
+  color: var(--pf-dark-text-primary) !important;
 }
 
 :root[data-theme='dark'] body .app-header,
 :root[data-theme='dark'] body .app-footer {
-  background: rgba(7, 8, 11, 0.92) !important;
-  border-color: rgba(232, 235, 245, 0.12) !important;
+  background: rgba(11, 18, 32, 0.92) !important;
+  border-color: rgba(255, 255, 255, 0.10) !important;
 }
 
 :root[data-theme='dark'] body .account-hero,
@@ -227,9 +230,9 @@ body {
 :root[data-theme='dark'] body .match-card,
 :root[data-theme='dark'] body .plan-card,
 :root[data-theme='dark'] body .feedback-card {
-  border-color: rgba(232, 235, 245, 0.12) !important;
-  background: rgba(16, 17, 22, 0.94) !important;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.3) !important;
+  border-color: rgba(255, 255, 255, 0.10) !important;
+  background: rgba(19, 28, 41, 0.94) !important;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.24) !important;
 }
 
 :root[data-theme='dark'] body .identity-card,
@@ -245,8 +248,8 @@ body {
 :root[data-theme='dark'] body .risk-strip div,
 :root[data-theme='dark'] body .case-text,
 :root[data-theme='dark'] body .quick-empty {
-  border-color: rgba(232, 235, 245, 0.13) !important;
-  background: rgba(255, 255, 255, 0.07) !important;
+  border-color: rgba(255, 255, 255, 0.10) !important;
+  background: rgba(24, 35, 52, 0.72) !important;
 }
 
 :root[data-theme='dark'] body h1,
@@ -264,7 +267,7 @@ body {
 :root[data-theme='dark'] body .history-info strong,
 :root[data-theme='dark'] body .form-field label,
 :root[data-theme='dark'] body .learning-option span {
-  color: #f4f1eb !important;
+  color: var(--pf-dark-text-primary) !important;
 }
 
 :root[data-theme='dark'] body p,
@@ -284,7 +287,7 @@ body {
 :root[data-theme='dark'] body .note-card p,
 :root[data-theme='dark'] body .marked-text,
 :root[data-theme='dark'] body .quick-summary {
-  color: #c9ced8 !important;
+  color: var(--pf-dark-text-secondary) !important;
 }
 
 :root[data-theme='dark'] body input,
@@ -293,9 +296,9 @@ body {
 :root[data-theme='dark'] body .form-field input,
 :root[data-theme='dark'] body .form-field select,
 :root[data-theme='dark'] body .quick-textarea {
-  border-color: rgba(232, 235, 245, 0.16) !important;
-  background: rgba(6, 7, 10, 0.74) !important;
-  color: #f4f1eb !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  background: rgba(10, 15, 23, 0.92) !important;
+  color: var(--pf-dark-text-primary) !important;
 }
 
 :root[data-theme='dark'] body .btn-text:hover {
@@ -303,40 +306,38 @@ body {
   background: rgba(255, 180, 169, 0.12) !important;
 }
 
-/* Homepage dark-mode hierarchy: pure black base with blue, coral, and gold signals. */
+/* Homepage dark-mode hierarchy: cleaner, brighter typography with restrained surfaces. */
 :root[data-theme='dark'] body .case-carousel-section,
 :root[data-theme='dark'] body .quick-rewrite-panel {
   background:
-    radial-gradient(circle at 18% 0%, rgba(138, 180, 255, 0.1), transparent 26%),
-    radial-gradient(circle at 86% 18%, rgba(255, 122, 112, 0.08), transparent 30%),
-    linear-gradient(180deg, rgba(14, 15, 20, 0.98), rgba(4, 5, 7, 0.98)) !important;
+    linear-gradient(180deg, rgba(19, 28, 41, 0.98), rgba(14, 22, 34, 0.98)) !important;
 }
 
 :root[data-theme='dark'] body .case-card {
-  border-color: rgba(138, 180, 255, 0.18) !important;
+  border-color: rgba(255, 255, 255, 0.10) !important;
   background:
-    linear-gradient(180deg, rgba(18, 19, 25, 0.98), rgba(8, 9, 13, 0.99)) !important;
+    linear-gradient(180deg, rgba(24, 35, 52, 0.98), rgba(18, 27, 40, 0.99)) !important;
   box-shadow:
-    inset 0 3px 0 rgba(138, 180, 255, 0.24),
-    0 18px 42px rgba(0, 0, 0, 0.3) !important;
+    inset 0 2px 0 rgba(255, 255, 255, 0.06),
+    0 14px 28px rgba(0, 0, 0, 0.22) !important;
 }
 
 :root[data-theme='dark'] body .case-card:nth-child(3n + 2) {
   box-shadow:
-    inset 0 3px 0 rgba(255, 209, 102, 0.28),
-    0 18px 42px rgba(0, 0, 0, 0.3) !important;
+    inset 0 2px 0 rgba(255, 209, 102, 0.22),
+    0 14px 28px rgba(0, 0, 0, 0.22) !important;
 }
 
 :root[data-theme='dark'] body .case-card:nth-child(3n + 3) {
   box-shadow:
-    inset 0 3px 0 rgba(255, 122, 112, 0.28),
-    0 18px 42px rgba(0, 0, 0, 0.3) !important;
+    inset 0 2px 0 rgba(255, 122, 112, 0.2),
+    0 14px 28px rgba(0, 0, 0, 0.22) !important;
 }
 
 :root[data-theme='dark'] body .case-tag {
-  border: 1px solid rgba(138, 180, 255, 0.24) !important;
-  background: rgba(138, 180, 255, 0.13) !important;
-  color: #9fc2ff !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+  background: rgba(34, 197, 94, 0.12) !important;
+  color: #d9fbe5 !important;
 }
 
 /* Keep light paper/mock editor cards readable inside the dark homepage. */
@@ -1067,6 +1068,143 @@ h3 {
 
 .notice p + p {
   margin-top: 8px;
+}
+
+.report-page .summary-hero {
+  border: 1px solid rgba(74, 88, 118, 0.10);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 88% 10%, rgba(91, 152, 255, 0.14), transparent 24%),
+    radial-gradient(circle at 12% 6%, rgba(255, 191, 125, 0.20), transparent 26%),
+    linear-gradient(135deg, #fff9f3 0%, #fbfcff 54%, #f4f8ff 100%);
+  color: #1d2736;
+  box-shadow: 0 22px 56px rgba(53, 65, 86, 0.10);
+}
+
+.report-page .hero-copy {
+  color: #546176;
+}
+
+.report-page .hero-copy h2,
+.report-page .risk-score-line strong,
+.report-page .metric-card strong,
+.report-page .card h3 {
+  color: #1d2736;
+}
+
+.report-page .metric-card {
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.90), rgba(250, 252, 255, 0.96));
+  border: 1px solid rgba(85, 99, 126, 0.10);
+  box-shadow: 0 12px 24px rgba(83, 94, 114, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+.report-page .metric-card span,
+.report-page .metric-card small {
+  color: #67758b;
+}
+
+.report-page .soft-card,
+.report-page .card,
+.report-page .segment-card,
+.report-page .match-card,
+.report-page .plan-card,
+.report-page .timeline-card,
+.report-page .heat-card,
+.report-page .notice {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(251, 252, 255, 0.97));
+  border: 1px solid rgba(85, 99, 126, 0.08);
+  box-shadow: 0 14px 38px rgba(63, 74, 94, 0.08);
+}
+
+.report-page .eyebrow {
+  color: #2c7b6d;
+}
+
+.report-page .plan-badge {
+  background: linear-gradient(135deg, #21465f, #2e907a);
+}
+
+:root[data-theme='dark'] .report-page .summary-hero {
+  border-color: rgba(109, 137, 204, 0.18);
+  background:
+    radial-gradient(circle at 84% 18%, rgba(90, 130, 255, 0.20), transparent 26%),
+    radial-gradient(circle at 14% 6%, rgba(255, 170, 87, 0.14), transparent 24%),
+    linear-gradient(145deg, #0f131b 0%, #131927 48%, #090d14 100%);
+  color: #f4f6f8;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
+}
+
+:root[data-theme='dark'] .report-page .hero-copy,
+:root[data-theme='dark'] .report-page .preview,
+:root[data-theme='dark'] .report-page .helper-text,
+:root[data-theme='dark'] .report-page .mini-metrics,
+:root[data-theme='dark'] .report-page .bullet-list,
+:root[data-theme='dark'] .report-page .notice,
+:root[data-theme='dark'] .report-page .timeline-time {
+  color: #b7c3d2;
+}
+
+:root[data-theme='dark'] .report-page .risk-score-line strong,
+:root[data-theme='dark'] .report-page .hero-copy h2,
+:root[data-theme='dark'] .report-page .metric-card strong,
+:root[data-theme='dark'] .report-page .card h3,
+:root[data-theme='dark'] .report-page .card strong {
+  color: #f7f9fb;
+}
+
+:root[data-theme='dark'] .report-page .eyebrow {
+  color: #8ed5bf;
+}
+
+:root[data-theme='dark'] .report-page .metric-card {
+  background: linear-gradient(180deg, rgba(22, 27, 38, 0.98), rgba(15, 19, 28, 0.99));
+  border-color: rgba(123, 152, 222, 0.16);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+:root[data-theme='dark'] .report-page .metric-card span,
+:root[data-theme='dark'] .report-page .metric-card small {
+  color: #9fb1c8;
+}
+
+:root[data-theme='dark'] .report-page .metric-card.cnki-primary {
+  background: linear-gradient(180deg, rgba(18, 48, 70, 0.98), rgba(14, 35, 52, 0.98));
+  border-color: rgba(108, 196, 255, 0.24);
+}
+
+:root[data-theme='dark'] .report-page .metric-card.cnki-primary span {
+  color: #8ddcff;
+}
+
+:root[data-theme='dark'] .report-page .metric-card.cnki-primary strong {
+  color: #f4fbff;
+}
+
+:root[data-theme='dark'] .report-page .soft-card,
+:root[data-theme='dark'] .report-page .card,
+:root[data-theme='dark'] .report-page .segment-card,
+:root[data-theme='dark'] .report-page .match-card,
+:root[data-theme='dark'] .report-page .plan-card,
+:root[data-theme='dark'] .report-page .timeline-card,
+:root[data-theme='dark'] .report-page .heat-card,
+:root[data-theme='dark'] .report-page .notice {
+  background: linear-gradient(180deg, rgba(17, 20, 28, 0.96), rgba(13, 16, 22, 0.98));
+  border-color: rgba(128, 164, 255, 0.10);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.30);
+}
+
+:root[data-theme='dark'] .report-page .status-tile,
+:root[data-theme='dark'] .report-page .status-block,
+:root[data-theme='dark'] .report-page .check-item,
+:root[data-theme='dark'] .report-page .workflow-next-step {
+  background: linear-gradient(180deg, rgba(37, 47, 67, 0.74), rgba(25, 31, 46, 0.86)) !important;
+  border-color: rgba(118, 147, 220, 0.18) !important;
+}
+
+:root[data-theme='dark'] .report-page .plan-badge {
+  background: linear-gradient(135deg, #3a67ab, #2e927f);
+  color: #f8fbff;
 }
 
 @media (max-width: 1080px) {

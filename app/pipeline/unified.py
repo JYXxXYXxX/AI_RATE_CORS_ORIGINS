@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 from uuid import uuid4
 
@@ -29,6 +30,20 @@ from app.services.feedback_learning import (
     refresh_feedback_learning_skill,
 )
 from app.services.text_processing import clean_body_text, preview_text, segment_document
+
+
+def _looks_like_garbled_text(text: str) -> bool:
+    compact = "".join(text.split())
+    if len(compact) < 40:
+        return False
+    question_like = sum(1 for ch in compact if ch in {"?", "？", "�"})
+    readable = sum(
+        1 for ch in compact if ch.isalnum() or ("\u4e00" <= ch <= "\u9fff")
+    )
+    return (
+        question_like / max(len(compact), 1) >= 0.18
+        and readable / max(len(compact), 1) <= 0.72
+    )
 
 
 SECTION_TYPE_MAP: list[tuple[re.Pattern[str], str]] = [
@@ -83,21 +98,16 @@ class UnifiedPipeline:
         filename = file.filename or "paper.txt"
         if len(filename) > 255:
             raise ValueError("文件名过长（最大 255 字符）")
-        raw_text = extract_text(filename, content)
-        cleaned_text = clean_body_text(raw_text)
-        if not cleaned_text.strip():
-            raise ValueError("未能从文件中提取可分析正文")
-
-        doc_hash = hashlib.sha256(cleaned_text.encode("utf-8")).hexdigest()
-        # 匿名用户不启用 hash 去重，避免复用到带权限限制的已有文档
-        existing = None if user_id is None else self.repository.get_document_by_hash(doc_hash)
-
-        # doc 文件尝试转换为 docx
+        extract_filename = filename
+        extract_content = content
         if filename.lower().endswith(".doc"):
             converted = convert_doc_to_docx(content, self.settings.upload_storage_dir)
             if converted:
-                original_path = converted
-                filename = Path(converted).name
+                converted_path = Path(converted)
+                extract_filename = converted_path.name
+                extract_content = converted_path.read_bytes()
+                filename = converted_path.name
+                original_path = str(converted_path.resolve())
             else:
                 original_path = self._write_binary(
                     self.settings.upload_storage_dir, filename, content
@@ -106,6 +116,18 @@ class UnifiedPipeline:
             original_path = self._write_binary(
                 self.settings.upload_storage_dir, filename, content
             )
+        raw_text = extract_text(extract_filename, extract_content)
+        cleaned_text = clean_body_text(raw_text)
+        if _looks_like_garbled_text(cleaned_text):
+            raise ValueError(
+                "鎻愬彇鍒扮殑姝ｆ枃鐤戜技涔辩爜鎴栧ぇ閲忕己瀛楋紝鏆傛椂涓嶅缓璁户缁娴嬨€傝浼樺厛涓婁紶 UTF-8/GB18030 缂栫爜鐨?txt锛屾垨鍙︿繚瀛樹负 .docx 鍚庨噸璇曘€?"
+            )
+        if not cleaned_text.strip():
+            raise ValueError("未能从文件中提取可分析正文")
+
+        doc_hash = hashlib.sha256(cleaned_text.encode("utf-8")).hexdigest()
+        # 匿名用户不启用 hash 去重，避免复用到带权限限制的已有文档
+        existing = None if user_id is None else self.repository.get_document_by_hash(doc_hash)
 
         cleaned_path = self._write_text(
             self.settings.cleaned_storage_dir, filename, cleaned_text
@@ -145,7 +167,12 @@ class UnifiedPipeline:
 
         return UploadResult(document=document, reused_existing=existing is not None)
 
-    def analyze_document(self, document_id: str, force: bool = False) -> dict[str, Any]:
+    def analyze_document(
+        self,
+        document_id: str,
+        force: bool = False,
+        progress_callback: Callable[[int], None] | None = None,
+    ) -> dict[str, Any]:
         document = self.repository.get_document(document_id)
         if document is None:
             raise ValueError("document not found")
@@ -177,6 +204,13 @@ class UnifiedPipeline:
         if not cleaned_text_path:
             raise ValueError("document text path missing")
         cleaned_text = Path(cleaned_text_path).read_text(encoding="utf-8")
+        if _looks_like_garbled_text(cleaned_text):
+            repaired_text = self._recover_cleaned_text(document)
+            if repaired_text:
+                cleaned_text = repaired_text
+                Path(cleaned_text_path).write_text(cleaned_text, encoding="utf-8")
+        analysis_text = _prepare_analysis_text(cleaned_text, self.settings.max_text_chars)
+        _publish_progress(progress_callback, 16)
 
         run = self.repository.create_analysis_run(
             document_id=document_id,
@@ -189,10 +223,14 @@ class UnifiedPipeline:
 
         try:
             stored_sections = self.repository.list_document_sections(document_id)
+            max_sections = _max_analysis_sections(self.settings.max_text_chars, self.settings.target_segment_chars)
+            if stored_sections and len(stored_sections) > max_sections:
+                self.repository.delete_document_sections(document_id)
+                stored_sections = []
             if stored_sections:
                 sections = stored_sections
             else:
-                raw_sections = segment_document(cleaned_text, self.settings)
+                raw_sections = segment_document(analysis_text, self.settings)
                 # 批量生成 embedding 向量（比逐条快 3-5x）
                 section_texts = [item.text for item in raw_sections]
                 embeddings = build_embedding_vectors_batch(section_texts)
@@ -215,14 +253,16 @@ class UnifiedPipeline:
             self.repository.mark_document_status(
                 document_id, "processing", section_count=len(sections)
             )
+            _publish_progress(progress_callback, 36)
 
             analyzer = PaperAnalyzer(self.settings, calibrator=self.calibrator)
             ai_report = analyzer.analyze(
-                cleaned_text,
+                analysis_text,
                 document.get("title") or document.get("filename"),
                 document.get("subject"),
                 document.get("degree_level"),
             )
+            _publish_progress(progress_callback, 58)
 
             # 跨文档语义查重：用 pgvector 检索其他文档中的相似段落
             cross_doc_matches: list[dict[str, Any]] = []
@@ -250,6 +290,7 @@ class UnifiedPipeline:
             duplication = score_duplication(
                 sections, cross_doc_matches=cross_doc_matches or None
             )
+            _publish_progress(progress_callback, 74)
 
             section_id_by_index = {
                 section["section_index"]: section["id"] for section in sections
@@ -341,6 +382,7 @@ class UnifiedPipeline:
                 if item.section_index in section_id_by_index
             ]
             self.repository.insert_similarity_matches(run["id"], similarity_matches)
+            _publish_progress(progress_callback, 88)
 
             proxy_prediction = self._build_proxy_prediction(
                 document, run, ai_report, duplication
@@ -377,6 +419,7 @@ class UnifiedPipeline:
             self.repository.mark_document_status(
                 document_id, "completed", section_count=len(sections)
             )
+            _publish_progress(progress_callback, 96)
             return {"run": final_run, "report": report_json}
         except Exception as exc:
             self.repository.mark_run_failed(run["id"], str(exc))
@@ -666,9 +709,68 @@ class UnifiedPipeline:
         target.write_text(text, encoding="utf-8")
         return str(target.resolve())
 
+    def _recover_cleaned_text(self, document: dict[str, Any]) -> str | None:
+        original_path = document.get("original_file_path")
+        if not original_path:
+            return None
+
+        source_path = Path(str(original_path))
+        if not source_path.exists():
+            return None
+
+        source_bytes = source_path.read_bytes()
+        filename = document.get("filename") or source_path.name
+
+        try:
+            if filename.lower().endswith(".doc") or source_path.suffix.lower() == ".doc":
+                converted = convert_doc_to_docx(
+                    source_bytes, self.settings.upload_storage_dir
+                )
+                if converted:
+                    converted_path = Path(converted)
+                    raw_text = extract_text(
+                        converted_path.name, converted_path.read_bytes()
+                    )
+                else:
+                    raw_text = extract_text(filename, source_bytes)
+            else:
+                raw_text = extract_text(source_path.name, source_bytes)
+        except Exception:
+            return None
+
+        cleaned_text = clean_body_text(raw_text)
+        if not cleaned_text.strip() or _looks_like_garbled_text(cleaned_text):
+            return None
+        return cleaned_text
+
 
 def _safe_name(filename: str) -> str:
     return re.sub(r"[^0-9A-Za-z\u4e00-\u9fff._-]+", "_", filename).strip("_") or "paper"
+
+
+def _publish_progress(
+    progress_callback: Callable[[int], None] | None, value: int
+) -> None:
+    if progress_callback is None:
+        return
+    progress_callback(max(0, min(99, int(value))))
+
+
+def _prepare_analysis_text(text: str, max_chars: int) -> str:
+    if len(text) <= max_chars:
+        return text
+    chunk = max_chars // 3
+    if chunk <= 0:
+        return text[:max_chars]
+    head = text[:chunk]
+    middle_start = max(0, len(text) // 2 - chunk // 2)
+    middle = text[middle_start : middle_start + chunk]
+    tail = text[-chunk:]
+    return "\n\n".join([head, middle, tail])
+
+
+def _max_analysis_sections(max_chars: int, target_segment_chars: int) -> int:
+    return max(180, (max_chars // max(target_segment_chars, 1)) + 80)
 
 
 def _detect_language(text: str) -> str:
@@ -717,6 +819,7 @@ def _estimate_risk_score(
 
 def _ensure_report_summary_defaults(report: dict[str, Any]) -> None:
     summary = report.setdefault("summary", {})
+    report.setdefault("warnings", [])
     top_risk_sections = report.get("top_risk_sections", []) or []
 
     dup_band = summary.get("predicted_cnki_dup") or {}

@@ -73,6 +73,10 @@ class Settings(BaseSettings):
     llm_timeout_seconds: int = Field(default=30, ge=5)
     llm_max_retries: int = Field(default=2, ge=1, le=6)
     llm_rewrite_enabled: bool = False
+    onlyoffice_enabled: bool = False
+    onlyoffice_document_server_url: str | None = None
+    onlyoffice_jwt_secret: str | None = None
+    onlyoffice_backend_base_url: str = "http://host.docker.internal:8010"
 
     data_retention_days: int = Field(default=90, ge=1)
 

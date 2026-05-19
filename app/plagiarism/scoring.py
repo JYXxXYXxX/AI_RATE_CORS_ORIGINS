@@ -89,9 +89,19 @@ def _get_embedding_model() -> Any:
     if _embedding_load_attempted:
         return _embedding_model
     _embedding_load_attempted = True
+    import os
+
+    if os.environ.get("AI_RATE_ENABLE_EMBEDDING_MODEL", "false").lower() in (
+        "false",
+        "0",
+        "no",
+        "off",
+    ):
+        logger.info("embedding 模型已禁用 (AI_RATE_ENABLE_EMBEDDING_MODEL=false)，使用 hash 占位向量")
+        _embedding_model = None
+        return _embedding_model
     try:
         from sentence_transformers import SentenceTransformer
-        import os
 
         model_name = os.environ.get(
             "AI_RATE_EMBEDDING_MODEL",
@@ -274,9 +284,10 @@ def score_duplication(
 
         best_similarity = 0.0
         best_match_index: int | None = None
-        for other_index, other_shingles in enumerate(shingle_sets):
+        for other_index in _candidate_section_indices(index, len(shingle_sets)):
             if other_index == index:
                 continue
+            other_shingles = shingle_sets[other_index]
             similarity = _jaccard(current_shingles, other_shingles)
             if similarity > best_similarity:
                 best_similarity = similarity
@@ -464,6 +475,22 @@ def _jaccard(first: set[str], second: set[str]) -> float:
     intersection = len(first & second)
     union = len(first | second)
     return intersection / union if union else 0.0
+
+
+def _candidate_section_indices(index: int, total: int) -> list[int]:
+    if total <= 180:
+        return list(range(total))
+
+    nearby = range(max(0, index - 12), min(total, index + 13))
+    stride = max(1, math.ceil(total / 48))
+    anchors = range(0, total, stride)
+    seen: set[int] = set()
+    ordered: list[int] = []
+    for candidate in list(nearby) + list(anchors):
+        if candidate not in seen:
+            seen.add(candidate)
+            ordered.append(candidate)
+    return ordered
 
 
 def _quote_ratio(text: str) -> float:

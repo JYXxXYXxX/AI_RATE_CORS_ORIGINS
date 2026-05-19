@@ -403,6 +403,7 @@ class UnifiedReportResponse(BaseModel):
     feedback_timeline: list[FeedbackTimelineItem] = Field(default_factory=list)
     calibration_insight: CalibrationInsight | None = None
     cnki_report_details: CnkiFeedbackDetails | None = None
+    warnings: list[str] = Field(default_factory=list)
     disclaimer: str
     retained_content_policy: str
 
@@ -712,6 +713,67 @@ class DocumentPatchResponse(BaseModel):
     new_text: str
     created_at: str
     format: Literal["docx", "txt"] = "docx"
+
+
+class RewriteWorkspaceHighlight(BaseModel):
+    text: str
+    risk_level: Literal["high", "medium", "low", "normal"]
+
+
+class RewriteWorkspaceRiskItem(BaseModel):
+    risk_id: str
+    block_id: str
+    section_id: str
+    section_index: int = Field(..., ge=0)
+    paragraph_index: int | None = Field(default=None, ge=0)
+    section_title: str | None = None
+    display_order: int = Field(..., ge=0)
+    original_text: str
+    current_text: str
+    risk_level: Literal["high", "medium", "low", "normal"]
+    aigc_score: float = Field(..., ge=0, le=100)
+    diagnosis: str
+    rewrite_hint: str
+    principle: str
+    reasons: list[str] = Field(default_factory=list)
+    status: Literal["pending", "applied", "ignored"] = "pending"
+    highlights: list[RewriteWorkspaceHighlight] = Field(default_factory=list)
+    source_map: dict[str, Any] | None = None
+
+
+class RewriteWorkspaceSectionNode(BaseModel):
+    section_id: str
+    section_index: int = Field(..., ge=0)
+    paragraph_index: int | None = Field(default=None, ge=0)
+    title: str
+    risk_level: Literal["high", "medium", "low", "normal"]
+    item_ids: list[str] = Field(default_factory=list)
+    item_count: int = Field(default=0, ge=0)
+    risk_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class RewriteWorkspaceMetrics(BaseModel):
+    current_aigc_percent: float = Field(..., ge=0, le=100)
+    estimated_optimized_percent: float = Field(..., ge=0, le=100)
+    rewritten_count: int = Field(default=0, ge=0)
+    ignored_count: int = Field(default=0, ge=0)
+    total_risk_count: int = Field(default=0, ge=0)
+    high_count: int = Field(default=0, ge=0)
+    medium_count: int = Field(default=0, ge=0)
+    low_count: int = Field(default=0, ge=0)
+
+
+class RewriteWorkspaceResponse(BaseModel):
+    run_id: str
+    document_id: str
+    title: str | None = None
+    filename: str
+    mode: Literal["estimate", "report"]
+    source_format: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+    metrics: RewriteWorkspaceMetrics
+    sections: list[RewriteWorkspaceSectionNode] = Field(default_factory=list)
+    risk_items: list[RewriteWorkspaceRiskItem] = Field(default_factory=list)
 
 
 class CnkiReportSummary(BaseModel):

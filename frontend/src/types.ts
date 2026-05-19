@@ -354,6 +354,7 @@ export interface UnifiedReportResponse {
   feedback_timeline: FeedbackTimelineItem[]
   calibration_insight?: CalibrationInsight | null
   cnki_report_details?: CnkiFeedbackDetails | null
+  warnings?: string[]
   disclaimer: string
   retained_content_policy: string
 }
@@ -481,6 +482,92 @@ export interface DocumentPatch {
   oldText: string
   newText: string
   createdAt: string
+}
+
+export interface OnlyOfficeConfigResponse {
+  enabled: boolean
+  supported: boolean
+  reason?: string | null
+  scriptUrl?: string | null
+  documentServerUrl?: string | null
+  editorConfig?: Record<string, any> | null
+  documentId?: string
+  runId?: string
+  sourceFormat?: string | null
+  workingCopyReady?: boolean
+}
+
+export interface OnlyOfficeApplyResponse {
+  ok: boolean
+  patchStats: {
+    requested: number
+    applied: number
+    failed: number
+    skipped: number
+    highlighted: number
+  }
+  config?: OnlyOfficeConfigResponse | null
+}
+
+export interface RewriteWorkspaceHighlight {
+  text: string
+  riskLevel: 'high' | 'medium' | 'low' | 'normal'
+}
+
+export interface RewriteWorkspaceRiskItem {
+  riskId: string
+  blockId: string
+  sectionId: string
+  sectionIndex: number
+  paragraphIndex?: number | null
+  sectionTitle?: string | null
+  displayOrder: number
+  originalText: string
+  currentText: string
+  riskLevel: 'high' | 'medium' | 'low' | 'normal'
+  aigcScore: number
+  diagnosis: string
+  rewriteHint: string
+  principle: string
+  reasons: string[]
+  status: 'pending' | 'applied' | 'ignored'
+  highlights: RewriteWorkspaceHighlight[]
+  sourceMap?: DocumentBlock['sourceMap']
+}
+
+export interface RewriteWorkspaceSectionNode {
+  sectionId: string
+  sectionIndex: number
+  paragraphIndex?: number | null
+  title: string
+  riskLevel: 'high' | 'medium' | 'low' | 'normal'
+  itemIds: string[]
+  itemCount: number
+  riskCounts: Record<'high' | 'medium' | 'low' | 'normal', number>
+}
+
+export interface RewriteWorkspaceMetrics {
+  currentAigcPercent: number
+  estimatedOptimizedPercent: number
+  rewrittenCount: number
+  ignoredCount: number
+  totalRiskCount: number
+  highCount: number
+  mediumCount: number
+  lowCount: number
+}
+
+export interface RewriteWorkspaceResponse {
+  runId: string
+  documentId: string
+  title?: string | null
+  filename: string
+  mode: 'estimate' | 'report'
+  sourceFormat?: string | null
+  warnings: string[]
+  metrics: RewriteWorkspaceMetrics
+  sections: RewriteWorkspaceSectionNode[]
+  riskItems: RewriteWorkspaceRiskItem[]
 }
 
 export interface RiskStyle {

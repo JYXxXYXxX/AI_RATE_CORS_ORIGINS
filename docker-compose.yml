@@ -42,6 +42,20 @@ services:
           cpus: '0.5'
           memory: 256M
 
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    restart: unless-stopped
+    ports:
+      - "8082:80"
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: ${AI_RATE_ONLYOFFICE_JWT_SECRET:-dev-onlyoffice-jwt-secret}
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+
   # 后端 API + 前端静态文件
   api:
     build: .

@@ -3,6 +3,7 @@ import subprocess
 import tempfile
 import os
 from io import BytesIO
+from pathlib import Path
 
 from docx import Document
 from pypdf import PdfReader

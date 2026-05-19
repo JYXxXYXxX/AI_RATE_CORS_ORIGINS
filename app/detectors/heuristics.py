@@ -311,6 +311,13 @@ class CrossSegmentRepetitionDetector(Detector):
         ts = tokens(segment)
         if len(ts) < 30 or len(all_segments) < 2:
             return DetectorResult(self.name, 0.25, self.weight, [])
+        if len(all_segments) > 160:
+            return DetectorResult(
+                self.name,
+                0.28,
+                self.weight * 0.35,
+                ["文档段落过多，跨段重复检测已切换为轻量模式以保证分析完成"],
+            )
 
         current = Counter(_ngrams(ts, 3))
         if not current:

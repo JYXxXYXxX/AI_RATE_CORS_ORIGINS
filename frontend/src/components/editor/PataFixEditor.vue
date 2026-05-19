@@ -62,7 +62,7 @@
           </div>
           <div class="metric-item">
             <span class="metric-label">已改写</span>
-            <span class="metric-value color-accent">{{ rewrittenCount }} / {{ sections.length }}</span>
+            <span class="metric-value color-accent">{{ rewrittenCount }} / {{ editableParagraphCount }}</span>
             <span class="metric-sub">句子</span>
           </div>
           <div class="metric-item">
@@ -236,7 +236,13 @@
       <!-- 中间正文 -->
       <main ref="docRef" class="editor-document">
         <div class="document-scale-shell" :style="{ zoom: documentZoom }">
-          <div v-if="loading || docxLoading" class="doc-loading">
+          <div v-if="loadError" class="doc-loading">
+            <el-alert :title="loadError" type="error" :closable="false" show-icon />
+            <div v-if="canReturnToOnlyOffice" class="doc-loading-actions">
+              <el-button type="primary" @click="returnToOnlyOffice">返回 ONLYOFFICE</el-button>
+            </div>
+          </div>
+          <div v-else-if="loading || docxLoading" class="doc-loading">
             <el-skeleton :rows="10" animated />
           </div>
           <div v-else-if="docxError" class="doc-loading">
@@ -522,6 +528,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowLeft, ArrowRight, ArrowDown, RefreshLeft, RefreshRight,
   Download, Refresh, CircleCheck, Lock
@@ -537,9 +544,13 @@ const props = defineProps<{
   runId: string
 }>()
 
+const route = useRoute()
+const router = useRouter()
+
 // ==================== 旧架构兼容层 ====================
 const sections = ref<RunSectionItem[]>([])
 const loading = ref(false)
+const loadError = ref('')
 const docRef = ref<HTMLDivElement | null>(null)
 const paperTitle = ref('')
 
@@ -613,6 +624,8 @@ const batchAdviceMap = ref<Map<number, RewriteAdviceResponse>>(new Map())
 const batchLoading = ref(false)
 const batchProgress = ref(0)
 
+const canReturnToOnlyOffice = computed(() => route.query.fallback === '1')
+
 // 初始分数
 const initialAigc = ref(0)
 const initialDup = ref(0)
@@ -644,6 +657,27 @@ onMounted(() => {
 
 const baseUrl = import.meta.env.VITE_API_BASE_URL || ''
 
+function looksBinaryLikeText(text: string): boolean {
+  const compact = text.replace(/\s+/g, '')
+  if (compact.length < 40) return false
+  const suspicious = Array.from(compact).filter((ch) => {
+    const code = ch.charCodeAt(0)
+    return ch === '\uFFFD' || (code < 32 && ch !== '\n' && ch !== '\r' && ch !== '\t')
+  }).length
+  const readable = Array.from(compact).filter((ch) => /[0-9A-Za-z\u4e00-\u9fff]/.test(ch)).length
+  return suspicious / compact.length >= 0.02 || readable / compact.length <= 0.45
+}
+
+function returnToOnlyOffice() {
+  const nextQuery = { ...route.query }
+  delete nextQuery.fallback
+  router.replace({
+    name: 'rewrite',
+    params: { runId: props.runId },
+    query: nextQuery,
+  })
+}
+
 async function loadOriginalFile() {
   if (!documentId.value) return
   docxLoading.value = true
@@ -665,7 +699,7 @@ async function loadOriginalFile() {
       const isZip = header[0] === 0x50 && header[1] === 0x4B && header[2] === 0x03 && header[3] === 0x04
       if (!isZip) {
         originalBuffer.value = null
-        fileType.value = 'text'
+        docxError.value = '原始 DOCX 文件校验失败，当前任务无法在兼容编辑器中打开。请返回重新上传，或直接使用 ONLYOFFICE 模式。'
         return
       }
     } else if (fileType.value === 'pdf') {
@@ -674,14 +708,14 @@ async function loadOriginalFile() {
       const isPdf = header[0] === 0x25 && header[1] === 0x50 && header[2] === 0x44 && header[3] === 0x46
       if (!isPdf) {
         originalBuffer.value = null
-        fileType.value = 'text'
+        docxError.value = '原始 PDF 文件校验失败，当前任务无法在兼容编辑器中打开。'
         return
       }
     }
     originalBuffer.value = buf
   } catch (err) {
     originalBuffer.value = null
-    fileType.value = 'text'
+    docxError.value = err instanceof Error ? err.message : '加载原始文件失败'
   } finally {
     docxLoading.value = false
   }
@@ -693,11 +727,9 @@ function onDocxRendered(container: HTMLElement) {
 }
 
 function onDocxError(msg: string) {
-  // mammoth 渲染失败，静默 fallback 到纯文本
   originalBuffer.value = null
-  fileType.value = 'text'
-  docxError.value = ''
-  console.warn('mammoth render failed, fallback to text:', msg)
+  docxError.value = msg || 'DOCX 渲染失败，请改用 ONLYOFFICE 在线改写。'
+  console.warn('mammoth render failed:', msg)
 }
 
 function onPdfRendered(_container: HTMLElement) {
@@ -710,8 +742,8 @@ function onPdfPageCount(count: number) {
 
 function onPdfError(msg: string) {
   originalBuffer.value = null
-  fileType.value = 'text'
-  console.warn('pdf render failed, fallback to text:', msg)
+  docxError.value = msg || 'PDF 渲染失败'
+  console.warn('pdf render failed:', msg)
 }
 
 function onPdfSelectBlock(blockId: string) {
@@ -1050,9 +1082,18 @@ function _groupFromSections(): ChapterGroup[] {
 
 const totalChars = computed(() => {
   if (blocks.value.length > 0) {
-    return blocks.value.reduce((sum, b) => sum + (b.charCount || 0), 0)
+    return blocks.value
+      .filter(b => b.type !== 'title' && b.type !== 'heading')
+      .reduce((sum, b) => sum + (b.charCount || 0), 0)
   }
   return sections.value.reduce((sum, s) => sum + (s.char_count || 0), 0)
+})
+
+const editableParagraphCount = computed(() => {
+  if (blocks.value.length > 0) {
+    return blocks.value.filter(b => b.type !== 'title' && b.type !== 'heading').length
+  }
+  return sections.value.length
 })
 
 const estimatedPageCount = computed(() => Math.max(1, Math.ceil(totalChars.value / 900)))
@@ -1087,13 +1128,30 @@ const highRiskSections = computed(() => {
         }))
     }
     // blocks 模式下：用 block 风险分数过滤对应的 sections（保持类型兼容）
-    return sections.value.filter(s => {
-      const block = blocks.value.find(b => b.sourceMap?.paragraphIndex === s.paragraph_index)
-      const score = block ? getBlockRiskScore(block) : s.aigc_score * 100
-      return score >= 30
-    })
+    if (sections.value.length > 0) {
+      return sections.value.filter(s => {
+        const block = blocks.value.find(b => b.sourceMap?.paragraphIndex === s.paragraph_index)
+        const score = block ? getBlockRiskScore(block) : s.aigc_score * 100
+        return getRiskStyle(score).level !== 'normal'
+      })
+    }
+    return blocks.value
+      .filter(b => b.type !== 'title' && b.type !== 'heading')
+      .filter(b => getEffectiveRiskLevel(b) !== 'normal')
+      .map(b => ({
+        section_index: b.sourceMap?.paragraphIndex ?? b.displayOrder,
+        paragraph_index: b.sourceMap?.paragraphIndex ?? b.displayOrder,
+        section_title: b.sectionTitle ?? null,
+        section_type: b.sectionType ?? null,
+        content: patches.value.get(b.blockId)?.newText || b.text,
+        char_count: b.charCount,
+        aigc_score: getBlockRiskScore(b) / 100,
+        dup_score: (b.internalRisk?.repetitionScore ?? 0) / 100,
+        risk_level: effectiveRiskFromScore(getBlockRiskScore(b) / 100) as 'low' | 'medium' | 'high',
+        reasons: b.internalRisk?.reasons || [],
+      }))
   }
-  return sections.value.filter(s => effectiveAigc(s) >= 0.30)
+  return sections.value.filter(s => effectiveRiskFromScore(effectiveAigc(s)) !== 'normal')
 })
 
 interface PrioritySection extends RunSectionItem {
@@ -1102,6 +1160,33 @@ interface PrioritySection extends RunSectionItem {
 }
 
 const prioritySections = computed<PrioritySection[]>(() => {
+  if (sections.value.length === 0 && blocks.value.length > 0) {
+    const fromBlocks = blocks.value
+      .filter(b => b.type !== 'title' && b.type !== 'heading')
+      .map((b) => {
+        const internalOverall = Number(b.internalRisk?.overallRisk || 0) / 100
+        const aiScore = Math.max(getBlockRiskScore(b) / 100, internalOverall)
+        const dupScore = Number(b.internalRisk?.repetitionScore || 0) / 100
+        return {
+          section_index: b.sourceMap?.paragraphIndex ?? b.displayOrder,
+          paragraph_index: b.sourceMap?.paragraphIndex ?? b.displayOrder,
+          section_title: b.sectionTitle ?? null,
+          section_type: b.sectionType ?? null,
+          content: patches.value.get(b.blockId)?.newText || b.text,
+          char_count: b.charCount,
+          aigc_score: aiScore,
+          dup_score: dupScore,
+          risk_level: effectiveRiskFromScore(aiScore) as 'low' | 'medium' | 'high',
+          reasons: b.internalRisk?.reasons || [],
+          combinedScore: aiScore * 0.62 + dupScore * 0.38,
+          priorityRank: 0,
+        }
+      })
+      .filter(item => item.combinedScore >= 0.16 || item.aigc_score >= 0.18 || item.dup_score >= 0.18)
+      .sort((a, b) => b.combinedScore - a.combinedScore)
+    const count = Math.max(3, Math.min(fromBlocks.length, Math.ceil(fromBlocks.length * 0.25)))
+    return fromBlocks.slice(0, count).map((item, index) => ({ ...item, priorityRank: index + 1 }))
+  }
   const scored = sections.value.filter(
     s => s.section_type !== 'references' && s.section_type !== 'acknowledgement'
   )
@@ -1130,7 +1215,7 @@ const displayedPrioritySections = computed(() => {
 const riskCounts = computed(() => {
   const counts = { high: 0, medium: 0, low: 0, normal: 0 }
   if (blocks.value.length > 0) {
-    for (const b of blocks.value) {
+    for (const b of blocks.value.filter(item => item.type !== 'title' && item.type !== 'heading')) {
       const level = getEffectiveRiskLevel(b)
       counts[level]++
     }
@@ -1377,12 +1462,21 @@ function animateScore() {
 
 async function loadData() {
   loading.value = true
+  loadError.value = ''
   try {
     const [run, secs, blocksRes] = await Promise.all([
       getRun(props.runId),
       getRunSections(props.runId),
       getRunBlocks(props.runId).catch(() => ({ blocks: [], reportSummary: null, unmatchedSpans: [] }))
     ])
+    if (run.status !== 'completed') {
+      loadError.value = run.status === 'failed'
+        ? '杩欎釜浠诲姟杩樻病鏈夊彲鐢ㄧ殑鏀瑰啓鍐呭锛屽洜涓哄垎鏋愬凡澶辫触銆傝鍏堣繑鍥炲伐浣滃彴閲嶆柊鍙戣捣妫€娴嬨€?'
+        : '杩欎釜浠诲姟杩樺湪鍒嗘瀽涓紝鏆傛椂涓嶈兘杩涘叆鍦ㄧ嚎鏀瑰啓銆傝绛夊垎鏋愬畬鎴愬悗鍐嶈繘鏉ャ€?'
+      sections.value = []
+      blocks.value = []
+      return
+    }
     sections.value = secs
     blocks.value = blocksRes.blocks
     documentId.value = run.document_id
@@ -1436,7 +1530,27 @@ async function loadData() {
     if (documentId.value && (fileType.value === 'docx' || fileType.value === 'pdf')) {
       await loadOriginalFile()
     }
+    const textSamples = [
+      ...blocks.value.slice(0, 8).map(block => block.text || ''),
+      ...sections.value.slice(0, 6).map(section => section.content || ''),
+    ]
+      .join('\n')
+      .trim()
+    if (textSamples && looksBinaryLikeText(textSamples)) {
+      loadError.value = '当前这份任务里的正文数据已经损坏或提取错位，所以兼容编辑器会出现乱码。请重新上传原论文后再进入在线改写，或直接切换到 ONLYOFFICE 模式。'
+      originalBuffer.value = null
+      docxError.value = '检测到异常正文数据，已阻止乱码展示。'
+      return
+    }
+    const hasRenderableBlocks = blocks.value.some(
+      block => block.type !== 'title' && block.type !== 'heading' && (block.text || '').trim()
+    )
+    const hasRenderableSections = sections.value.some(section => (section.content || '').trim())
+    if (!hasRenderableBlocks && !hasRenderableSections) {
+      loadError.value = '杩欎釜 run 娌℃湁鍙敤鐨勬鏂囨钀芥暟鎹紝鎵€浠ユ棤娉曞湪绾挎敼鍐欍€傝鍥炲埌妫€娴嬫祦绋嬮噸鏂颁笂浼犳垨閲嶆柊鍒嗘瀽銆?'
+    }
   } catch (err) {
+    loadError.value = err instanceof Error ? err.message : '加载在线改写失败'
     ElMessage.error(err instanceof Error ? err.message : '加载段落失败')
   } finally {
     loading.value = false
@@ -1461,8 +1575,8 @@ function effectiveDup(sec: RunSectionItem): number {
 
 function effectiveRiskFromScore(score: number): 'low' | 'medium' | 'high' | 'normal' {
   if (score >= 0.70) return 'high'
-  if (score >= 0.60) return 'medium'
-  if (score >= 0.30) return 'low'
+  if (score >= 0.42) return 'medium'
+  if (score >= 0.18) return 'low'
   return 'normal'
 }
 
@@ -2951,6 +3065,10 @@ function goNext() {
 /* ===== 加载态 ===== */
 .doc-loading {
   padding: 40px;
+}
+
+.doc-loading-actions {
+  margin-top: 16px;
 }
 
 /* PDF 视图 */

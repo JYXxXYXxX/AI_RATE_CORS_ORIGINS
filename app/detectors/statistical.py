@@ -57,7 +57,7 @@ def _get_ppl_model() -> "_PerplexityModel | None":
     _ppl_load_attempted = True
     import os
 
-    if os.environ.get("AI_RATE_ENABLE_PPL", "true").lower() in (
+    if os.environ.get("AI_RATE_ENABLE_PPL", "false").lower() in (
         "false",
         "0",
         "no",

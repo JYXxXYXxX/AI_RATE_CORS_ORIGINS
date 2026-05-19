@@ -120,9 +120,9 @@ async def lifespan(_: FastAPI):
             "CORS_ORIGINS is wildcard in non-dev environment. This is insecure."
         )
     if settings.service_env == "prod" and settings.async_queue_backend == "local":
-        raise RuntimeError(
-            "AI_RATE_ASYNC_QUEUE_BACKEND=local is not allowed in prod. "
-            "Use celery with an independent worker for production traffic."
+        logger.warning(
+            "AI_RATE_ASYNC_QUEUE_BACKEND=local in prod. "
+            "For high-traffic production, switch to celery with an independent worker."
         )
     # 恢复因进程崩溃而卡在 processing 的任务
     try:

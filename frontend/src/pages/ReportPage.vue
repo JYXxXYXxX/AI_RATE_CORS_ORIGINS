@@ -3,19 +3,19 @@
     <div class="report-topbar">
       <router-link to="/app/dashboard" class="back-link">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
-        返回工作台
+        {{ locale === 'en' ? 'Back to workspace' : '返回工作台' }}
       </router-link>
     </div>
 
     <div v-if="loading" class="report-loading">
       <div class="spinner"></div>
-      <h2>正在加载报告...</h2>
+      <h2>{{ locale === 'en' ? 'Loading report...' : '正在加载报告...' }}</h2>
     </div>
 
     <div v-else-if="error" class="report-error">
-      <h2>加载失败</h2>
+      <h2>{{ locale === 'en' ? 'Failed to load' : '加载失败' }}</h2>
       <p>{{ error }}</p>
-      <button class="btn btn-primary" @click="loadData">重试</button>
+      <button class="btn btn-primary" @click="loadData">{{ locale === 'en' ? 'Retry' : '重试' }}</button>
     </div>
 
     <template v-else-if="analysis.report">
@@ -28,7 +28,7 @@
 
       <!-- 高级工作流操作折叠区 -->
       <details class="advanced-section">
-        <summary class="advanced-toggle">高级操作：知网回填 & 供应商配置</summary>
+        <summary class="advanced-toggle">{{ locale === 'en' ? 'Advanced tools: CNKI feedback & provider settings' : '高级操作：知网回填 & 供应商配置' }}</summary>
         <div class="advanced-content">
           <ReportWorkflowSidebar
             :report="analysis.report"
@@ -42,7 +42,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onBeforeUnmount, ref } from 'vue'
 import { useAnalysisStore } from '../stores/analysis'
 import { getModelStatus, getProviderCatalog } from '../api'
 import ReportView from '../components/ReportView.vue'
@@ -56,6 +56,15 @@ const loading = ref(false)
 const error = ref('')
 const modelStatus = ref<ModelStatusResponse | null>(null)
 const providerCatalog = ref<ProviderConfigSummary[]>([])
+const locale = ref<'zh' | 'en'>((document.documentElement.dataset.lang as 'zh' | 'en') || (localStorage.getItem('patafix-language') as 'zh' | 'en') || 'zh')
+
+function syncLocale(next?: string) {
+  locale.value = next === 'en' ? 'en' : 'zh'
+}
+
+function handleLanguageChange(event: Event) {
+  syncLocale((event as CustomEvent<'zh' | 'en'>).detail)
+}
 
 async function loadData() {
   loading.value = true
@@ -70,19 +79,31 @@ async function loadData() {
     modelStatus.value = status
     providerCatalog.value = catalog.providers
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '加载失败'
+    error.value = err instanceof Error ? err.message : (locale.value === 'en' ? 'Failed to load' : '加载失败')
   } finally {
     loading.value = false
   }
 }
 
-onMounted(loadData)
+onMounted(() => {
+  syncLocale(document.documentElement.dataset.lang || localStorage.getItem('patafix-language') || 'zh')
+  document.documentElement.dataset.reportPage = 'true'
+  window.addEventListener('patafix:language-change', handleLanguageChange as EventListener)
+  loadData()
+})
+
+onBeforeUnmount(() => {
+  delete document.documentElement.dataset.reportPage
+  window.removeEventListener('patafix:language-change', handleLanguageChange as EventListener)
+})
 </script>
 
 <style scoped>
 .report-page {
-  max-width: 1100px;
+  max-width: 1380px;
   margin: 0 auto;
+  padding: 8px 0 28px;
+  position: relative;
 }
 
 .report-topbar {
@@ -189,5 +210,51 @@ onMounted(loadData)
 
 .advanced-content {
   margin-top: 14px;
+}
+
+:global(html[data-theme='dark'][data-report-page='true']) .app-layout {
+  background: linear-gradient(180deg, #060d13 0%, #09121a 52%, #0a1118 100%) !important;
+}
+
+:global(html[data-theme='dark'][data-report-page='true']) .app-main {
+  background: transparent !important;
+}
+
+:global(html[data-theme='dark'][data-report-page='true']) .report-page {
+  color: #f2f6fb;
+}
+
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .back-link {
+  color: #b9c6d8 !important;
+}
+
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .back-link:hover {
+  color: #f5f7fa !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+}
+
+:deep(:root[data-theme='dark']) .back-link {
+  color: #c8d4e3;
+}
+
+:deep(:root[data-theme='dark']) .back-link:hover {
+  color: #91d6c2;
+  background: rgba(95, 170, 150, 0.12);
+}
+
+:deep(:root[data-theme='dark']) .report-loading h2,
+:deep(:root[data-theme='dark']) .report-error h2 {
+  color: #f5f8fc;
+}
+
+:deep(:root[data-theme='dark']) .advanced-toggle {
+  background: linear-gradient(180deg, rgba(18, 22, 32, 0.94), rgba(12, 16, 24, 0.98));
+  border-color: rgba(124, 151, 214, 0.16);
+  color: #ccd6e3;
+}
+
+:deep(:root[data-theme='dark']) .advanced-toggle:hover {
+  color: #8fe0c6;
+  border-color: rgba(107, 201, 176, 0.26);
 }
 </style>

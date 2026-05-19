@@ -1,661 +1,300 @@
 <template>
-  <section class="summary-hero">
-    <div class="hero-main">
-      <p class="eyebrow">
-        {{ latestFeedback ? '基于知网实测的风险指数' : '风险指数' }}
-      </p>
-      <div class="risk-score-line">
-        <strong>{{ cnkiBasedRiskScore }}</strong>
-        <span>/ 100</span>
-      </div>
-      <h2>{{ riskText(cnkiBasedRisk) }}</h2>
-      <p class="hero-copy">{{ cnkiBasedJudgement }}</p>
-      <div class="hero-actions report-action-row">
-        <el-button type="success" plain @click="openPrintReport">
-          导出 PDF 报告
-        </el-button>
-        <el-button plain @click="copyMentorBrief">复制导师沟通摘要</el-button>
-        <el-button plain @click="copyRevisionPlan">复制修改行动计划</el-button>
-        <el-button type="warning" plain @click="openRewriteEditor">
-          在线改写
-        </el-button>
-      </div>
-    </div>
-
-    <div class="hero-metrics">
-      <!-- 有知网实测数据时，以知网为准 -->
-      <template v-if="latestFeedback">
-        <article class="metric-card cnki-primary">
-          <span>知网实测查重</span>
-          <strong>{{ optionalPercent(latestFeedback.cnki_dup_percent) }}</strong>
-          <small v-if="latestFeedback.cnki_dup_percent != null">
-            以官方报告为准
-          </small>
-        </article>
-        <article class="metric-card cnki-primary">
-          <span>知网实测 AIGC</span>
-          <strong>{{ optionalPercent(latestFeedback.cnki_aigc_percent) }}</strong>
-          <small v-if="latestFeedback.cnki_aigc_percent != null">
-            以官方报告为准
-          </small>
-        </article>
-        <article class="metric-card">
-          <span>校准状态</span>
-          <strong>官方优先</strong>
-          <small>{{ report.local_metrics.segment_count }} 个片段用于定位改写</small>
-        </article>
-        <article class="metric-card">
-          <span>改写策略</span>
-          <strong>{{ cnkiBasedRisk === 'high' ? '全面改写' : cnkiBasedRisk === 'medium' ? '重点改写' : '精修即可' }}</strong>
-          <small>已结合知网实测优化</small>
-        </article>
-      </template>
-
-      <!-- 无知网数据时，显示原有布局 -->
-      <template v-else>
-        <article class="metric-card">
-          <span>预测知网查重</span>
-          <strong>{{ bandText(report.summary.predicted_cnki_dup) }}</strong>
-          <small>中心值 {{ report.summary.predicted_cnki_dup.center_percent.toFixed(1) }}%</small>
-        </article>
-        <article class="metric-card">
-          <span>预测知网 AIGC</span>
-          <strong>{{ bandText(report.summary.predicted_cnki_aigc) }}</strong>
-          <small>中心值 {{ report.summary.predicted_cnki_aigc.center_percent.toFixed(1) }}%</small>
-        </article>
-        <article class="metric-card">
-          <span>模型置信度</span>
-          <strong>{{ Math.round(report.summary.confidence * 100) }}%</strong>
-          <small>{{ report.local_metrics.segment_count }} 个分析片段</small>
-        </article>
-        <article class="metric-card">
-          <span>优先改写段</span>
-          <strong>{{ actionableSectionCount }} 段</strong>
-          <small>{{ mediumOrHigherSectionCount }} 段中高风险，已按优先级展开</small>
-        </article>
-      </template>
-    </div>
-  </section>
-
-  <!-- 知网校准提示 -->
-  <section v-if="cnkiGapWarning" class="cnki-gap-alert">
-    <div class="gap-alert-content">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-      <div>
-        <strong>已结合知网官方实测数据优化分析</strong>
-        <p>{{ cnkiGapWarning }}</p>
-      </div>
-    </div>
-  </section>
-
-  <section class="info-row">
-    <div class="card soft-card">
-      <div class="card-head">
-        <p class="eyebrow">本次最该先改的 3 个地方</p>
-        <h3>修改顺序比盲目大改更重要</h3>
-      </div>
-      <ul class="bullet-list">
-        <li v-for="target in report.summary.first_fix_targets" :key="target">{{ target }}</li>
-      </ul>
-    </div>
-
-    <div class="card soft-card">
-      <div class="card-head">
-        <p class="eyebrow">任务状态</p>
-        <h3>{{ runStatus?.title || report.title }}</h3>
-      </div>
-      <div class="meta-chips">
-        <el-tag>{{ report.subject || '未填写学科' }}</el-tag>
-        <el-tag type="success">{{ report.degree_level || '未填写层级' }}</el-tag>
-        <el-tag type="warning">生成于 {{ formatDate(report.generated_at) }}</el-tag>
-      </div>
-      <p class="helper-text">如果你修改的是这几个高风险位置，正式送检前的返工通常会少很多。</p>
-    </div>
-  </section>
-
-  <!-- 优先优化摘要 -->
-  <section v-if="report.summary.priority_summary" class="priority-summary-card">
-    <div class="priority-summary-content">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-      <div>
-        <strong>优化建议</strong>
-        <p>{{ report.summary.priority_summary }}</p>
-      </div>
-    </div>
-  </section>
-
-  <section v-if="report.workflow_overview || report.calibration_insight" class="dual-grid">
-    <section v-if="report.workflow_overview" class="card soft-card">
-      <div class="card-head">
-        <p class="eyebrow">分析完整性</p>
-        <h3>{{ report.workflow_overview.closure_label }}</h3>
-      </div>
-      <div class="status-row workflow-score-row">
-        <div class="soft-card status-tile">
-          <span>分析完整度</span>
-          <strong>{{ report.workflow_overview.closure_score }}/100</strong>
+  <section class="report-dashboard">
+    <section class="report-hero-card">
+      <div class="report-hero-main">
+        <div class="report-hero-meta">
+          <span class="report-eyebrow">
+            {{ latestFeedback ? tx('已结合官方报告校准', 'Calibrated with official report') : tx('PataFix 风险总览', 'PataFix risk overview') }}
+          </span>
+          <span class="report-generated">
+            {{ tx('生成于', 'Generated') }} {{ formatDate(report.generated_at) }}
+          </span>
         </div>
-        <div class="soft-card status-tile">
-          <span>外部数据源</span>
-          <strong>{{ report.workflow_overview.provider_result_count }}</strong>
-        </div>
-        <div class="soft-card status-tile">
-          <span>知网报告数</span>
-          <strong>{{ report.workflow_overview.feedback_count }}</strong>
-        </div>
-      </div>
-      <p class="helper-text">最近知网报告：{{ report.workflow_overview.latest_feedback_at ? formatDate(report.workflow_overview.latest_feedback_at) : '暂无' }}</p>
-      <p class="workflow-next-step">{{ report.workflow_overview.next_step }}</p>
-    </section>
 
-    <section v-if="report.calibration_insight" class="card soft-card">
-      <div class="card-head">
-        <p class="eyebrow">知网实测参考</p>
-        <h3>已结合知网官方数据优化分析</h3>
-      </div>
-      <div class="mini-metrics">
-        <span>知网实测查重 {{ optionalPercent(report.calibration_insight.latest_cnki_dup_percent) }}</span>
-        <span>知网实测 AIGC {{ optionalPercent(report.calibration_insight.latest_cnki_aigc_percent) }}</span>
-      </div>
-      <p class="helper-text">{{ report.calibration_insight.message }}</p>
-    </section>
-  </section>
-
-  <!-- 知网检测详情：扩展分析 -->
-  <section v-if="report.cnki_report_details" class="card cnki-details-card">
-    <div class="card-head">
-      <p class="eyebrow">知网检测详情</p>
-      <h3>基于知网报告的深度分析</h3>
-    </div>
-
-    <!-- 扩展指标 -->
-    <div v-if="hasExtendedMetrics" class="cnki-extended-metrics">
-      <div v-if="report.cnki_report_details.single_max_dup_percent != null" class="soft-card status-tile">
-        <span>单篇最大复制比</span>
-        <strong>{{ report.cnki_report_details.single_max_dup_percent.toFixed(1) }}%</strong>
-        <small>某一篇文献的最高相似度</small>
-      </div>
-      <div v-if="report.cnki_report_details.remove_reference_dup_percent != null" class="soft-card status-tile">
-        <span>去除引用后复制比</span>
-        <strong>{{ report.cnki_report_details.remove_reference_dup_percent.toFixed(1) }}%</strong>
-        <small>排除合理引用后的真实重复</small>
-      </div>
-      <div v-if="report.cnki_report_details.suspected_plagiarism && Object.keys(report.cnki_report_details.suspected_plagiarism).length > 0" class="soft-card status-tile">
-        <span>疑似剽窃分类</span>
-        <div class="plagiarism-tags">
-          <el-tag v-for="(count, type) in report.cnki_report_details.suspected_plagiarism" :key="type" type="danger" size="small">
-            {{ type }} {{ count }}处
-          </el-tag>
-        </div>
-      </div>
-    </div>
-
-    <!-- 问题片段列表 -->
-    <div v-if="report.cnki_report_details.fragments && report.cnki_report_details.fragments.length > 0" class="cnki-fragments">
-      <p class="eyebrow">知网标记的具体问题片段</p>
-      <p class="helper-text">以下片段来自知网检测报告，系统已尝试将其与您的论文原文匹配</p>
-
-      <div class="fragment-list">
-        <article
-          v-for="(frag, idx) in report.cnki_report_details.fragments"
-          :key="idx"
-          class="fragment-card"
-          :class="{ 'fragment-matched': frag.matched_section_index != null }"
-        >
-          <div class="fragment-header">
-            <el-tag :type="frag.type === 'aigc' ? 'warning' : 'danger'" size="small">
-              {{ frag.type === 'aigc' ? '疑似 AI 生成' : '疑似重复' }}
-            </el-tag>
-            <span v-if="frag.origin" class="fragment-origin">来源：{{ frag.origin }}</span>
-            <span v-if="frag.match_ratio != null" class="fragment-match-ratio">
-              匹配度 {{ (frag.match_ratio * 100).toFixed(0) }}%
-            </span>
-          </div>
-
-          <div class="fragment-body">
-            <div class="fragment-source">
-              <label>被检测片段</label>
-              <p>{{ frag.source_text }}</p>
+        <div class="report-score-row">
+          <div class="report-score-block">
+            <div class="report-score-line">
+              <strong>{{ cnkiBasedRiskScore }}</strong>
+              <span>/ 100</span>
             </div>
-            <div v-if="frag.similar_text" class="fragment-similar">
-              <label>相似来源</label>
-              <p>{{ frag.similar_text }}</p>
-            </div>
-            <div v-if="frag.matched_section_index != null" class="fragment-match">
-              <label>匹配到原文</label>
-              <p><strong>{{ frag.matched_section_title || '段落' }}</strong></p>
-              <p class="match-preview">{{ frag.matched_text_preview }}</p>
-            </div>
+            <h2>{{ heroHeadline }}</h2>
           </div>
+          <span class="risk-pill" :class="riskPillClass(cnkiBasedRisk)">
+            {{ riskText(cnkiBasedRisk) }}
+          </span>
+        </div>
 
-          <div class="fragment-actions">
-            <el-button
-              v-if="frag.matched_section_index != null"
-              type="primary"
-              size="small"
-              plain
-              @click="openRewriteAdvice(frag.matched_section_index)"
-            >
-              <el-icon><EditPen /></el-icon> 查看改写建议
-            </el-button>
-            <el-tag v-else type="info" size="small">未匹配到原文位置</el-tag>
-          </div>
+        <p class="report-hero-copy">
+          {{ localizedHeroCopy }}
+        </p>
+
+        <div v-if="heroNotice" class="report-inline-notice">
+          <el-icon><Warning /></el-icon>
+          <span>{{ heroNotice }}</span>
+        </div>
+
+        <div class="report-hero-actions">
+          <el-button class="report-primary-btn" @click="openRewriteEditor">
+            <el-icon><EditPen /></el-icon>
+            {{ tx('进入在线改写', 'Open rewrite workspace') }}
+          </el-button>
+          <el-button class="report-secondary-btn" @click="openPrintReport">
+            <el-icon><Download /></el-icon>
+            {{ tx('导出 PDF 报告', 'Export PDF report') }}
+          </el-button>
+        </div>
+      </div>
+
+      <div class="report-metric-grid">
+        <article v-for="metric in heroMetrics" :key="metric.key" class="metric-slab">
+          <span class="metric-label">{{ metric.label }}</span>
+          <strong class="metric-value">{{ metric.value }}</strong>
+          <small class="metric-caption">{{ metric.caption }}</small>
         </article>
-      </div>
-    </div>
-
-    <div v-else-if="!hasExtendedMetrics" class="helper-text">
-      知网报告已上传，但未解析到详细片段。建议上传更清晰的报告截图或 PDF，系统可以提取更多结构化信息。
-    </div>
-  </section>
-
-  <!-- 付费功能已隐藏：报告始终开放 -->
-
-  <!-- 建议优化段落 -->
-  <section class="card">
-    <div class="card-head">
-      <p class="eyebrow">建议优化段落</p>
-      <h3>这几段最该先改</h3>
-    </div>
-    <div v-if="!report.priority_sections?.length" class="helper-text">
-      暂无优先优化建议，整体风险相对可控。
-    </div>
-    <article v-for="section in report.priority_sections" :key="section.section_index" class="segment-card priority-card">
-      <div class="segment-head">
-        <div class="priority-rank">
-          <span class="rank-num">#{{ section.priority_rank }}</span>
-          <strong>{{ section.title }}</strong>
-        </div>
-        <el-tag :type="tagType(section.risk_level)">{{ riskText(section.risk_level) }}</el-tag>
-      </div>
-      <p class="preview">{{ section.text_preview }}</p>
-      <div class="mini-metrics">
-        <span>综合风险 {{ (section.combined_score * 100).toFixed(1) }}%</span>
-        <span v-if="section.sub_scores" class="dominant-risk">主要问题：{{ dominantRiskLabel(section.sub_scores) }}</span>
-      </div>
-      <div v-if="section.sub_scores" class="sub-score-bars">
-        <div class="sub-bar" title="AI 疑似度">
-          <span class="sub-label">AI</span>
-          <div class="sub-track"><div class="sub-fill sub-ai" :style="{ width: section.sub_scores.ai_likelihood + '%' }"></div></div>
-          <span class="sub-value">{{ Math.round(section.sub_scores.ai_likelihood) }}</span>
-        </div>
-        <div class="sub-bar" title="模板化">
-          <span class="sub-label">模板</span>
-          <div class="sub-track"><div class="sub-fill sub-template" :style="{ width: section.sub_scores.template_score + '%' }"></div></div>
-          <span class="sub-value">{{ Math.round(section.sub_scores.template_score) }}</span>
-        </div>
-        <div class="sub-bar" title="语义空洞">
-          <span class="sub-label">空洞</span>
-          <div class="sub-track"><div class="sub-fill sub-empty" :style="{ width: section.sub_scores.semantic_empty_score + '%' }"></div></div>
-          <span class="sub-value">{{ Math.round(section.sub_scores.semantic_empty_score) }}</span>
-        </div>
-        <div class="sub-bar" title="重复表达">
-          <span class="sub-label">重复</span>
-          <div class="sub-track"><div class="sub-fill sub-repeat" :style="{ width: section.sub_scores.repetition_score + '%' }"></div></div>
-          <span class="sub-value">{{ Math.round(section.sub_scores.repetition_score) }}</span>
-        </div>
-        <div class="sub-bar" title="引用风险">
-          <span class="sub-label">引用</span>
-          <div class="sub-track"><div class="sub-fill sub-cite" :style="{ width: section.sub_scores.citation_risk + '%' }"></div></div>
-          <span class="sub-value">{{ Math.round(section.sub_scores.citation_risk) }}</span>
-        </div>
-      </div>
-      <div class="reason-list">
-        <el-tag v-for="reason in section.reasons" :key="reason" effect="plain">{{ reason }}</el-tag>
-      </div>
-      <el-button
-        class="rewrite-btn"
-        type="primary"
-        plain
-        size="small"
-        :loading="rewriteLoadingMap[section.section_index]"
-        @click="openRewriteAdvice(section.section_index)"
-      >
-        <el-icon><EditPen /></el-icon>
-        <span>查看 AI 改写建议</span>
-      </el-button>
-    </article>
-  </section>
-
-  <!-- 章节风险热力图：只显示有一定风险的章节 -->
-  <section class="card">
-    <div class="card-head">
-      <p class="eyebrow">章节风险热力图</p>
-      <h3>先看哪一章最容易拖高整体结果</h3>
-    </div>
-    <div class="heat-grid">
-      <article v-for="chapter in significantChapters" :key="chapter.chapter_title" class="heat-card">
-        <div class="segment-head">
-          <strong>{{ chapter.chapter_title }}</strong>
-          <el-tag :type="tagType(chapter.risk_level)">{{ riskText(chapter.risk_level) }}</el-tag>
-        </div>
-        <div class="mini-metrics">
-          <span>AIGC {{ (chapter.avg_aigc_score * 100).toFixed(1) }}%</span>
-          <span>查重 {{ (chapter.avg_duplication_score * 100).toFixed(1) }}%</span>
-        </div>
-        <div class="heat"><span :style="{ width: `${Math.round(chapter.combined_score * 100)}%` }"></span></div>
-        <p>{{ chapter.advice }}</p>
-      </article>
-    </div>
-    <div v-if="hiddenChaptersCount > 0" class="helper-text" style="margin-top:12px">
-      另有 {{ hiddenChaptersCount }} 个章节风险较低，已折叠。
-      <el-button link type="primary" size="small" @click="showAllChapters = !showAllChapters">
-        {{ showAllChapters ? '收起' : '展开' }}
-      </el-button>
-    </div>
-    <div v-if="showAllChapters" class="heat-grid" style="margin-top:12px; opacity:0.6">
-      <article v-for="chapter in hiddenChapters" :key="chapter.chapter_title" class="heat-card">
-        <div class="segment-head">
-          <strong>{{ chapter.chapter_title }}</strong>
-          <el-tag type="success">低风险</el-tag>
-        </div>
-        <div class="mini-metrics">
-          <span>AIGC {{ (chapter.avg_aigc_score * 100).toFixed(1) }}%</span>
-          <span>查重 {{ (chapter.avg_duplication_score * 100).toFixed(1) }}%</span>
-        </div>
-        <div class="heat"><span :style="{ width: `${Math.round(chapter.combined_score * 100)}%` }"></span></div>
-        <p>{{ chapter.advice }}</p>
-      </article>
-    </div>
-  </section>
-
-  <section v-if="reportUnlocked && visibleSimilarityMatches.length" class="dual-grid">
-    <!-- Top 风险段落已折叠：priority_sections 已覆盖 -->
-    <section class="card" v-if="false">
-      <div class="card-head">
-        <p class="eyebrow">Top 风险段落</p>
-        <h3>先改这些段，通常最省力</h3>
       </div>
     </section>
 
-    <section class="card">
-      <div class="card-head">
-        <p class="eyebrow">相似证据</p>
-        <h3>这些地方更值得定向处理</h3>
-      </div>
-      <article
-        v-for="match in visibleSimilarityMatches"
-        :key="`${match.section_index}-${match.matched_source}-${match.matched_title}`"
-        class="match-card"
-      >
-        <div class="segment-head">
-          <strong>{{ match.section_title }}</strong>
-          <el-tag type="warning">{{ match.match_type }}</el-tag>
-        </div>
-        <p class="match-title">{{ match.matched_title }}</p>
-        <p class="preview">{{ match.matched_snippet }}</p>
-        <div class="mini-metrics">
-          <span>相似度 {{ match.similarity_percent.toFixed(1) }}%</span>
-          <span>重合字符 {{ match.overlap_chars }}</span>
-          <span>来源 {{ match.matched_source }}</span>
-        </div>
-      </article>
-    </section>
-  </section>
-
-  <section v-if="report.feedback_timeline.length" class="dual-grid">
-    <section class="card">
-      <div class="card-head">
-        <p class="eyebrow">知网实测记录</p>
-        <h3>已接入的知网官方数据</h3>
-      </div>
-
-      <!-- 通过提示 -->
-      <div v-if="isPassed" class="pass-banner">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-        <div>
-          <strong>当前知网指标已达标</strong>
-          <span>查重 {{ latestFeedback?.cnki_dup_percent?.toFixed(1) }}%，AIGC {{ latestFeedback?.cnki_aigc_percent?.toFixed(1) }}%</span>
-        </div>
-      </div>
-
-      <!-- 迭代对比 -->
-      <div v-if="previousFeedback && latestFeedback" class="iteration-compare">
-        <div class="compare-row">
-          <span class="compare-label">本次 vs 上次</span>
-          <div class="compare-values">
-            <span v-if="latestFeedback.cnki_dup_percent != null && previousFeedback.cnki_dup_percent != null" :class="deltaClass(previousFeedback.cnki_dup_percent - latestFeedback.cnki_dup_percent)">
-              查重 {{ deltaIcon(previousFeedback.cnki_dup_percent - latestFeedback.cnki_dup_percent) }} {{ Math.abs(previousFeedback.cnki_dup_percent - latestFeedback.cnki_dup_percent).toFixed(1) }}%
-            </span>
-            <span v-if="latestFeedback.cnki_aigc_percent != null && previousFeedback.cnki_aigc_percent != null" :class="deltaClass(previousFeedback.cnki_aigc_percent - latestFeedback.cnki_aigc_percent)">
-              AIGC {{ deltaIcon(previousFeedback.cnki_aigc_percent - latestFeedback.cnki_aigc_percent) }} {{ Math.abs(previousFeedback.cnki_aigc_percent - latestFeedback.cnki_aigc_percent).toFixed(1) }}%
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <article v-for="item in report.feedback_timeline" :key="item.feedback_id" class="timeline-card">
-        <div class="segment-head">
-          <strong>{{ formatDate(item.created_at) }}</strong>
-          <el-tag :type="item.verified ? 'success' : 'info'">{{ item.verified ? '已核验' : '未核验' }}</el-tag>
-        </div>
-        <div class="mini-metrics">
-          <span>知网查重 {{ optionalPercent(item.cnki_dup_percent) }}</span>
-          <span>知网 AIGC {{ optionalPercent(item.cnki_aigc_percent) }}</span>
-        </div>
-        <p class="helper-text">报告日期：{{ item.report_date || '未填写' }}</p>
-        <p v-if="item.notes" class="helper-text">{{ item.notes }}</p>
-      </article>
-      <p v-if="!report.feedback_timeline.length" class="helper-text">上传知网检测报告后，系统会结合官方实测数据优化改写建议策略。</p>
-
-      <div class="cnki-upload-action">
-        <el-button type="primary" plain size="small" @click="openCnkiUploadDialog">
-          <el-icon><Upload /></el-icon> 上传新知网报告
-        </el-button>
-      </div>
-    </section>
-  </section>
-
-  <section v-if="reportUnlocked" class="card">
-    <div class="card-head">
-      <p class="eyebrow">三步提交计划</p>
-      <h3>把返工压缩到最少</h3>
-    </div>
-    <div class="plan-list">
-      <article v-for="plan in report.revision_plan" :key="plan.priority" class="plan-card">
-        <span class="plan-badge">{{ plan.priority }}</span>
-        <div>
-          <strong>{{ plan.title }}</strong>
-          <p>{{ plan.why }}</p>
-          <p><b>怎么改：</b>{{ plan.how_to_fix }}</p>
-          <p><b>预期收益：</b>{{ plan.expected_gain }}</p>
-        </div>
-      </article>
-    </div>
-  </section>
-
-  <section v-if="false" class="card">
-    <div class="card-head">
-      <p class="eyebrow">模型状态</p>
-      <h3>当前系统到底在用哪一版代理模型</h3>
-    </div>
-    <div class="info-row status-row">
-      <div class="soft-card status-tile">
-        <span>已回填样本</span>
-        <strong>{{ modelStatus?.feedback_count || 0 }}</strong>
-      </div>
-      <div class="soft-card status-tile">
-        <span>校准版本</span>
-        <strong>{{ modelStatus?.calibration_version || '未加载' }}</strong>
-      </div>
-      <div class="soft-card status-tile">
-        <span>自动重训</span>
-        <strong>{{ modelStatus?.auto_train_enabled ? `开启 / 每 ${modelStatus?.auto_train_every_feedbacks ?? 0} 条` : '未开启' }}</strong>
-      </div>
-    </div>
-    <div class="dual-grid">
-      <section class="soft-card status-block">
-        <div class="card-head">
-          <p class="eyebrow">激活模型</p>
-          <h3>线上当前生效版本</h3>
-        </div>
-        <article
-          v-for="item in modelStatus?.active_models || []"
-          :key="`active-${item.model_type}-${item.version}`"
-          class="train-card"
-        >
-          <strong>{{ item.model_type }}</strong>
-          <p>版本：{{ item.version }}</p>
-          <p>样本：{{ metricNumber(item.metrics, 'train_count') }}，MAE：{{ metricNumber(item.metrics, 'mae', 4) }}</p>
-          <p>场景：{{ item.scene_key || '全局通用' }}</p>
-        </article>
-        <p v-if="!(modelStatus?.active_models?.length)" class="helper-text">当前还没有激活模型，系统会回退到启发式预测。</p>
-      </section>
-
-      <section class="soft-card status-block">
-        <div class="card-head">
-          <p class="eyebrow">最近训练记录</p>
-          <h3>方便你确认模型是否真的在迭代</h3>
-        </div>
-        <article
-          v-for="item in modelStatus?.recent_models || []"
-          :key="`recent-${item.model_type}-${item.version}`"
-          class="train-card"
-        >
-          <strong>{{ item.model_type }}</strong>
-          <p>版本：{{ item.version }}</p>
-          <p>时间：{{ formatDate(item.created_at) }}</p>
-          <p>RMSE：{{ metricNumber(item.metrics, 'rmse', 4) }}</p>
-        </article>
-        <p v-if="!(modelStatus?.recent_models?.length)" class="helper-text">还没有训练记录，先积累回填样本再训练会更稳。</p>
-      </section>
-    </div>
-  </section>
-
-  <section v-if="false && reportUnlocked" class="info-row">
-    <div class="card mentor-card">
-      <div class="card-head">
-        <p class="eyebrow">导师沟通摘要</p>
-        <h3>{{ report.mentor_brief.headline }}</h3>
-      </div>
-      <p>{{ report.mentor_brief.summary }}</p>
-      <blockquote>{{ report.mentor_brief.suggested_message }}</blockquote>
-    </div>
-
-    <div class="card checklist-card">
-      <div class="card-head">
-        <p class="eyebrow">正式送检前检查清单</p>
-        <h3>别把时间花在无效修改上</h3>
-      </div>
-      <div class="checklist-list">
-        <label v-for="(item, index) in checklist" :key="item.label" class="check-item">
-          <el-checkbox v-model="checklist[index].done">{{ item.label }}</el-checkbox>
-        </label>
-      </div>
-    </div>
-  </section>
-
-  <section class="notice">
-    <p>{{ report.disclaimer }}</p>
-    <p>{{ report.retained_content_policy }}</p>
-  </section>
-
-  <!-- 上传新知网报告对话框 -->
-  <el-dialog
-    v-model="cnkiUploadDialogVisible"
-    title="上传新知网检测报告"
-    width="560px"
-    destroy-on-close
-  >
-    <div class="cnki-upload-dialog">
-      <p class="dialog-hint">改写后重新送检了？上传最新报告，系统会对比前后变化并更新改写建议。</p>
-
-      <div
-        v-if="!cnkiUploadFile"
-        class="cnki-upload-drop"
-        @click="cnkiUploadInputRef?.click()"
-      >
-        <input
-          ref="cnkiUploadInputRef"
-          type="file"
-          accept=".pdf,.png,.jpg,.jpeg,.bmp"
-          class="file-input-hidden"
-          @change="handleCnkiUploadSelect"
-        />
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-        <p>点击选择知网报告截图或 PDF</p>
-        <span>支持 .pdf、.png、.jpg，最大 50MB</span>
-      </div>
-
-      <div v-else class="cnki-upload-preview">
-        <div class="file-preview">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    <section class="report-chart-grid">
+      <article class="report-card chart-card">
+        <div class="card-heading">
           <div>
-            <strong>{{ cnkiUploadFile.name }}</strong>
-            <span>{{ (cnkiUploadFile.size / 1024 / 1024).toFixed(1) }} MB</span>
+            <p class="section-kicker">{{ tx('整体风险分布', 'Overall risk distribution') }}</p>
+            <h3>{{ tx('按片段划分的风险层级', 'Risk levels across document fragments') }}</h3>
           </div>
-          <button type="button" class="btn-icon" @click="removeCnkiUploadFile">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </div>
+
+        <div class="donut-layout">
+          <div class="donut-shell">
+            <div class="donut-chart" :style="riskDonutStyle">
+              <div class="donut-center">
+                <strong>{{ totalSegmentCount }}</strong>
+                <span>{{ tx('总片段', 'Total fragments') }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="donut-legend">
+            <div v-for="item in riskDistributionItems" :key="item.key" class="legend-row">
+              <div class="legend-label">
+                <span class="legend-dot" :style="{ background: item.color }"></span>
+                <span>{{ item.label }}</span>
+              </div>
+              <div class="legend-value">
+                <strong>{{ item.count }}</strong>
+                <small>{{ item.percentText }}</small>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="report-card chart-card">
+        <div class="card-heading">
+          <div>
+            <p class="section-kicker">{{ tx('优先修改区域 Top 3', 'Priority areas Top 3') }}</p>
+            <h3>{{ tx('先改这些位置，收益最大', 'These areas are likely to move the score fastest') }}</h3>
+          </div>
+        </div>
+
+        <div class="bar-stack">
+          <button
+            v-for="(item, index) in priorityAreaItems"
+            :key="item.sectionIndex"
+            type="button"
+            class="priority-bar-card"
+            @click="openRewriteAdvice(item.sectionIndex)"
+          >
+            <div class="priority-bar-head">
+              <div class="priority-title-wrap">
+                <span class="rank-chip">{{ index + 1 }}</span>
+                <div>
+                  <strong>{{ item.title }}</strong>
+                  <small>{{ item.subtitle }}</small>
+                </div>
+              </div>
+              <span class="priority-gain">{{ item.gainLabel }}</span>
+            </div>
+            <div class="priority-bar-track">
+              <div
+                class="priority-bar-fill"
+                :class="`priority-bar-fill--${item.level}`"
+                :style="{ width: `${item.width}%` }"
+              ></div>
+            </div>
           </button>
         </div>
-      </div>
+      </article>
 
-      <div v-if="cnkiUploadOcrLoading" class="cnki-dialog-loading">
-        <el-skeleton :rows="2" animated />
-      </div>
-      <div v-else-if="cnkiUploadOcrError" class="cnki-dialog-error">
-        <el-alert :title="cnkiUploadOcrError" type="warning" :closable="false" show-icon />
-      </div>
-      <div v-else-if="cnkiUploadOcrPreview" class="cnki-ocr-preview-mini">
-        <p>{{ cnkiUploadOcrPreview.extracted_text_preview }}</p>
-      </div>
-
-      <div class="cnki-dialog-form">
-        <div class="form-row">
-          <div class="form-field">
-            <label>知网查重率（%）</label>
-            <input v-model.number="cnkiUploadForm.cnkiDupPercent" type="number" step="0.1" min="0" max="100" placeholder="例如 12.5" />
-          </div>
-          <div class="form-field">
-            <label>知网 AIGC 率（%）</label>
-            <input v-model.number="cnkiUploadForm.cnkiAigcPercent" type="number" step="0.1" min="0" max="100" placeholder="例如 8.3" />
+      <article class="report-card chart-card">
+        <div class="card-heading">
+          <div>
+            <p class="section-kicker">{{ tx('风险成因分布', 'Risk reason distribution') }}</p>
+            <h3>{{ tx('这份稿子最容易暴露的问题', 'What is most visibly driving the current risk') }}</h3>
           </div>
         </div>
-        <div class="form-field">
-          <label>报告日期</label>
-          <input v-model="cnkiUploadForm.reportDate" type="date" />
-        </div>
-        <div class="form-field">
-          <label>备注（可选）</label>
-          <input v-model="cnkiUploadForm.notes" type="text" placeholder="例如：第 2 次修改后检测" />
-        </div>
-        <div class="learning-consent">
-          <el-radio-group v-model="cnkiUploadForm.learningScope" class="learning-scope-group">
-            <el-radio-button label="none">默认不参与共享学习</el-radio-button>
-            <el-radio-button label="private_account">仅用于本人账号优化</el-radio-button>
-            <el-radio-button label="anonymous_global">匿名贡献给系统校准</el-radio-button>
-          </el-radio-group>
-          <p>系统不保存论文原文作为训练样本；只记录匿名特征、官方风险等级、绑定关系和改写效果信号，用于校准检测与改写策略。</p>
-        </div>
-      </div>
-    </div>
 
-    <template #footer>
-      <el-button @click="cnkiUploadDialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="cnkiUploadLoading" @click="submitNewCnkiReport">
-        确认上传
-      </el-button>
-    </template>
-  </el-dialog>
+        <div class="reason-stack">
+          <div v-for="item in riskReasonItems" :key="item.key" class="reason-row">
+            <div class="reason-text">
+              <strong>{{ item.label }}</strong>
+              <small>{{ item.hint }}</small>
+            </div>
+            <div class="reason-bar">
+              <div class="reason-bar-track">
+                <div class="reason-bar-fill" :style="{ width: `${item.value}%`, background: item.color }"></div>
+              </div>
+              <span>{{ item.value }}%</span>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="report-card chart-card">
+        <div class="card-heading">
+          <div>
+            <p class="section-kicker">{{ tx('修改后 AIGC 下降趋势', 'Estimated AIGC reduction trend') }}</p>
+            <h3>{{ tx('完成每一步后的预计下降幅度', 'Projected drop after each optimization step') }}</h3>
+          </div>
+        </div>
+
+        <div class="trend-card-body">
+          <svg viewBox="0 0 360 180" class="trend-chart" preserveAspectRatio="none" aria-hidden="true">
+            <defs>
+              <linearGradient id="trendAreaGradient" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="rgba(34, 197, 94, 0.28)" />
+                <stop offset="100%" stop-color="rgba(34, 197, 94, 0.02)" />
+              </linearGradient>
+            </defs>
+            <path :d="trendAreaPath" fill="url(#trendAreaGradient)"></path>
+            <path :d="trendLinePath" class="trend-line"></path>
+            <circle
+              v-for="point in trendPoints"
+              :key="point.label"
+              :cx="point.x"
+              :cy="point.y"
+              r="5.5"
+              class="trend-point"
+            />
+          </svg>
+
+          <div class="trend-axis">
+            <div v-for="point in trendPoints" :key="point.label" class="trend-axis-item">
+              <strong>{{ point.value.toFixed(1) }}%</strong>
+              <span>{{ point.label }}</span>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="report-bottom-grid">
+      <article class="report-card steps-card">
+        <div class="card-heading">
+          <div>
+            <p class="section-kicker">{{ tx('三步优化计划', 'Three-step optimization plan') }}</p>
+            <h3>{{ tx('先做最值钱的修改，再收尾', 'Sequence the edits so the biggest gains happen first') }}</h3>
+          </div>
+        </div>
+
+        <div class="step-flow">
+          <article
+            v-for="step in optimizationSteps"
+            :key="step.index"
+            class="step-card"
+            :class="`step-card--${step.tone}`"
+          >
+            <span class="step-index">{{ step.order }}</span>
+            <strong>{{ step.title }}</strong>
+            <p>{{ step.description }}</p>
+            <span class="step-gain">{{ step.gainLabel }}</span>
+          </article>
+        </div>
+      </article>
+
+      <article class="report-card issues-card">
+        <div class="card-heading">
+          <div>
+            <p class="section-kicker">{{ tx('重点问题定位 Top 3', 'Top 3 issue locations') }}</p>
+            <h3>{{ tx('直接定位到最值得改的地方', 'The places most worth opening in rewrite next') }}</h3>
+          </div>
+        </div>
+
+        <div class="issue-table-wrap">
+          <table class="issue-table">
+            <thead>
+              <tr>
+                <th>{{ tx('区域', 'Section') }}</th>
+                <th>{{ tx('主要问题', 'Primary issue') }}</th>
+                <th>{{ tx('风险等级', 'Risk') }}</th>
+                <th>{{ tx('预计收益', 'Expected gain') }}</th>
+                <th>{{ tx('操作', 'Action') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in topIssueRows" :key="row.sectionIndex">
+                <td :data-label="tx('区域', 'Section')">
+                  <strong>{{ row.title }}</strong>
+                </td>
+                <td :data-label="tx('主要问题', 'Primary issue')">
+                  <span>{{ row.issue }}</span>
+                </td>
+                <td :data-label="tx('风险等级', 'Risk')">
+                  <span class="risk-pill risk-pill--compact" :class="riskPillClass(row.level)">
+                    {{ riskText(row.level) }}
+                  </span>
+                </td>
+                <td :data-label="tx('预计收益', 'Expected gain')">
+                  <span class="gain-text">↓ {{ row.gainLabel }}</span>
+                </td>
+                <td :data-label="tx('操作', 'Action')">
+                  <button type="button" class="mini-action-btn" @click="openRewriteAdvice(row.sectionIndex)">
+                    {{ tx('去修改', 'Revise') }}
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
+    </section>
+
+    <section class="report-footnote">
+      <el-icon><Warning /></el-icon>
+      <span>
+        {{ tx(
+          '提示：以上结果由 PataFix AIGC 风险分析模型生成，仅供参考，建议结合人工判断。',
+          'Note: These results are generated by the PataFix AIGC risk analysis model for reference only and should be reviewed with human judgment.'
+        ) }}
+      </span>
+    </section>
+  </section>
 
   <el-dialog
     v-model="rewriteDialogVisible"
-    :title="`AI 改写建议 - ${currentRewriteSectionTitle}`"
+    :title="`${tx('AI 改写建议', 'AI rewrite advice')} - ${currentRewriteSectionTitle}`"
     width="820px"
     destroy-on-close
     class="rewrite-dialog"
   >
     <div v-if="rewriteDialogLoading" class="rewrite-skeleton">
       <el-skeleton :rows="6" animated />
-      <p class="skeleton-hint">正在连接 AI 改写服务，请稍候（若第三方服务繁忙，可能需要 30-90 秒）...</p>
+      <p class="skeleton-hint">
+        {{ tx(
+          '正在连接 AI 改写服务，请稍候。如果第三方服务繁忙，可能需要 30-90 秒。',
+          'Connecting to the rewrite service. This may take 30-90 seconds if the provider is busy.'
+        ) }}
+      </p>
     </div>
     <div v-else-if="currentRewriteAdvice?.error" class="rewrite-error">
-      <el-result icon="error" title="改写建议获取失败" :sub-title="currentRewriteAdvice.error">
+      <el-result
+        icon="error"
+        :title="tx('改写建议获取失败', 'Failed to load rewrite advice')"
+        :sub-title="currentRewriteAdvice.error"
+      >
         <template #extra>
-          <el-button type="primary" @click="retryRewriteAdvice">重试</el-button>
+          <el-button type="primary" @click="retryRewriteAdvice">{{ tx('重试', 'Retry') }}</el-button>
         </template>
       </el-result>
-      <p class="helper-text">可能是第三方 API 限流或配置问题，点击重试即可。</p>
     </div>
     <div v-else class="rewrite-content">
       <el-alert
@@ -666,33 +305,45 @@
         show-icon
         class="diagnosis-alert"
       />
+
       <el-tag v-if="currentRewriteAdvice?.fallback" type="warning" effect="dark" class="fallback-tag">
-        AI 服务当前不可用，以下为系统离线生成的改写参考
+        {{ tx(
+          '当前展示的是离线兜底改写结果，可作为快速参考。',
+          'The current result is an offline fallback rewrite and can be used as a quick reference.'
+        ) }}
       </el-tag>
 
       <div v-if="currentRewriteAdvice?.sentences?.length" class="rewrite-block">
         <h4 class="block-title">
-          <el-icon><EditPen /></el-icon> 逐句改写对比
+          <el-icon><EditPen /></el-icon>
+          {{ tx('逐句改写对比', 'Sentence-by-sentence rewrite') }}
         </h4>
+
         <div v-for="(sentence, idx) in currentRewriteAdvice.sentences" :key="idx" class="sentence-card">
           <div class="sentence-header">
-            <el-tag :type="tagType(sentence.risk)" size="small" effect="dark">{{ riskText(sentence.risk) }}</el-tag>
-            <span class="sentence-num">第 {{ idx + 1 }} 句</span>
+            <span class="risk-pill risk-pill--compact" :class="riskPillClass(sentence.risk)">
+              {{ riskText(sentence.risk) }}
+            </span>
+            <span class="sentence-num">{{ locale === 'en' ? `Sentence ${idx + 1}` : `第 ${idx + 1} 句` }}</span>
           </div>
+
           <div class="sentence-body">
             <div class="sentence-row original-box">
-              <label>原句</label>
+              <label>{{ tx('原句', 'Original') }}</label>
               <p>{{ sentence.original }}</p>
             </div>
+
             <div class="arrow-divider">
               <el-icon><Bottom /></el-icon>
             </div>
+
             <div class="sentence-row rewritten-box">
-              <label>改写后</label>
+              <label>{{ tx('改写后', 'Rewritten') }}</label>
               <p>{{ sentence.rewritten }}</p>
             </div>
+
             <div class="sentence-row explanation-box">
-              <label>改动原理</label>
+              <label>{{ tx('修改原因', 'Why this helps') }}</label>
               <p>{{ sentence.explanation }}</p>
             </div>
           </div>
@@ -701,8 +352,10 @@
 
       <div v-if="currentRewriteAdvice?.rewritten_paragraph" class="rewrite-block">
         <h4 class="block-title">
-          <el-icon><DocumentCopy /></el-icon> 改后完整段落参考
+          <el-icon><DocumentCopy /></el-icon>
+          {{ tx('整段改写参考', 'Full rewritten paragraph') }}
         </h4>
+
         <el-card shadow="never" class="paragraph-card">
           <p class="paragraph-text">{{ currentRewriteAdvice.rewritten_paragraph }}</p>
           <div class="paragraph-actions">
@@ -710,9 +363,10 @@
               type="primary"
               plain
               size="small"
-              @click="copyText(currentRewriteAdvice.rewritten_paragraph, '已复制改后段落')"
+              @click="copyText(currentRewriteAdvice.rewritten_paragraph, tx('已复制整段改写', 'Rewritten paragraph copied'))"
             >
-              <el-icon><DocumentCopy /></el-icon> 复制全文
+              <el-icon><DocumentCopy /></el-icon>
+              {{ tx('复制全文', 'Copy full paragraph') }}
             </el-button>
           </div>
         </el-card>
@@ -720,35 +374,29 @@
 
       <div v-if="currentRewriteAdvice?.overall_advice" class="rewrite-block">
         <h4 class="block-title">
-          <el-icon><Warning /></el-icon> 整体修改策略
+          <el-icon><Warning /></el-icon>
+          {{ tx('整体修改策略', 'Overall strategy') }}
         </h4>
         <el-alert :title="currentRewriteAdvice.overall_advice" type="warning" :closable="false" show-icon />
       </div>
     </div>
   </el-dialog>
-
-  <!-- 付费功能已隐藏：UnlockModal 已移除 -->
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index'
-import { EditPen, Bottom, DocumentCopy, Warning, Upload, Lock } from '@element-plus/icons-vue'
-import { getRewriteAdvice, previewCnkiFeedbackOcr, submitCnkiFeedback, getUnlockStatus, getUnlockPackages } from '../api'
+import { Bottom, DocumentCopy, Download, EditPen, Warning } from '@element-plus/icons-vue'
+import { getRewriteAdvice } from '../api'
 import type {
   AnalysisRunStatusResponse,
-  ChecklistItem,
   ModelStatusResponse,
   RewriteAdviceResponse,
   ScoreBand,
   SubScores,
   UnifiedReportResponse,
-  LearningScope,
-  UnlockPackage,
-  UnlockOrder
 } from '../types'
-import UnlockModal from './UnlockModal.vue'
 
 const router = useRouter()
 
@@ -758,132 +406,53 @@ const props = defineProps<{
   modelStatus: ModelStatusResponse | null
 }>()
 
-const emit = defineEmits<{
-  refresh: []
-}>()
+type ReportLocale = 'zh' | 'en'
+type RiskLevel = 'low' | 'medium' | 'high'
 
-const checklist = ref<ChecklistItem[]>([])
+const locale = ref<ReportLocale>(
+  (document.documentElement.dataset.lang as ReportLocale) ||
+    (localStorage.getItem('patafix-language') as ReportLocale) ||
+    'zh'
+)
 
-const showAllChapters = ref(false)
-
-const significantChapters = computed(() => {
-  return props.report.chapter_heatmap.filter(c => c.combined_score >= 0.20)
-})
-
-const actionableSectionCount = computed(() => {
-  return (props.report.priority_sections?.length ?? 0) || props.report.top_risk_sections.length
-})
-
-const mediumOrHigherSectionCount = computed(() => {
-  return props.report.top_risk_sections.filter(section => section.risk_level !== 'low').length
-})
-
-const hiddenChapters = computed(() => {
-  return props.report.chapter_heatmap.filter(c => c.combined_score < 0.20)
-})
-
-const hiddenChaptersCount = computed(() => hiddenChapters.value.length)
-
-const visibleSimilarityMatches = computed(() => {
-  return props.report.top_similarity_matches.filter(isReadableSimilarityMatch).slice(0, 6)
-})
-
-// 解锁状态（付费功能已隐藏，始终开放）
-const reportUnlocked = ref(true)
-const checkingUnlock = ref(false)
-
-async function checkUnlockStatus() {
-  reportUnlocked.value = true
+function syncLocale(next?: string) {
+  locale.value = next === 'en' ? 'en' : 'zh'
 }
 
-onMounted(async () => {
-  reportUnlocked.value = true
+function handleLanguageChange(event: Event) {
+  syncLocale((event as CustomEvent<ReportLocale>).detail)
+}
+
+function tx(zh: string, en: string) {
+  return locale.value === 'en' ? en : zh
+}
+
+onMounted(() => {
+  syncLocale(document.documentElement.dataset.lang || localStorage.getItem('patafix-language') || 'zh')
+  window.addEventListener('patafix:language-change', handleLanguageChange as EventListener)
 })
 
-watch(() => props.runStatus?.run_id, checkUnlockStatus)
-
-function onUnlocked() {
-  reportUnlocked.value = true
-  ElMessage.success('解锁成功')
-}
+onBeforeUnmount(() => {
+  window.removeEventListener('patafix:language-change', handleLanguageChange as EventListener)
+})
 
 const rewriteDialogVisible = ref(false)
 const rewriteDialogLoading = ref(false)
 const currentRewriteAdvice = ref<RewriteAdviceResponse | null>(null)
 const currentRewriteSectionTitle = ref('')
 const currentRewriteSectionIndex = ref(0)
-const rewriteLoadingMap = ref<Record<number, boolean>>({})
 
-// CNKI iterative upload
-const cnkiUploadDialogVisible = ref(false)
-const cnkiUploadFile = ref<File | null>(null)
-const cnkiUploadLoading = ref(false)
-const cnkiUploadOcrLoading = ref(false)
-const cnkiUploadOcrPreview = ref<any>(null)
-const cnkiUploadOcrError = ref('')
-const cnkiUploadInputRef = ref<HTMLInputElement | null>(null)
-const cnkiUploadForm = ref({
-  cnkiDupPercent: undefined as number | undefined,
-  cnkiAigcPercent: undefined as number | undefined,
-  reportDate: '',
-  notes: '',
-  removeReferenceDupPercent: undefined as number | undefined,
-  singleMaxDupPercent: undefined as number | undefined,
-  suspectedPlagiarism: undefined as Record<string, number> | undefined,
-  fragments: undefined as any[] | undefined,
-  learningScope: 'none' as LearningScope,
+const latestFeedback = computed(() => props.report.feedback_timeline[0] || null)
+
+const prioritizedSections = computed(() => {
+  return props.report.priority_sections?.length ? props.report.priority_sections : props.report.top_risk_sections
 })
 
-const latestFeedback = computed(() => {
-  const tl = props.report.feedback_timeline
-  return tl.length > 0 ? tl[0] : null
+const totalSegmentCount = computed(() => {
+  return Math.max(props.report.local_metrics.segment_count, prioritizedSections.value.length, 1)
 })
 
-const previousFeedback = computed(() => {
-  const tl = props.report.feedback_timeline
-  return tl.length > 1 ? tl[1] : null
-})
-
-const isPassed = computed(() => {
-  const latest = latestFeedback.value
-  if (!latest) return false
-  const dup = latest.cnki_dup_percent
-  const aigc = latest.cnki_aigc_percent
-  if (dup == null || aigc == null) return false
-  // 知网通常要求查重 < 20%，AIGC < 30%（不同学校有差异，这里用通用标准）
-  return dup < 20 && aigc < 30
-})
-
-const hasExtendedMetrics = computed(() => {
-  const d = props.report.cnki_report_details
-  if (!d) return false
-  return (
-    d.single_max_dup_percent != null ||
-    d.remove_reference_dup_percent != null ||
-    (d.suspected_plagiarism && Object.keys(d.suspected_plagiarism).length > 0) ||
-    (d.fragments && d.fragments.length > 0)
-  )
-})
-
-const cnkiGapWarning = computed(() => {
-  const latest = latestFeedback.value
-  if (!latest) return ''
-  const cnkiAigc = latest.cnki_aigc_percent
-  const cnkiDup = latest.cnki_dup_percent
-  const parts: string[] = []
-  if (cnkiAigc != null && cnkiAigc >= 40) {
-    parts.push(`知网实测 AIGC 率为 ${cnkiAigc.toFixed(1)}%，处于极高风险区间。当前改写建议已按知网最严格标准调整，建议对全文进行深度改写。`)
-  } else if (cnkiAigc != null && cnkiAigc >= 30) {
-    parts.push(`知网实测 AIGC 率为 ${cnkiAigc.toFixed(1)}%，已超出安全阈值。当前改写建议已按知网高标准调整，建议全面改写。`)
-  }
-  if (cnkiDup != null && cnkiDup >= 30) {
-    parts.push(`知网实测查重率为 ${cnkiDup.toFixed(1)}%，重复风险较高，建议优先处理重复片段。`)
-  }
-  return parts.join('')
-})
-
-// 基于知网实测数据重新计算风险等级和风险指数
-const cnkiBasedRisk = computed(() => {
+const cnkiBasedRisk = computed<RiskLevel>(() => {
   const latest = latestFeedback.value
   if (!latest) return props.report.summary.overall_risk
   const aigc = latest.cnki_aigc_percent ?? props.report.summary.predicted_cnki_aigc.center_percent
@@ -899,149 +468,335 @@ const cnkiBasedRiskScore = computed(() => {
   if (!latest) return props.report.summary.risk_score
   const aigc = latest.cnki_aigc_percent ?? props.report.summary.predicted_cnki_aigc.center_percent
   const dup = latest.cnki_dup_percent ?? props.report.summary.predicted_cnki_dup.center_percent
-  // 基于知网数据重新计算：查重权重 42%，AIGC 权重 38%，高阈值惩罚
   let score = 100 - dup * 0.42 - aigc * 0.38
   if (aigc >= 30) score -= 15
   if (dup >= 20) score -= 10
   return Math.max(10, Math.min(95, Math.round(score)))
 })
 
-const cnkiBasedJudgement = computed(() => {
-  const latest = latestFeedback.value
-  if (!latest) return props.report.summary.one_line_judgement
-  const aigc = latest.cnki_aigc_percent
-  const dup = latest.cnki_dup_percent
-  if (aigc != null && aigc >= 40) {
-    return `知网实测 AIGC 率为 ${aigc.toFixed(1)}%，处于极高风险区间。建议对全文进行深度改写，系统已按知网最严格标准优化改写建议。`
+const localizedHeroCopy = computed(() => {
+  if (latestFeedback.value) {
+    const aigc = latestFeedback.value.cnki_aigc_percent
+    const dup = latestFeedback.value.cnki_dup_percent
+    if (aigc != null && aigc >= 40) {
+      return tx(
+        `官方 AIGC 结果仍处于很高风险区间（${aigc.toFixed(1)}%），建议先完成高风险段落深改，再做一次整稿复检。`,
+        `The official AIGC result is still in a very high-risk band (${aigc.toFixed(1)}%). Start with deep rewrites on the highest-risk passages, then recheck the full draft.`
+      )
+    }
+    if (aigc != null && aigc >= 30) {
+      return tx(
+        `官方 AIGC 已超过安全线（${aigc.toFixed(1)}%），现在更适合用“先高风险、后结构、再细节”的顺序来压分。`,
+        `The official AIGC result is above the safe range (${aigc.toFixed(1)}%), so the best path is high-risk passages first, then structure, then detail.`
+      )
+    }
+    if (dup != null && dup >= 20) {
+      return tx(
+        `当前查重压力比 AIGC 更突出（${dup.toFixed(1)}%），建议先处理重复表达与证据引用，再收尾语言层面的优化。`,
+        `Similarity is currently the more visible pressure point (${dup.toFixed(1)}%). Tackle repeated phrasing and evidence handling first, then polish the language.`
+      )
+    }
   }
-  if (aigc != null && aigc >= 30) {
-    return `知网实测 AIGC 率为 ${aigc.toFixed(1)}%，已超出安全阈值。建议按知网标准全面改写，系统已优化改写策略。`
+
+  if (locale.value === 'zh') {
+    return props.report.summary.one_line_judgement
   }
-  if (dup != null && dup >= 30) {
-    return `知网实测查重率为 ${dup.toFixed(1)}%，重复风险较高。建议优先处理重复片段，再进行 AIGC 优化。`
+
+  if (cnkiBasedRisk.value === 'high') {
+    return `This draft is still too risky for formal submission. Fix the most exposed passages first, then verify the whole paper again.`
   }
-  return `知网实测数据显示当前论文风险可控（AIGC ${aigc?.toFixed(1) ?? '-'}%，查重 ${dup?.toFixed(1) ?? '-'}%），可针对局部问题进行精修。`
+  if (cnkiBasedRisk.value === 'medium') {
+    return `The draft is workable, but several passages still need targeted cleanup before a final check.`
+  }
+  return `The current draft looks relatively stable. A focused polish and one last verification should be enough.`
 })
 
-const cnkiGapSummary = computed(() => {
-  const latest = latestFeedback.value
-  if (!latest) return '-'
-  const aigcGap = latest.cnki_aigc_percent != null ? (latest.cnki_aigc_percent - props.report.local_metrics.ai_like_score * 100).toFixed(0) : null
-  const dupGap = latest.cnki_dup_percent != null ? (latest.cnki_dup_percent - props.report.local_metrics.duplication_score * 100).toFixed(0) : null
-  const parts: string[] = []
-  if (aigcGap != null && Math.abs(Number(aigcGap)) > 5) parts.push(`AIGC ${aigcGap > '0' ? '+' : ''}${aigcGap}%`)
-  if (dupGap != null && Math.abs(Number(dupGap)) > 5) parts.push(`查重 ${dupGap > '0' ? '+' : ''}${dupGap}%`)
-  return parts.length ? parts.join(' / ') : '基本吻合'
+const heroHeadline = computed(() => {
+  if (cnkiBasedRisk.value === 'high') {
+    return tx('当前属于高风险稿件，需要优先压降暴露段落', 'High-risk draft that needs immediate exposure reduction')
+  }
+  if (cnkiBasedRisk.value === 'medium') {
+    return tx('整体可控，但仍有关键段落需要处理', 'Overall manageable, with several key passages still exposed')
+  }
+  return tx('整体风险较低，适合做定稿前收尾', 'Low overall risk and suitable for final polishing')
 })
 
-function openCnkiUploadDialog() {
-  cnkiUploadFile.value = null
-  cnkiUploadOcrPreview.value = null
-  cnkiUploadOcrError.value = ''
-  cnkiUploadForm.value = { cnkiDupPercent: undefined, cnkiAigcPercent: undefined, reportDate: '', notes: '', removeReferenceDupPercent: undefined, singleMaxDupPercent: undefined, suspectedPlagiarism: undefined, fragments: undefined, learningScope: 'none' }
-  cnkiUploadDialogVisible.value = true
-}
+const heroNotice = computed(() => {
+  const warnings = props.report.warnings ?? []
+  if (warnings.length > 0) return warnings[0]
 
-function handleCnkiUploadSelect(e: Event) {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (file) processCnkiUploadFile(file)
-  input.value = ''
-}
-
-async function processCnkiUploadFile(file: File) {
-  if (file.size > 50 * 1024 * 1024) {
-    ElMessage.warning('文件大小不能超过 50MB')
-    return
+  const latest = latestFeedback.value
+  if (latest?.cnki_aigc_percent != null && latest.cnki_aigc_percent >= 30) {
+    return tx(
+      `当前官方 AIGC 为 ${latest.cnki_aigc_percent.toFixed(1)}%，下方建议已经按更严格标准收紧。`,
+      `Official AIGC is currently ${latest.cnki_aigc_percent.toFixed(1)}%, so the suggestions below are already tightened to a stricter threshold.`
+    )
   }
-  cnkiUploadFile.value = file
-  cnkiUploadOcrLoading.value = true
-  cnkiUploadOcrError.value = ''
-  try {
-    const preview = await previewCnkiFeedbackOcr(file)
-    cnkiUploadOcrPreview.value = preview
-    if (preview.cnki_dup_percent != null) cnkiUploadForm.value.cnkiDupPercent = preview.cnki_dup_percent
-    if (preview.cnki_aigc_percent != null) cnkiUploadForm.value.cnkiAigcPercent = preview.cnki_aigc_percent
-    if (preview.report_date) cnkiUploadForm.value.reportDate = preview.report_date
-    if (preview.remove_reference_dup_percent != null) cnkiUploadForm.value.removeReferenceDupPercent = preview.remove_reference_dup_percent
-    if (preview.single_max_dup_percent != null) cnkiUploadForm.value.singleMaxDupPercent = preview.single_max_dup_percent
-    if (preview.suspected_plagiarism) cnkiUploadForm.value.suspectedPlagiarism = preview.suspected_plagiarism
-    if (preview.fragments && preview.fragments.length > 0) cnkiUploadForm.value.fragments = preview.fragments
-  } catch (err) {
-    cnkiUploadOcrError.value = err instanceof Error ? err.message : 'OCR 识别失败'
-  } finally {
-    cnkiUploadOcrLoading.value = false
-  }
-}
 
-function removeCnkiUploadFile() {
-  cnkiUploadFile.value = null
-  cnkiUploadOcrPreview.value = null
-  cnkiUploadOcrError.value = ''
-  cnkiUploadForm.value = { cnkiDupPercent: undefined, cnkiAigcPercent: undefined, reportDate: '', notes: '', removeReferenceDupPercent: undefined, singleMaxDupPercent: undefined, suspectedPlagiarism: undefined, fragments: undefined, learningScope: 'none' }
-}
+  return ''
+})
 
-async function submitNewCnkiReport() {
-  if (!cnkiUploadFile.value && cnkiUploadForm.value.cnkiDupPercent == null && cnkiUploadForm.value.cnkiAigcPercent == null) {
-    ElMessage.warning('请上传报告文件或至少填写一项指标')
-    return
-  }
-  cnkiUploadLoading.value = true
-  try {
-    await submitCnkiFeedback({
-      documentId: props.report.document_id,
-      predictedRunId: props.report.run_id,
-      cnkiDupPercent: cnkiUploadForm.value.cnkiDupPercent ?? null,
-      cnkiAigcPercent: cnkiUploadForm.value.cnkiAigcPercent ?? null,
-      reportDate: cnkiUploadForm.value.reportDate || undefined,
-      notes: cnkiUploadForm.value.notes || undefined,
-      removeReferenceDupPercent: cnkiUploadForm.value.removeReferenceDupPercent ?? null,
-      singleMaxDupPercent: cnkiUploadForm.value.singleMaxDupPercent ?? null,
-      suspectedPlagiarism: cnkiUploadForm.value.suspectedPlagiarism ?? null,
-      fragments: cnkiUploadForm.value.fragments ?? null,
-      learningScope: cnkiUploadForm.value.learningScope,
-      evidenceFile: cnkiUploadFile.value
+const heroMetrics = computed(() => {
+  const latest = latestFeedback.value
+  return [
+    {
+      key: 'aigc',
+      label: tx('预测 AIGC 区间', 'Estimated AIGC band'),
+      value: latest?.cnki_aigc_percent != null ? optionalPercent(latest.cnki_aigc_percent) : bandText(props.report.summary.predicted_cnki_aigc),
+      caption:
+        latest?.cnki_aigc_percent != null
+          ? tx('已以上传官方结果为准', 'Official report is taking precedence')
+          : `${tx('中心值', 'Center')} ${props.report.summary.predicted_cnki_aigc.center_percent.toFixed(1)}%`,
+    },
+    {
+      key: 'dup',
+      label: tx('预测相似 / 查重区间', 'Estimated similarity band'),
+      value: latest?.cnki_dup_percent != null ? optionalPercent(latest.cnki_dup_percent) : bandText(props.report.summary.predicted_cnki_dup),
+      caption:
+        latest?.cnki_dup_percent != null
+          ? tx('已以上传官方结果为准', 'Official report is taking precedence')
+          : `${tx('中心值', 'Center')} ${props.report.summary.predicted_cnki_dup.center_percent.toFixed(1)}%`,
+    },
+    {
+      key: 'confidence',
+      label: tx('模型置信度', 'Model confidence'),
+      value: `${Math.round(props.report.summary.confidence * 100)}%`,
+      caption: tx(
+        `${props.report.local_metrics.segment_count} 个片段参与分析`,
+        `${props.report.local_metrics.segment_count} fragments analyzed`
+      ),
+    },
+    {
+      key: 'priority',
+      label: tx('优先建议修改段数', 'Priority passages'),
+      value: `${prioritizedSections.value.length}`,
+      caption: tx(
+        `${prioritizedSections.value.filter(section => section.risk_level !== 'low').length} 段中高风险已排序`,
+        `${prioritizedSections.value.filter(section => section.risk_level !== 'low').length} medium/high-risk passages ranked`
+      ),
+    },
+  ]
+})
+
+const riskDistributionItems = computed(() => {
+  const high = prioritizedSections.value.filter(item => item.risk_level === 'high').length
+  const medium = prioritizedSections.value.filter(item => item.risk_level === 'medium').length
+  const low = prioritizedSections.value.filter(item => item.risk_level === 'low').length
+  const normal = Math.max(totalSegmentCount.value - high - medium - low, 0)
+
+  const items = [
+    { key: 'high', label: tx('高风险', 'High risk'), count: high, color: '#EF4444' },
+    { key: 'medium', label: tx('中风险', 'Medium risk'), count: medium, color: '#F59E0B' },
+    { key: 'low', label: tx('低风险', 'Low risk'), count: low, color: '#7C5CFF' },
+    { key: 'normal', label: tx('正常', 'Normal'), count: normal, color: '#22C55E' },
+  ]
+
+  return items.map(item => ({
+    ...item,
+    percent: item.count / totalSegmentCount.value,
+    percentText: `${Math.round((item.count / totalSegmentCount.value) * 100)}%`,
+  }))
+})
+
+const riskDonutStyle = computed(() => {
+  let cursor = 0
+  const segments = riskDistributionItems.value
+    .map(item => {
+      const start = cursor
+      const next = cursor + item.percent * 360
+      cursor = next
+      return `${item.color} ${start}deg ${next}deg`
     })
-    ElMessage.success('知网报告已上传成功')
-    cnkiUploadDialogVisible.value = false
-    emit('refresh')
-  } catch (err) {
-    ElMessage.error(err instanceof Error ? err.message : '上传失败')
-  } finally {
-    cnkiUploadLoading.value = false
+    .join(', ')
+
+  return {
+    background: `conic-gradient(${segments || '#22C55E 0deg 360deg'})`,
   }
-}
+})
 
-function deltaClass(delta: number | null | undefined) {
-  if (delta == null) return ''
-  return delta < 0 ? 'delta-good' : delta > 0 ? 'delta-bad' : 'delta-neutral'
-}
+const priorityAreaItems = computed(() => {
+  const sections = prioritizedSections.value.slice(0, 3)
+  const maxScore = Math.max(...sections.map(section => section.combined_score), 0.35)
 
-function deltaIcon(delta: number | null | undefined) {
-  if (delta == null) return ''
-  return delta < 0 ? '↓' : delta > 0 ? '↑' : '→'
-}
+  return sections.map(section => ({
+    sectionIndex: section.section_index,
+    title: section.title,
+    subtitle: renderIssueSummary(section),
+    level: section.risk_level,
+    gainLabel: formatGainLabel(sectionExpectedDrop(section)),
+    width: Math.max(32, Math.round((section.combined_score / maxScore) * 100)),
+  }))
+})
 
-watch(
-  () => props.report.submission_checklist,
-  (items) => {
-    checklist.value = items.map((item) => ({ ...item }))
-  },
-  { immediate: true, deep: true }
-)
+const riskReasonItems = computed(() => {
+  const source = prioritizedSections.value.slice(0, 6).filter(item => item.sub_scores)
+  if (!source.length) {
+    return [
+      { key: 'template', label: tx('模板化表达', 'Template-heavy phrasing'), value: 62, color: '#EF4444', hint: tx('重复套板较多', 'Repetitive wording patterns') },
+      { key: 'repeat', label: tx('句式重复', 'Sentence repetition'), value: 55, color: '#F59E0B', hint: tx('结构变化偏少', 'Low sentence variation') },
+      { key: 'empty', label: tx('套话空话', 'Empty filler language'), value: 48, color: '#7C5CFF', hint: tx('信息密度不足', 'Low information density') },
+      { key: 'splice', label: tx('疑似拼接', 'Possible stitched phrasing'), value: 42, color: '#3B82F6', hint: tx('风格跳变明显', 'Style shifts between clauses') },
+      { key: 'detail', label: tx('缺少细节', 'Lack of detail'), value: 38, color: '#22C55E', hint: tx('证据支撑不够', 'Weak supporting details') },
+    ]
+  }
 
+  const average = (pick: (scores: SubScores) => number) =>
+    Math.round(source.reduce((sum, item) => sum + pick(item.sub_scores as SubScores), 0) / source.length)
+
+  return [
+    {
+      key: 'template',
+      label: tx('模板化表达', 'Template-heavy phrasing'),
+      value: average(scores => scores.template_score),
+      color: '#EF4444',
+      hint: tx('容易被看成统一话术', 'Likely to read as standardized phrasing'),
+    },
+    {
+      key: 'repeat',
+      label: tx('句式重复', 'Sentence repetition'),
+      value: average(scores => scores.repetition_score),
+      color: '#F59E0B',
+      hint: tx('句子推进方式过于相似', 'The sentence rhythm repeats too often'),
+    },
+    {
+      key: 'empty',
+      label: tx('套话空话', 'Empty filler language'),
+      value: average(scores => scores.semantic_empty_score),
+      color: '#7C5CFF',
+      hint: tx('表达泛、信息密度低', 'Broad wording with low information density'),
+    },
+    {
+      key: 'splice',
+      label: tx('疑似拼接', 'Possible stitched phrasing'),
+      value: average(scores => (scores.ai_likelihood + scores.citation_risk) / 2),
+      color: '#3B82F6',
+      hint: tx('局部风格和来源感较强', 'The local style feels patched together'),
+    },
+    {
+      key: 'detail',
+      label: tx('缺少细节', 'Lack of detail'),
+      value: average(scores => scores.semantic_empty_score * 0.7 + scores.ai_likelihood * 0.3),
+      color: '#22C55E',
+      hint: tx('例证和细节支撑不足', 'More evidence and specifics are needed'),
+    },
+  ]
+})
+
+const optimizationSteps = computed(() => {
+  const defaults = [
+    {
+      index: 0,
+      order: '01',
+      title: tx('优先处理高风险段落', 'Handle the highest-risk passages first'),
+      description: tx('先把最容易拉高结果的段落逐句改掉，优先清理模板化和高重复表达。', 'Rewrite the passages that are most visibly pushing the score up, especially templated and repetitive wording.'),
+      tone: 'rose',
+      gainLabel: tx('预计降低 12%+', 'Estimated drop 12%+'),
+    },
+    {
+      index: 1,
+      order: '02',
+      title: tx('优化句式与结构', 'Vary sentence form and structure'),
+      description: tx('拉开句子节奏，避免多段连续使用同一种说明方式。', 'Introduce more sentence variation so adjacent passages do not all move in the same pattern.'),
+      tone: 'amber',
+      gainLabel: tx('预计降低 10%+', 'Estimated drop 10%+'),
+    },
+    {
+      index: 2,
+      order: '03',
+      title: tx('补充细节与证据', 'Add detail and supporting evidence'),
+      description: tx('把空泛结论换成更具体的案例、过程、数据或判断依据。', 'Replace broad conclusions with concrete examples, process detail, data, or explicit reasoning.'),
+      tone: 'violet',
+      gainLabel: tx('预计降低 8%+', 'Estimated drop 8%+'),
+    },
+  ]
+
+  if (!props.report.revision_plan.length) return defaults
+
+  return defaults.map((fallback, index) => {
+    const plan = props.report.revision_plan[index]
+    if (!plan) return fallback
+    return {
+      ...fallback,
+      title: plan.title,
+      description: locale.value === 'en' ? plan.how_to_fix : plan.why,
+      gainLabel: plan.expected_gain || fallback.gainLabel,
+    }
+  })
+})
+
+const topIssueRows = computed(() => {
+  return prioritizedSections.value.slice(0, 3).map(section => ({
+    sectionIndex: section.section_index,
+    title: section.title,
+    issue: renderIssueSummary(section),
+    level: section.risk_level,
+    gainLabel: formatGainLabel(sectionExpectedDrop(section)),
+  }))
+})
+
+const trendValues = computed(() => {
+  const current = latestFeedback.value?.cnki_aigc_percent ?? props.report.summary.predicted_cnki_aigc.center_percent
+  const gains = optimizationSteps.value.map(step => extractGainNumber(step.gainLabel))
+  const first = Math.max(current - gains[0], 6)
+  const second = Math.max(first - gains[1] * 0.78, 5)
+  const third = Math.max(second - gains[2] * 0.72, 4.5)
+  const final = Math.max(third - 2.4, 4)
+
+  return [current, first, second, third, final]
+})
+
+const trendLabels = computed(() => [
+  tx('当前', 'Current'),
+  tx('完成第 1 步', 'After step 1'),
+  tx('完成第 2 步', 'After step 2'),
+  tx('完成第 3 步', 'After step 3'),
+  tx('最终预计', 'Final estimate'),
+])
+
+const trendPoints = computed(() => {
+  const width = 360
+  const height = 180
+  const top = 16
+  const bottom = 30
+  const values = trendValues.value
+  const max = Math.max(...values) + 4
+  const min = Math.max(Math.min(...values) - 3, 0)
+
+  return values.map((value, index) => {
+    const x = 22 + (index * (width - 44)) / Math.max(values.length - 1, 1)
+    const ratio = max === min ? 0.5 : (value - min) / (max - min)
+    const y = height - bottom - ratio * (height - top - bottom)
+    return {
+      label: trendLabels.value[index],
+      value,
+      x,
+      y,
+    }
+  })
+})
+
+const trendLinePath = computed(() => {
+  return trendPoints.value.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
+})
+
+const trendAreaPath = computed(() => {
+  const baseY = 150
+  const line = trendLinePath.value
+  const first = trendPoints.value[0]
+  const last = trendPoints.value[trendPoints.value.length - 1]
+  return `${line} L ${last.x} ${baseY} L ${first.x} ${baseY} Z`
+})
 
 async function openRewriteAdvice(sectionIndex: number) {
-  const section = props.report.top_risk_sections.find((s) => s.section_index === sectionIndex)
-  currentRewriteSectionTitle.value = section?.title || `段落 ${sectionIndex + 1}`
+  const section = props.report.top_risk_sections.find(item => item.section_index === sectionIndex)
+  currentRewriteSectionTitle.value = section?.title || (locale.value === 'en' ? `Paragraph ${sectionIndex + 1}` : `段落 ${sectionIndex + 1}`)
   currentRewriteSectionIndex.value = sectionIndex
-  rewriteLoadingMap.value[sectionIndex] = true
   rewriteDialogLoading.value = true
   currentRewriteAdvice.value = null
   rewriteDialogVisible.value = true
+
   try {
-    const advice = await getRewriteAdvice(props.report.run_id, sectionIndex)
-    currentRewriteAdvice.value = advice
+    currentRewriteAdvice.value = await getRewriteAdvice(props.report.run_id, sectionIndex)
   } catch (error) {
     currentRewriteAdvice.value = {
       run_id: props.report.run_id,
@@ -1050,57 +805,27 @@ async function openRewriteAdvice(sectionIndex: number) {
       sentences: [],
       rewritten_paragraph: '',
       overall_advice: '',
-      error: error instanceof Error ? error.message : '获取改写建议失败',
+      error: error instanceof Error ? error.message : tx('获取改写建议失败', 'Failed to load rewrite advice'),
     }
   } finally {
     rewriteDialogLoading.value = false
-    rewriteLoadingMap.value[sectionIndex] = false
   }
 }
 
 async function retryRewriteAdvice() {
-  const sectionIndex = currentRewriteSectionIndex.value
-  rewriteDialogLoading.value = true
-  try {
-    const advice = await getRewriteAdvice(props.report.run_id, sectionIndex)
-    currentRewriteAdvice.value = advice
-  } catch (error) {
-    currentRewriteAdvice.value = {
-      run_id: props.report.run_id,
-      section_index: sectionIndex,
-      diagnosis: '',
-      sentences: [],
-      rewritten_paragraph: '',
-      overall_advice: '',
-      error: error instanceof Error ? error.message : '重试失败',
-    }
-  } finally {
-    rewriteDialogLoading.value = false
-  }
+  await openRewriteAdvice(currentRewriteSectionIndex.value)
 }
 
 function openPrintReport() {
   const url = router.resolve({
     name: 'report-print',
-    params: { runId: props.report.run_id }
+    params: { runId: props.report.run_id },
   }).href
   window.open(url, '_blank')
 }
 
 function openRewriteEditor() {
   router.push(`/app/rewrite/${props.report.run_id}`)
-}
-
-async function copyMentorBrief() {
-  const text = `${props.report.mentor_brief.headline}\n\n${props.report.mentor_brief.summary}\n\n${props.report.mentor_brief.suggested_message}`
-  await copyText(text, '导师沟通摘要已复制')
-}
-
-async function copyRevisionPlan() {
-  const planText = props.report.revision_plan
-    .map((item) => `Step ${item.priority} ${item.title}\n为什么先改：${item.why}\n怎么改：${item.how_to_fix}\n预期收益：${item.expected_gain}`)
-    .join('\n\n')
-  await copyText(planText, '修改行动计划已复制')
 }
 
 async function copyText(text: string, successMessage: string) {
@@ -1120,62 +845,57 @@ async function copyText(text: string, successMessage: string) {
     }
     ElMessage.success(successMessage)
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '复制失败')
+    ElMessage.error(error instanceof Error ? error.message : tx('复制失败', 'Copy failed'))
   }
 }
 
-function dominantRiskLabel(subScores: SubScores): string {
-  const dims: [string, number][] = [
-    ['AI疑似表达', subScores.ai_likelihood],
-    ['套话模板化', subScores.template_score],
-    ['表达空泛', subScores.semantic_empty_score],
-    ['重复句式', subScores.repetition_score],
-    ['引用不规范', subScores.citation_risk],
+function renderIssueSummary(section: UnifiedReportResponse['top_risk_sections'][number]) {
+  if (section.reasons?.length) {
+    return section.reasons.slice(0, 2).join(locale.value === 'en' ? ' / ' : '、')
+  }
+  if (section.sub_scores) {
+    return dominantRiskLabel(section.sub_scores)
+  }
+  return tx('需要定向降重和降 AIGC 处理', 'Needs targeted similarity and AIGC reduction')
+}
+
+function dominantRiskLabel(subScores: SubScores) {
+  const dimensions: [string, number][] = [
+    [tx('模板化表达', 'Template-heavy phrasing'), subScores.template_score],
+    [tx('句式重复', 'Sentence repetition'), subScores.repetition_score],
+    [tx('套话空话', 'Empty filler language'), subScores.semantic_empty_score],
+    [tx('疑似拼接', 'Possible stitched phrasing'), (subScores.ai_likelihood + subScores.citation_risk) / 2],
+    [tx('缺少细节', 'Lack of detail'), subScores.semantic_empty_score * 0.7 + subScores.ai_likelihood * 0.3],
   ]
-  dims.sort((a, b) => b[1] - a[1])
-  return dims[0][0]
+  dimensions.sort((a, b) => b[1] - a[1])
+  return dimensions[0][0]
 }
 
-function isReadableSimilarityMatch(match: UnifiedReportResponse['top_similarity_matches'][number]) {
-  const snippet = (match.matched_snippet || '').trim()
-  if (!snippet) return false
-  if (snippet.includes('�')) return false
-  if ((snippet.match(/\?/g) || []).length >= 4) return false
-
-  const asciiRuns = snippet.match(/[A-Za-z0-9_]+/g) || []
-  const asciiChars = asciiRuns.reduce((sum, item) => sum + item.length, 0)
-  const shortRuns = asciiRuns.filter(item => item.length <= 2)
-  if (asciiChars / Math.max(snippet.length, 1) >= 0.14 && shortRuns.length >= 6) {
-    return false
-  }
-
-  return true
+function sectionExpectedDrop(section: UnifiedReportResponse['top_risk_sections'][number]) {
+  return Math.max(4, Math.min(18, Math.round(section.combined_score * 16 + section.aigc_score * 4)))
 }
 
-function riskText(level: 'low' | 'medium' | 'high') {
-  return level === 'high' ? '高风险' : level === 'medium' ? '中风险' : '低风险'
+function extractGainNumber(text: string) {
+  const matched = text.match(/(\d+(?:\.\d+)?)/)
+  return matched ? Number(matched[1]) : 8
 }
 
-function tagType(level: 'low' | 'medium' | 'high') {
-  return level === 'high' ? 'danger' : level === 'medium' ? 'warning' : 'success'
+function formatGainLabel(value: number) {
+  return locale.value === 'en' ? `${value}%+` : `${value}%+`
+}
+
+function riskText(level: RiskLevel) {
+  if (level === 'high') return tx('高风险', 'High risk')
+  if (level === 'medium') return tx('中风险', 'Medium risk')
+  return tx('低风险', 'Low risk')
+}
+
+function riskPillClass(level: RiskLevel | 'normal') {
+  return `risk-pill--${level}`
 }
 
 function bandText(band: ScoreBand) {
   return `${band.low_percent.toFixed(1)}%-${band.high_percent.toFixed(1)}%`
-}
-
-function formatDate(value: string) {
-  return new Date(value).toLocaleString('zh-CN', { hour12: false })
-}
-
-function metricNumber(metrics: Record<string, unknown>, key: string, digits = 0) {
-  const value = metrics[key]
-  if (typeof value !== 'number') return digits > 0 ? (0).toFixed(digits) : '0'
-  return digits > 0 ? value.toFixed(digits) : String(value)
-}
-
-function providerSourceText(value: string) {
-  return value === 'manual_import' ? '手工导入' : '自动抓取'
 }
 
 function optionalPercent(value: number | null | undefined) {
@@ -1183,565 +903,1154 @@ function optionalPercent(value: number | null | undefined) {
   return `${value.toFixed(1)}%`
 }
 
-function confidenceText(value: number | null | undefined) {
-  if (value == null) return '-'
-  return `${Math.round(value * 100)}%`
-}
-
-function deltaText(value: number | null | undefined) {
-  if (value == null) return '-'
-  return `${value >= 0 ? '+' : ''}${value.toFixed(2)} 个百分点`
+function formatDate(value: string) {
+  return new Date(value).toLocaleString(locale.value === 'en' ? 'en-US' : 'zh-CN', { hour12: false })
 }
 </script>
 
 <style scoped>
-.lock-banner {
-  background: linear-gradient(135deg, #fff8e1, #fff3e0);
-  border: 1px dashed #ff9800;
-}
-.lock-content {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  padding: 20px;
-}
-.lock-icon {
-  font-size: 40px;
-  color: #ff9800;
-  flex-shrink: 0;
-}
-.lock-text {
-  flex: 1;
-}
-.lock-text h3 {
-  margin: 0 0 6px;
-  color: #e65100;
-  font-size: 18px;
-}
-.lock-text p {
-  margin: 0;
-  color: #666;
-  font-size: 14px;
-}
-.rewrite-btn {
-  margin-top: 12px;
+.report-dashboard {
+  --report-bg-page: #f7f8f4;
+  --report-bg-card: rgba(255, 255, 255, 0.94);
+  --report-bg-card-soft: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(249, 251, 247, 0.98));
+  --report-bg-elevated: rgba(255, 255, 255, 0.98);
+  --report-bg-subtle: rgba(148, 163, 184, 0.10);
+  --report-bg-track: rgba(148, 163, 184, 0.16);
+  --report-text-main: #18202a;
+  --report-text-secondary: #425066;
+  --report-text-muted: #6b7280;
+  --report-text-soft: #8a94a5;
+  --report-brand: #0f8f4f;
+  --report-brand-strong: #0f7a45;
+  --report-brand-soft: rgba(15, 143, 79, 0.09);
+  --report-risk-high: #ef4444;
+  --report-risk-medium: #f59e0b;
+  --report-risk-low: #7c5cff;
+  --report-risk-normal: #22c55e;
+  --report-risk-blue: #3b82f6;
+  --report-border: rgba(148, 163, 184, 0.16);
+  --report-shadow: 0 20px 48px rgba(15, 23, 42, 0.08);
+  --report-shadow-soft: 0 12px 28px rgba(15, 23, 42, 0.05);
+  display: grid;
+  gap: 24px;
+  color: var(--report-text-main);
 }
 
-.sub-score-bars {
-  margin: 10px 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+:global(:root[data-theme='dark']) .report-dashboard {
+  --report-bg-page: #09121a;
+  --report-bg-card: #101922;
+  --report-bg-card-soft: linear-gradient(180deg, #101a23 0%, #0c151d 100%);
+  --report-bg-elevated: #13202a;
+  --report-bg-subtle: rgba(110, 128, 149, 0.16);
+  --report-bg-track: rgba(94, 112, 132, 0.26);
+  --report-text-main: #f2f6fb;
+  --report-text-secondary: #d6deea;
+  --report-text-muted: #a4b0bf;
+  --report-text-soft: #738196;
+  --report-brand: #22c55e;
+  --report-brand-strong: #17a34a;
+  --report-brand-soft: rgba(34, 197, 94, 0.16);
+  --report-border: rgba(118, 136, 158, 0.22);
+  --report-shadow: 0 18px 42px rgba(0, 0, 0, 0.26);
+  --report-shadow-soft: 0 10px 24px rgba(0, 0, 0, 0.18);
 }
-.sub-bar {
+
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard {
+  --report-bg-page: #0b1220 !important;
+  --report-bg-card: #121c2f !important;
+  --report-bg-card-soft: linear-gradient(180deg, #121c2f 0%, #101a2d 100%) !important;
+  --report-bg-elevated: #162235 !important;
+  --report-bg-subtle: rgba(255, 255, 255, 0.045) !important;
+  --report-bg-track: rgba(255, 255, 255, 0.08) !important;
+  --report-text-main: #f5f7fa !important;
+  --report-text-secondary: #edf2f8 !important;
+  --report-text-muted: #c8d1dd !important;
+  --report-text-soft: #a1adbd !important;
+  --report-brand: #1fa45b !important;
+  --report-brand-strong: #168a4b !important;
+  --report-brand-soft: rgba(31, 164, 91, 0.16) !important;
+  --report-border: rgba(255, 255, 255, 0.08) !important;
+  --report-shadow: 0 10px 28px rgba(0, 0, 0, 0.22) !important;
+  --report-shadow-soft: 0 8px 18px rgba(0, 0, 0, 0.16) !important;
+}
+
+.report-hero-card,
+.report-card {
+  background: var(--report-bg-card-soft);
+  border: 1px solid var(--report-border);
+  border-radius: 24px;
+  box-shadow: var(--report-shadow);
+}
+
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .report-hero-card,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .report-card {
+  background: var(--report-bg-card-soft) !important;
+  border-color: var(--report-border) !important;
+  box-shadow: var(--report-shadow) !important;
+}
+
+.report-hero-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(360px, 0.95fr);
+  gap: 22px;
+  padding: 28px;
+  position: relative;
+}
+
+.report-hero-main {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+.report-hero-meta,
+.report-score-row,
+.report-hero-actions,
+.card-heading {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11px;
+  justify-content: space-between;
+  gap: 14px;
 }
-.sub-label {
-  width: 28px;
-  color: #888;
+
+.report-eyebrow,
+.section-kicker {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--report-brand);
+}
+
+.report-generated {
+  color: var(--report-text-soft);
+  font-size: 13px;
+}
+
+.report-score-row {
+  align-items: flex-start;
+}
+
+.report-score-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.report-score-line strong {
+  font-size: clamp(52px, 8vw, 76px);
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  font-weight: 800;
+}
+
+.report-score-line span {
+  font-size: 22px;
+  color: var(--report-text-soft);
+}
+
+.report-score-block h2 {
+  margin: 10px 0 0;
+  font-size: clamp(26px, 3vw, 34px);
+  line-height: 1.15;
+  color: var(--report-text-main);
+}
+
+.report-hero-copy {
+  margin: 0;
+  max-width: 56ch;
+  font-size: 15px;
+  line-height: 1.8;
+  color: var(--report-text-muted);
+}
+
+.report-inline-notice {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 244, 226, 0.84);
+  border: 1px solid rgba(245, 158, 11, 0.18);
+  color: #9a5d00;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+:global(:root[data-theme='dark']) .report-inline-notice {
+  background: rgba(72, 54, 18, 0.32);
+  border-color: rgba(240, 177, 69, 0.18);
+  color: #f7d18d;
+}
+
+.report-hero-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.report-primary-btn,
+.report-secondary-btn {
+  height: 46px;
+  border-radius: 12px;
+  padding: 0 18px;
+  font-weight: 700;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+}
+
+.report-primary-btn {
+  background: linear-gradient(135deg, var(--report-brand), var(--report-brand-strong));
+  color: #ffffff;
+  border: none;
+  box-shadow: 0 16px 30px rgba(15, 143, 79, 0.22);
+}
+
+.report-primary-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 20px 34px rgba(15, 143, 79, 0.3);
+}
+
+.report-primary-btn:active {
+  transform: scale(0.985);
+}
+
+.report-secondary-btn {
+  background: rgba(255, 255, 255, 0.84);
+  color: var(--report-brand-strong);
+  border: 1px solid rgba(15, 143, 79, 0.26);
+}
+
+.report-secondary-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(232, 246, 238, 0.96);
+}
+
+:global(:root[data-theme='dark']) .report-primary-btn {
+  box-shadow: 0 16px 32px rgba(34, 197, 94, 0.24);
+}
+
+:global(:root[data-theme='dark']) .report-secondary-btn {
+  background: #121d26;
+  border-color: rgba(63, 213, 111, 0.24);
+  color: #dff7e6;
+}
+
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .report-primary-btn {
+  background: linear-gradient(135deg, #1fa45b, #168a4b) !important;
+  color: #ffffff !important;
+  box-shadow: 0 12px 24px rgba(31, 164, 91, 0.18) !important;
+}
+
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .report-secondary-btn {
+  background: rgba(31, 164, 91, 0.06) !important;
+  border-color: rgba(31, 164, 91, 0.34) !important;
+  color: #d8f6e3 !important;
+}
+
+.report-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.metric-slab {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border-radius: 18px;
+  background: var(--report-bg-elevated);
+  border: 1px solid var(--report-border);
+  box-shadow: var(--report-shadow-soft);
+  min-height: 128px;
+}
+
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .metric-slab,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .priority-bar-card,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .issue-table tbody tr,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .sentence-card,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .paragraph-card {
+  background: var(--report-bg-elevated) !important;
+  border-color: var(--report-border) !important;
+  box-shadow: var(--report-shadow-soft) !important;
+}
+
+.metric-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--report-text-soft);
+}
+
+.metric-value {
+  font-size: 30px;
+  line-height: 1.05;
+  color: var(--report-text-main);
+}
+
+.metric-caption {
+  color: var(--report-text-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .report-generated,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .metric-label,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .section-kicker,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .metric-caption,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .priority-title-wrap small,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .reason-text small,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .trend-axis-item span,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .issue-table thead th,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .sentence-num {
+  color: var(--report-text-muted) !important;
+}
+
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard h2,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard h3,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard strong,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .metric-value,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .report-score-line strong,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .priority-title-wrap strong,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .reason-text strong,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .donut-center strong,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .trend-axis-item strong {
+  color: var(--report-text-main) !important;
+}
+
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .report-hero-copy,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .legend-label,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .legend-value small,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .reason-bar span,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .step-card p,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .issue-table tbody td span,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .donut-center span {
+  color: var(--report-text-secondary) !important;
+}
+
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .report-hero-copy,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .metric-caption,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .priority-title-wrap small,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .reason-text small,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .trend-axis-item span,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .step-card p,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .issue-table tbody td,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .legend-label,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .legend-value small {
+  font-weight: 500 !important;
+}
+
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .report-score-block h2,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .metric-value,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .donut-center strong,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .issue-table tbody td strong {
+  font-weight: 800 !important;
+}
+
+.report-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.report-card {
+  padding: 22px;
+}
+
+.chart-card {
+  display: grid;
+  gap: 18px;
+  min-height: 100%;
+}
+
+.card-heading {
+  align-items: flex-start;
+}
+
+.card-heading h3 {
+  margin: 6px 0 0;
+  font-size: 18px;
+  line-height: 1.35;
+  color: var(--report-text-main);
+}
+
+.donut-layout {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+}
+
+.donut-shell {
+  display: grid;
+  place-items: center;
+}
+
+.donut-chart {
+  width: 168px;
+  height: 168px;
+  border-radius: 50%;
+  position: relative;
+}
+
+.donut-chart::after {
+  content: '';
+  position: absolute;
+  inset: 18px;
+  border-radius: 50%;
+  background: var(--report-bg-card);
+  border: 1px solid var(--report-border);
+}
+
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .donut-chart::after {
+  background: #101a2d !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.donut-center {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  text-align: center;
+}
+
+.donut-center strong {
+  font-size: 34px;
+  line-height: 1;
+}
+
+.donut-center span {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--report-text-muted);
+}
+
+.donut-legend,
+.bar-stack,
+.reason-stack,
+.trend-card-body,
+.step-flow {
+  display: grid;
+  gap: 12px;
+}
+
+.legend-row,
+.reason-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.legend-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--report-text-muted);
+  line-height: 1.5;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
   flex-shrink: 0;
 }
-.sub-track {
-  flex: 1;
-  height: 6px;
-  background: #eee;
-  border-radius: 3px;
+
+.legend-value {
+  text-align: right;
+}
+
+.legend-value strong {
+  display: block;
+  font-size: 16px;
+}
+
+.legend-value small {
+  color: var(--report-text-muted);
+}
+
+.priority-bar-card {
+  width: 100%;
+  border: 1px solid var(--report-border);
+  border-radius: 18px;
+  padding: 14px 16px;
+  background: var(--report-bg-elevated);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.priority-bar-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--report-shadow-soft);
+  border-color: rgba(15, 143, 79, 0.24);
+}
+
+.priority-bar-head,
+.priority-title-wrap,
+.reason-bar,
+.trend-axis,
+.issue-table-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.priority-bar-head {
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.priority-title-wrap strong {
+  display: block;
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--report-text-main);
+}
+
+.priority-title-wrap small {
+  display: block;
+  margin-top: 2px;
+  color: var(--report-text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.rank-chip {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--report-brand-soft);
+  color: var(--report-brand);
+  flex-shrink: 0;
+}
+
+.priority-gain,
+.step-gain,
+.gain-text {
+  color: var(--report-brand);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.priority-bar-track,
+.reason-bar-track {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--report-bg-track);
   overflow: hidden;
 }
-.sub-fill {
+
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .trend-chart {
+  background: transparent !important;
+}
+
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .trend-line {
+  stroke: #1fa45b !important;
+}
+
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .trend-point {
+  fill: #162235 !important;
+  stroke: #1fa45b !important;
+}
+
+.priority-bar-fill,
+.reason-bar-fill {
   height: 100%;
-  border-radius: 3px;
+  border-radius: inherit;
 }
-.sub-ai { background: #e53935; }
-.sub-template { background: #ff9800; }
-.sub-empty { background: #9c27b0; }
-.sub-repeat { background: #2196f3; }
-.sub-cite { background: #795548; }
-.sub-value {
-  width: 22px;
+
+.priority-bar-fill--high {
+  background: linear-gradient(90deg, #f87171, #ef4444);
+}
+
+.priority-bar-fill--medium {
+  background: linear-gradient(90deg, #fbbf24, #f59e0b);
+}
+
+.priority-bar-fill--low {
+  background: linear-gradient(90deg, #9b8cff, #7c5cff);
+}
+
+.reason-text {
+  min-width: 0;
+}
+
+.reason-text strong {
+  display: block;
+  font-size: 14px;
+  color: var(--report-text-secondary);
+}
+
+.reason-text small {
+  color: var(--report-text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.reason-bar {
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.reason-bar span {
+  min-width: 42px;
   text-align: right;
-  color: #666;
+  font-size: 13px;
+  color: var(--report-text-muted);
 }
-.rewrite-btn .el-icon {
-  margin-right: 4px;
+
+.trend-chart {
+  width: 100%;
+  height: 180px;
 }
+
+.trend-line {
+  fill: none;
+  stroke: var(--report-brand);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.trend-point {
+  fill: #ffffff;
+  stroke: var(--report-brand);
+  stroke-width: 3;
+}
+
+:global(:root[data-theme='dark']) .trend-point {
+  fill: #101922;
+}
+
+.trend-axis {
+  justify-content: space-between;
+  align-items: stretch;
+}
+
+.trend-axis-item {
+  display: grid;
+  gap: 4px;
+  text-align: center;
+  flex: 1;
+}
+
+.trend-axis-item strong {
+  font-size: 15px;
+}
+
+.trend-axis-item span {
+  color: var(--report-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.report-bottom-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+  gap: 20px;
+}
+
+.steps-card,
+.issues-card {
+  min-height: 100%;
+}
+
+.step-flow {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.step-card {
+  position: relative;
+  display: grid;
+  gap: 14px;
+  min-height: 220px;
+  padding: 20px 18px;
+  border-radius: 20px;
+  border: 1px solid transparent;
+}
+
+.step-card::after {
+  content: '→';
+  position: absolute;
+  right: -14px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 24px;
+  color: var(--report-text-soft);
+}
+
+.step-card:last-child::after {
+  display: none;
+}
+
+.step-card--rose {
+  background: rgba(254, 242, 242, 0.92);
+  border-color: rgba(239, 68, 68, 0.16);
+}
+
+.step-card--amber {
+  background: rgba(255, 247, 237, 0.92);
+  border-color: rgba(245, 158, 11, 0.16);
+}
+
+.step-card--violet {
+  background: rgba(245, 243, 255, 0.94);
+  border-color: rgba(124, 92, 255, 0.16);
+}
+
+:global(:root[data-theme='dark']) .step-card--rose {
+  background: linear-gradient(180deg, rgba(72, 27, 35, 0.78), rgba(54, 22, 29, 0.84));
+  border-color: rgba(239, 68, 68, 0.16);
+}
+
+:global(:root[data-theme='dark']) .step-card--amber {
+  background: linear-gradient(180deg, rgba(73, 52, 22, 0.76), rgba(53, 37, 16, 0.84));
+  border-color: rgba(245, 158, 11, 0.16);
+}
+
+:global(:root[data-theme='dark']) .step-card--violet {
+  background: linear-gradient(180deg, rgba(48, 39, 82, 0.78), rgba(37, 31, 61, 0.84));
+  border-color: rgba(124, 92, 255, 0.16);
+}
+
+.step-index {
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--report-text-soft);
+}
+
+.step-card strong {
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.step-card p {
+  margin: 0;
+  color: var(--report-text-muted);
+  font-size: 14px;
+  line-height: 1.72;
+}
+
+.issue-table-wrap {
+  display: block;
+  overflow-x: auto;
+}
+
+.issue-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 10px;
+  min-width: 620px;
+}
+
+.issue-table thead th {
+  padding: 0 14px 8px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--report-text-soft);
+}
+
+.issue-table tbody tr {
+  background: var(--report-bg-elevated);
+  box-shadow: var(--report-shadow-soft);
+}
+
+.issue-table tbody td {
+  padding: 16px 14px;
+  font-size: 14px;
+  vertical-align: middle;
+  border-top: 1px solid var(--report-border);
+  border-bottom: 1px solid var(--report-border);
+  color: var(--report-text-secondary);
+}
+
+.issue-table tbody td:first-child {
+  border-left: 1px solid var(--report-border);
+  border-radius: 14px 0 0 14px;
+}
+
+.issue-table tbody td:last-child {
+  border-right: 1px solid var(--report-border);
+  border-radius: 0 14px 14px 0;
+}
+
+.mini-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  min-width: 88px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 143, 79, 0.26);
+  background: transparent;
+  color: var(--report-brand);
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+  word-break: keep-all;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.mini-action-btn:hover {
+  background: var(--report-brand);
+  color: #ffffff;
+}
+
+.report-footnote {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(232, 246, 238, 0.92);
+  border: 1px solid rgba(15, 143, 79, 0.14);
+  color: #275a3c;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+:global(:root[data-theme='dark']) .report-footnote {
+  background: rgba(17, 45, 35, 0.56);
+  border-color: rgba(34, 197, 94, 0.14);
+  color: #d4f5de;
+}
+
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .report-footnote {
+  background: rgba(20, 53, 40, 0.42) !important;
+  border-color: rgba(31, 164, 91, 0.16) !important;
+  color: #d4f5de !important;
+}
+
+.risk-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.risk-pill--compact {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.risk-pill--high {
+  color: var(--report-risk-high);
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.18);
+}
+
+.risk-pill--medium {
+  color: var(--report-risk-medium);
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.18);
+}
+
+.risk-pill--low {
+  color: var(--report-risk-low);
+  background: rgba(124, 92, 255, 0.12);
+  border-color: rgba(124, 92, 255, 0.18);
+}
+
+.risk-pill--normal {
+  color: var(--report-risk-normal);
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.18);
+}
+
 .rewrite-skeleton {
   padding: 20px;
 }
+
+.skeleton-hint {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--report-text-muted);
+  text-align: center;
+}
+
 .rewrite-content {
   max-height: 65vh;
   overflow-y: auto;
   padding-right: 4px;
 }
+
 .rewrite-block {
   margin-bottom: 24px;
 }
+
 .block-title {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 0 0 12px 0;
+  margin: 0 0 12px;
   font-size: 15px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
+  font-weight: 700;
+  color: var(--report-text-main);
 }
+
 .diagnosis-alert {
   margin-bottom: 16px;
 }
+
+.fallback-tag {
+  margin-bottom: 16px;
+}
+
 .sentence-card {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
+  border: 1px solid var(--report-border);
+  border-radius: 16px;
   padding: 16px;
   margin-bottom: 16px;
-  background: #fff;
+  background: var(--report-bg-elevated);
 }
+
 .sentence-header {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-bottom: 12px;
 }
+
 .sentence-num {
   font-size: 13px;
-  color: var(--el-text-color-secondary);
+  color: var(--report-text-muted);
 }
+
 .sentence-body {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
+
 .sentence-row {
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 12px;
 }
+
 .sentence-row label {
   display: block;
-  font-weight: 600;
   font-size: 12px;
+  font-weight: 700;
   margin-bottom: 6px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.04em;
 }
-.sentence-row p {
+
+.sentence-row p,
+.paragraph-text {
   margin: 0;
-  line-height: 1.7;
+  line-height: 1.8;
   font-size: 14px;
+  color: var(--report-text-main);
+  white-space: pre-wrap;
 }
+
 .original-box {
-  background: var(--el-fill-color-light);
-  border-left: 3px solid var(--el-text-color-disabled);
+  background: var(--report-bg-subtle);
+  border-left: 3px solid rgba(148, 163, 184, 0.78);
 }
+
 .original-box label {
-  color: var(--el-text-color-secondary);
+  color: var(--report-text-muted);
 }
+
+.rewritten-box {
+  background: rgba(34, 197, 94, 0.1);
+  border-left: 3px solid var(--report-brand);
+}
+
+.rewritten-box label {
+  color: var(--report-brand);
+}
+
+.explanation-box {
+  background: rgba(245, 158, 11, 0.08);
+  border-left: 3px solid var(--report-risk-medium);
+}
+
+.explanation-box label {
+  color: #b26a00;
+}
+
+:global(:root[data-theme='dark']) .explanation-box label {
+  color: #ffd38a;
+}
+
 .arrow-divider {
   display: flex;
   justify-content: center;
-  color: var(--el-color-primary);
+  color: var(--report-brand);
   font-size: 18px;
 }
-.rewritten-box {
-  background: var(--el-color-primary-light-9);
-  border-left: 3px solid var(--el-color-primary);
-}
-.rewritten-box label {
-  color: var(--el-color-primary);
-}
-.rewritten-box p {
-  color: var(--el-text-color-primary);
-  font-weight: 500;
-}
-.explanation-box {
-  background: #fffbe6;
-  border-left: 3px solid #f0c040;
-  margin-top: 4px;
-}
-.explanation-box label {
-  color: #a67c00;
-}
-.explanation-box p {
-  font-size: 13px;
-  color: var(--el-text-color-regular);
-}
+
 .paragraph-card {
-  background: var(--el-fill-color-lighter);
+  background: var(--report-bg-subtle);
+  border-radius: 16px;
+  border: 1px solid var(--report-border);
 }
-.paragraph-text {
-  margin: 0 0 12px 0;
-  line-height: 1.8;
-  white-space: pre-wrap;
-  font-size: 14px;
-  color: var(--el-text-color-primary);
+
+:global(:root[data-theme='dark']) .report-page .report-dashboard .report-hero-card,
+:global(:root[data-theme='dark']) .report-page .report-dashboard .report-card,
+:global(:root[data-theme='dark']) .report-page .report-dashboard .metric-slab,
+:global(:root[data-theme='dark']) .report-page .report-dashboard .priority-bar-card,
+:global(:root[data-theme='dark']) .report-page .report-dashboard .issue-table tbody tr,
+:global(:root[data-theme='dark']) .report-page .report-dashboard .sentence-card,
+:global(:root[data-theme='dark']) .report-page .report-dashboard .paragraph-card {
+  backdrop-filter: none;
 }
+
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .report-hero-card,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .report-card,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .metric-slab,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .priority-bar-card,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .step-card,
+:global(html[data-theme='dark'][data-report-page='true']) .report-page .report-dashboard .report-footnote {
+  backdrop-filter: none !important;
+}
+
 .paragraph-actions {
   display: flex;
   justify-content: flex-end;
+  margin-top: 12px;
 }
+
 .rewrite-error {
   padding: 20px 0;
 }
-.skeleton-hint {
-  margin-top: 12px;
-  font-size: 13px;
-  color: #8b95a2;
-  text-align: center;
-}
-.fallback-tag {
-  margin-bottom: 16px;
+
+@media (max-width: 1280px) {
+  .report-chart-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .report-bottom-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
-/* CNKI upload dialog */
-.cnki-upload-dialog {
-  display: grid;
-  gap: 16px;
-}
-.dialog-hint {
-  margin: 0;
-  font-size: 13px;
-  color: #8b95a2;
-  line-height: 1.6;
-}
-.cnki-upload-drop {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 120px;
-  padding: 24px;
-  border: 2px dashed rgba(31, 54, 73, 0.15);
-  border-radius: 12px;
-  cursor: pointer;
-  color: #8b95a2;
-  transition: all 0.2s;
-}
-.cnki-upload-drop:hover {
-  border-color: #2f7d67;
-  background: rgba(47, 125, 103, 0.03);
-  color: #2f7d67;
-}
-.cnki-upload-drop p {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 500;
-}
-.cnki-upload-drop span {
-  font-size: 12px;
-}
-.cnki-upload-preview {
-  padding: 12px;
-  background: #f8f9fa;
-  border-radius: 10px;
-}
-.cnki-dialog-loading,
-.cnki-dialog-error {
-  margin-top: 4px;
-}
-.cnki-ocr-preview-mini {
-  padding: 10px;
-  background: #f8f9fa;
-  border-radius: 8px;
-}
-.cnki-ocr-preview-mini p {
-  margin: 0;
-  font-size: 12px;
-  color: #8b95a2;
-  line-height: 1.5;
-}
-.cnki-dialog-form {
-  display: grid;
-  gap: 14px;
-}
-.cnki-dialog-form .form-field input {
-  width: 100%;
-  padding: 10px 14px;
-  border: 1.5px solid rgba(31, 54, 73, 0.15);
-  border-radius: 10px;
-  font-size: 15px;
-  color: #172033;
-  background: #fff;
-  outline: none;
-  box-sizing: border-box;
-}
-.cnki-dialog-form .form-field input:focus {
-  border-color: #2f7d67;
-}
-.cnki-dialog-form .form-field label {
-  display: block;
-  font-size: 13px;
-  font-weight: 600;
-  color: #344150;
-  margin-bottom: 6px;
-}
-.cnki-dialog-form .learning-consent {
-  padding: 12px;
-  border: 1px solid rgba(47, 111, 83, 0.16);
-  border-radius: 12px;
-  background: rgba(47, 111, 83, 0.06);
-}
-.learning-scope-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.cnki-dialog-form .learning-consent p {
-  margin: 8px 0 0;
-  color: #6b7569;
-  font-size: 12px;
-  line-height: 1.5;
+@media (max-width: 1080px) {
+  .report-hero-card {
+    grid-template-columns: 1fr;
+  }
+
+  .report-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .step-flow {
+    grid-template-columns: 1fr;
+  }
+
+  .step-card::after {
+    display: none;
+  }
 }
 
-/* Pass banner */
-.pass-banner {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
-  border-radius: 12px;
-  margin-bottom: 16px;
-  color: #2e7d32;
-}
-.pass-banner svg {
-  flex-shrink: 0;
-}
-.pass-banner strong {
-  display: block;
-  font-size: 15px;
-  margin-bottom: 2px;
-}
-.pass-banner span {
-  font-size: 13px;
-  opacity: 0.85;
-}
+@media (max-width: 768px) {
+  .report-dashboard {
+    gap: 18px;
+  }
 
-/* CNKI primary metric cards */
-.metric-card.cnki-primary {
-  background: linear-gradient(135deg, rgba(47, 125, 103, 0.08), rgba(47, 125, 103, 0.03));
-  border: 1.5px solid rgba(47, 125, 103, 0.2);
-}
-.metric-card.cnki-primary span {
-  color: #2f7d67;
-  font-weight: 600;
-}
-.metric-card.cnki-primary strong {
-  color: #ffffff;
-  font-size: 28px;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.15);
-}
+  .report-hero-card,
+  .report-card {
+    padding: 18px;
+    border-radius: 20px;
+  }
 
-/* CNKI gap alert */
-.cnki-gap-alert {
-  margin-bottom: 20px;
-}
-.gap-alert-content {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  padding: 16px 18px;
-  background: linear-gradient(135deg, #ffebee, #ffcdd2);
-  border-radius: 14px;
-  color: #c62828;
-  border: 1px solid rgba(198, 40, 40, 0.15);
-}
-.gap-alert-content svg {
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-.gap-alert-content strong {
-  display: block;
-  font-size: 15px;
-  margin-bottom: 6px;
-}
-.gap-alert-content p {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.6;
-  opacity: 0.9;
-}
+  .report-metric-grid,
+  .report-chart-grid,
+  .donut-layout {
+    grid-template-columns: 1fr;
+  }
 
-/* Iteration compare */
-.iteration-compare {
-  padding: 12px 14px;
-  background: #f5f7f9;
-  border-radius: 10px;
-  margin-bottom: 16px;
-}
-.compare-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.compare-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: #344150;
-}
-.compare-values {
-  display: flex;
-  gap: 14px;
-}
-.compare-values span {
-  font-size: 13px;
-  font-weight: 500;
-}
-.delta-good {
-  color: #2e7d32;
-}
-.delta-bad {
-  color: #c84b52;
-}
-.delta-neutral {
-  color: #8b95a2;
-}
+  .trend-axis {
+    flex-wrap: wrap;
+  }
 
-/* CNKI upload action */
-.cnki-upload-action {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid rgba(31, 54, 73, 0.06);
-  display: flex;
-  justify-content: center;
-}
+  .report-hero-meta,
+  .report-score-row,
+  .report-hero-actions,
+  .card-heading,
+  .priority-bar-head,
+  .legend-row,
+  .reason-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 
-/* CNKI report details */
-.cnki-details-card {
-  background: linear-gradient(135deg, #f8fafb, #ffffff);
-  border: 1.5px solid rgba(47, 125, 103, 0.12);
-}
-.cnki-extended-metrics {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
-  margin-bottom: 20px;
-}
-.cnki-extended-metrics .status-tile {
-  padding: 14px 16px;
-}
-.cnki-extended-metrics .status-tile strong {
-  font-size: 20px;
-  color: #1f3649;
-}
-.plagiarism-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
-}
-.cnki-fragments {
-  margin-top: 8px;
-}
-.fragment-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  margin-top: 12px;
-}
-.fragment-card {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 12px;
-  padding: 16px;
-  background: #fff;
-  transition: all 0.2s;
-}
-.fragment-card.fragment-matched {
-  border-color: rgba(47, 125, 103, 0.25);
-  background: linear-gradient(135deg, #f8fafb, #ffffff);
-}
-.fragment-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
-}
-.fragment-origin {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
-.fragment-match-ratio {
-  font-size: 12px;
-  color: #2f7d67;
-  font-weight: 600;
-  margin-left: auto;
-}
-.fragment-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.fragment-body > div {
-  border-radius: 8px;
-  padding: 12px;
-  background: var(--el-fill-color-light);
-}
-.fragment-body > div.fragment-similar {
-  background: #fff2f0;
-  border-left: 3px solid var(--el-color-danger);
-}
-.fragment-body > div.fragment-match {
-  background: #f0f9ff;
-  border-left: 3px solid #2f7d67;
-}
-.fragment-body label {
-  display: block;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--el-text-color-secondary);
-  margin-bottom: 6px;
-}
-.fragment-body p {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.7;
-  color: var(--el-text-color-primary);
-}
-.fragment-body .match-preview {
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-  margin-top: 4px;
-}
-.fragment-actions {
-  margin-top: 12px;
-  display: flex;
-  justify-content: flex-end;
-}
+  .report-primary-btn,
+  .report-secondary-btn {
+    width: 100%;
+  }
 
-.rewrite-editor-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 2000;
-  background: #fff;
-  display: flex;
-  flex-direction: column;
-}
+  .issue-table {
+    min-width: 0;
+    border-spacing: 0;
+  }
 
-.rewrite-editor-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 24px;
-  border-bottom: 1px solid #e8e8e8;
-  background: #fafbfc;
-}
+  .issue-table thead {
+    display: none;
+  }
 
-.rewrite-editor-header h2 {
-  margin: 0;
-  font-size: 18px;
-  color: #172033;
-}
+  .issue-table tbody,
+  .issue-table tr,
+  .issue-table td {
+    display: block;
+    width: 100%;
+  }
 
-.rewrite-editor-overlay .rewrite-editor {
-  flex: 1;
-  overflow: hidden;
+  .issue-table tbody tr {
+    margin-bottom: 12px;
+    border: 1px solid var(--report-border);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+
+  .issue-table tbody td {
+    border: none;
+    border-bottom: 1px solid var(--report-border);
+    border-radius: 0 !important;
+    padding: 12px 14px;
+  }
+
+  .issue-table tbody td:last-child {
+    border-bottom: none;
+  }
+
+  .issue-table tbody td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--report-text-soft);
+  }
 }
 </style>

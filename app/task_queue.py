@@ -15,11 +15,6 @@ def dispatch_analysis_task(
     credit_cost: int = 0,
     background_tasks: BackgroundTasks | None = None,
 ) -> str:
-    if settings.service_env == "prod" and settings.async_queue_backend == "local":
-        raise RuntimeError(
-            "local background task backend is disabled in production; use celery"
-        )
-
     if settings.async_queue_backend == "local":
         if background_tasks is None:
             raise ValueError("background_tasks is required for local queue backend")

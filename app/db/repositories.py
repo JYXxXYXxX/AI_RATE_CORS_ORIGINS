@@ -859,6 +859,12 @@ class UnifiedRepository:
             (document_id,),
         )
 
+    def delete_document_sections(self, document_id: str) -> None:
+        self._execute(
+            "DELETE FROM document_sections WHERE document_id = %s",
+            (document_id,),
+        )
+
     def insert_document_sections(
         self, document_id: str, sections: Sequence[dict[str, Any]]
     ) -> list[dict[str, Any]]:

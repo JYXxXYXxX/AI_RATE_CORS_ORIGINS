@@ -33,27 +33,35 @@ async function renderDocx(buffer: ArrayBuffer) {
   loading.value = true
   error.value = ''
   try {
-    const result = await mammoth.convertToHtml(
-      { arrayBuffer: buffer },
-      {
-        styleMap: [
-          "p[style-name='Heading 1'] => h1.chapter-title:fresh",
-          "p[style-name='Heading 2'] => h2.section-title:fresh",
-          "p[style-name='Heading 3'] => h3.subsection-title:fresh",
-          "p => p.doc-paragraph:fresh",
-          "table => table.doc-table:fresh",
-          "r[style-name='Strong'] => strong",
-          "r[style-name='Emphasis'] => em",
-        ],
-        convertImage: mammoth.images.imgElement((image) => {
-          return image.read('base64').then((base64) => ({
-            src: `data:${image.contentType};base64,${base64}`,
-            class: 'doc-image',
-          }))
-        }),
-      }
-    )
+    const result = await Promise.race([
+      mammoth.convertToHtml(
+        { arrayBuffer: buffer },
+        {
+          styleMap: [
+            "p[style-name='Heading 1'] => h1.chapter-title:fresh",
+            "p[style-name='Heading 2'] => h2.section-title:fresh",
+            "p[style-name='Heading 3'] => h3.subsection-title:fresh",
+            "p => p.doc-paragraph:fresh",
+            "table => table.doc-table:fresh",
+            "r[style-name='Strong'] => strong",
+            "r[style-name='Emphasis'] => em",
+          ],
+          convertImage: mammoth.images.imgElement((image) => {
+            return image.read('base64').then((base64) => ({
+              src: `data:${image.contentType};base64,${base64}`,
+              class: 'doc-image',
+            }))
+          }),
+        }
+      ),
+      new Promise<never>((_, reject) => {
+        window.setTimeout(() => reject(new Error('DOCX render timeout')), 15000)
+      }),
+    ])
     htmlContent.value = result.value
+    if (!htmlContent.value.trim()) {
+      throw new Error('DOCX render empty result')
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : '文档渲染失败'
     error.value = msg
