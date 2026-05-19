@@ -592,6 +592,16 @@ def analyze_uploaded_document_async(
     repository = get_repository()
     ensure_document_access(document_id=document_id, auth=auth, repository=repository)
     user_id = str(auth.user["id"]) if auth.user is not None else None
+    active_tasks = repository.list_active_analysis_tasks(document_id)
+    if active_tasks:
+        task = active_tasks[0]
+        return AnalysisTaskCreateResponse(
+            task_id=str(task["id"]),
+            document_id=str(task["document_id"]),
+            status=task["status"],
+            progress=int(task["progress"]),
+            created_at=task["created_at"],
+        )
     task = repository.create_analysis_task(user_id=user_id, document_id=document_id)
     try:
         dispatch_analysis_task(

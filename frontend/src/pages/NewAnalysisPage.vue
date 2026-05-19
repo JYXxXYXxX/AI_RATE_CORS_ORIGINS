@@ -192,16 +192,16 @@
         <button
           type="submit"
           class="btn btn-primary btn-full btn-lg"
-          :disabled="!selectedFile || analysis.submitting"
+          :disabled="!selectedFile || isSubmitActive"
         >
-          {{ analysis.submitting ? copy.analyzing : copy.start }}
+          {{ isSubmitActive ? copy.analyzing : copy.start }}
         </button>
 
         <p v-if="analysis.error" class="form-error">{{ analysis.error }}</p>
       </form>
 
       <!-- 上传进度条 -->
-      <div v-if="analysis.submitting && analysis.uploadProgress > 0 && analysis.uploadProgress < 100" class="progress-section">
+      <div v-if="isSubmitActive && analysis.uploadProgress > 0 && analysis.uploadProgress < 100" class="progress-section">
         <div class="progress-header">
           <span>{{ copy.uploading }}</span>
           <strong>{{ analysis.uploadProgress }}%</strong>
@@ -212,7 +212,7 @@
       </div>
 
       <!-- 分析进度条 -->
-      <div v-if="analysis.taskStatus && analysis.submitting" class="progress-section">
+      <div v-if="analysis.taskStatus && isSubmitActive" class="progress-section">
         <div class="progress-header">
           <span>{{ stageLabel(analysis.taskStatus.stage) }}</span>
           <strong>{{ analysis.taskStatus.progress }}%</strong>
@@ -385,9 +385,12 @@ const form = reactive({
   degreeLevel: ''
 })
 
+const isSubmitActive = computed(() => !!selectedFile.value && analysis.submitting)
+
 const MAX_SIZE = 50 * 1024 * 1024
 
 onMounted(() => {
+  analysis.resetSubmissionState()
   window.addEventListener('patafix:language-change', handleLanguageChange)
 })
 

@@ -669,6 +669,9 @@ function setupRevealAnimations() {
 }
 
 .hero-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   padding: 44px;
   border-radius: 26px;
 }

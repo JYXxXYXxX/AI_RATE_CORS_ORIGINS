@@ -29,11 +29,12 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 
 const email = ref('')
 const password = ref('')
@@ -43,7 +44,8 @@ async function handleLogin() {
   errorMsg.value = ''
   try {
     await auth.login(email.value, password.value)
-    router.push('/app')
+    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/app'
+    router.push(redirect.startsWith('/') ? redirect : '/app')
   } catch (err) {
     errorMsg.value = err instanceof Error ? err.message : '登录失败'
   }

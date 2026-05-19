@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-from app.services.rewrite_strategy import apply_learned_rewrite_style
+from app.services.rewrite_strategy import apply_learned_rewrite_style, has_verifiable_detail
 
 
 RiskLevel = Literal["high", "medium", "low", "normal"]
@@ -71,6 +71,24 @@ RISK_RULES: list[RiskRule] = [
         re.compile(r"(?:并能够)?为相关实践提供参考价值"),
         "表达空泛：没有说明参考价值具体服务于哪个对象或业务环节。",
         16,
+        "vague",
+    ),
+    RiskRule(
+        re.compile(r"(?:并)?为相关研究提供(?:一定)?参考价值"),
+        "表达空泛：没有说明参考价值具体落在哪类研究、数据或方法上。",
+        16,
+        "vague",
+    ),
+    RiskRule(
+        re.compile(r"(?:(?:发挥着)?越来越重要的作用|具有较强的现实意义|具有重要的现实意义|较强的现实意义|重要的现实意义)"),
+        "AI 高频价值判断：只给结论，没有说明作用发生在哪个流程或对象上。",
+        14,
+        "vague",
+    ),
+    RiskRule(
+        re.compile(r"能够帮助[^，。；！？\n]{2,28}(?:提高|提升|优化)[^，。；！？\n]{2,28}(?:效率|质量|水平|能力)"),
+        "泛化功能价值：需要把“帮助提高效率”改成具体处理步骤或可验证结果。",
+        15,
         "vague",
     ),
     RiskRule(
@@ -145,9 +163,13 @@ def quick_rewrite(text: str, mode: QuickRewriteMode = "auto") -> QuickRewriteOut
     normalized = _normalize_text(text)
     hits = _detect_risky_phrases(normalized)
     recommended_mode = _recommend_mode(hits) if mode == "auto" else mode
-    rewritten, improved = _rewrite_text(normalized, recommended_mode)
+    if hits:
+        rewritten, improved = _rewrite_text(normalized, recommended_mode)
+    else:
+        rewritten = apply_learned_rewrite_style(normalized)
+        improved = []
 
-    if not improved:
+    if hits and not improved:
         rewritten, improved = _fallback_polish(normalized, recommended_mode)
 
     before_score = _risk_score(normalized, hits)
@@ -180,6 +202,8 @@ def _detect_risky_phrases(text: str) -> list[PhraseHit]:
             phrase = match.group(0).strip()
             if len(phrase) < 2:
                 continue
+            if rule.category == "repetition" and has_verifiable_detail(phrase):
+                continue
             candidates.append(
                 PhraseHit(
                     text=phrase,
@@ -191,7 +215,7 @@ def _detect_risky_phrases(text: str) -> list[PhraseHit]:
                 )
             )
 
-    candidates.sort(key=lambda item: (item.start, -(item.end - item.start)))
+    candidates.sort(key=lambda item: (item.start, -item.weight, item.end - item.start))
     selected: list[PhraseHit] = []
     occupied: list[tuple[int, int]] = []
     for item in candidates:
@@ -230,7 +254,16 @@ def _rewrite_text(
         rewritten = rewritten.replace(hit.text, replacement, 1)
         reasons_by_phrase[replacement] = reason
 
+    problem_rewritten = _rewrite_problem_chain(rewritten, context)
+    if problem_rewritten != rewritten:
+        rewritten = problem_rewritten
+        if "这类平台的问题主要集中在" in rewritten:
+            reasons_by_phrase["这类平台的问题主要集中在"] = "拆解问题链：把连续罗列的问题改成具体环节。"
+        if "信息断点" in rewritten:
+            reasons_by_phrase["信息断点"] = "落到用户动作：把抽象需求改成使用过程中会遇到的具体断点。"
+
     rewritten = _split_overlong_sentences(rewritten)
+    rewritten = _normalize_punctuation(rewritten)
     rewritten = apply_learned_rewrite_style(rewritten)
     improved = _locate_improved_phrases(rewritten, reasons_by_phrase)
     return rewritten, improved
@@ -266,7 +299,15 @@ def _infer_context(text: str) -> dict[str, str]:
     scene = "原文场景"
     focus = "具体作用"
 
-    if "旅游企业" in text:
+    if "个人财务" in text or "财务管理" in text:
+        actor = "用户"
+        scene = "个人财务管理场景"
+        focus = "收支记录、预算提醒和月度复盘"
+    elif "绿色植物" in text or "种子电商" in text or "家庭园艺" in text:
+        actor = "家庭园艺用户"
+        scene = "绿色植物种子电商场景"
+        focus = "品种信息、种植指导、社区互动和库存管理"
+    elif "旅游企业" in text:
         actor = "旅游企业"
         scene = "旅游服务与营销场景"
     elif "旅游" in text:
@@ -286,6 +327,8 @@ def _infer_context(text: str) -> dict[str, str]:
         focus = "服务内容与营销策略"
     elif "营销" in text:
         focus = "营销策略"
+    elif "绿色植物" in text or "种子电商" in text or "家庭园艺" in text:
+        focus = "品种信息、种植指导、社区互动和库存管理"
     elif "服务" in text:
         focus = "服务内容"
     elif "系统" in text or "功能" in text:
@@ -303,6 +346,14 @@ def _replacement_for_hit(
     actor = context["actor"]
     scene = context["scene"]
     focus = context["focus"]
+
+    if hit.category == "repetition":
+        problem_rewrite = _rewrite_problem_chain(text, context)
+        if problem_rewrite != text:
+            return (
+                problem_rewrite,
+                "拆解问题链：把连续罗列的问题改成具体环节，再把用户需求落到可理解的使用动作上。",
+            )
 
     template_match = re.fullmatch(r"随着(.+)的发展", text)
     if template_match:
@@ -322,10 +373,30 @@ def _replacement_for_hit(
             f"可为{actor}后续调整{focus}提供参考",
             "补充业务对象：说明参考价值具体服务于谁、作用于什么环节。",
         )
+    if re.fullmatch(r"(?:并)?为相关研究提供(?:一定)?参考价值", text):
+        return (
+            f"可为后续研究比较{focus}与实际使用效果提供参照",
+            "补充研究对象：把泛泛的参考价值落到可比较的功能和使用效果上。",
+        )
     if text in {"为相关实践提供参考价值", "并能够为相关实践提供参考价值"}:
         return (
             f"可为{actor}后续调整{focus}提供参考",
             "补充业务对象：将泛泛的'相关实践'落到原文对象和业务环节。",
+        )
+    if text in {"发挥着越来越重要的作用", "越来越重要的作用"}:
+        return (
+            f"可以用于{scene}中的具体管理环节",
+            "落到具体场景：减少空泛价值判断，说明作用发生的业务位置。",
+        )
+    if text in {"具有较强的现实意义", "具有重要的现实意义", "较强的现实意义", "重要的现实意义"}:
+        return (
+            f"在{scene}中具有直接应用价值",
+            "落到具体场景：减少空泛价值判断，说明作用发生的业务位置。",
+        )
+    if re.fullmatch(r"能够帮助[^，。；！？\n]{2,28}(?:提高|提升|优化)[^，。；！？\n]{2,28}(?:效率|质量|水平|能力)", text):
+        return (
+            f"可以帮助{actor}完成{focus}中的记录、提醒和复盘步骤",
+            "替换泛化价值：用具体流程替代'提高效率'这类空泛表达。",
         )
     if text == "相关实践" or text == "实践提供参考":
         return (
@@ -366,6 +437,80 @@ def _replacement_for_hit(
     return ("", "")
 
 
+def _rewrite_problem_chain(text: str, context: dict[str, str]) -> str:
+    rewritten = text
+    problem_match = re.search(
+        r"(?P<prefix>然而，|但是，|但)?(?P<subject>[^。；！？]{2,42}?)(?:普遍)?存在(?P<problems>[^。；！？]{8,130}?)(?:等)?问题",
+        rewritten,
+    )
+    if problem_match:
+        subject = problem_match.group("subject").strip("，, ")
+        problems = _split_problem_items(problem_match.group("problems"))
+        if len(problems) >= 2:
+            subject_label = "这类平台" if "平台" in subject else subject
+            problem_text = "、".join(problems)
+            suffix = "" if problem_match.end() < len(rewritten) and rewritten[problem_match.end()] in "。；！？" else "。"
+            replacement = f"{subject_label}的问题主要集中在{_cn_count(len(problems))}个环节：{problem_text}{suffix}"
+            rewritten = (
+                rewritten[: problem_match.start()]
+                + replacement
+                + rewritten[problem_match.end() :]
+            )
+
+    demand_match = re.search(
+        r"这使得(?P<target>[^，。；！？]{1,36})难以满足(?P<who>[^，。；！？]{1,36})对于(?P<needs>[^。；！？]{4,90})的(?:深层)?需求",
+        rewritten,
+    )
+    if demand_match:
+        who = demand_match.group("who").strip()
+        actions = _need_actions(_split_need_items(demand_match.group("needs")), context)
+        suffix = "" if demand_match.end() < len(rewritten) and rewritten[demand_match.end()] in "。；！？" else "。"
+        replacement = f"因此，{who}在{actions}时容易出现信息断点{suffix}"
+        rewritten = (
+            rewritten[: demand_match.start()]
+            + replacement
+            + rewritten[demand_match.end() :]
+        )
+
+    return rewritten
+
+
+def _split_problem_items(raw: str) -> list[str]:
+    cleaned = raw.replace("以及", "、").replace("及", "、").replace("和", "、")
+    items = [item.strip("，, 、。；;") for item in cleaned.split("、")]
+    return [item for item in items if len(item) >= 2][:6]
+
+
+def _split_need_items(raw: str) -> list[str]:
+    cleaned = raw.replace("以及", "、").replace("及", "、").replace("和", "、")
+    items = [item.strip("，, 、。；;") for item in cleaned.split("、")]
+    return [item for item in items if item][:5]
+
+
+def _need_actions(needs: list[str], context: dict[str, str]) -> str:
+    actions: list[str] = []
+    for need in needs:
+        if "透明" in need or "信息" in need:
+            actions.append("核对产品信息")
+        elif "指导" in need or "系统" in need or "知识" in need:
+            actions.append("查找连续的种植指导")
+        elif "情感" in need or "交流" in need or "社区" in need:
+            actions.append("参与社区交流")
+        elif "库存" in need:
+            actions.append("确认库存状态")
+    if not actions:
+        if "种子电商" in context["scene"]:
+            actions = ["核对品种信息", "查找养护建议", "交流种植经验"]
+        else:
+            actions = [f"使用{context['focus']}"]
+    deduped = list(dict.fromkeys(actions))
+    return "、".join(deduped[:4])
+
+
+def _cn_count(value: int) -> str:
+    return {2: "两", 3: "三", 4: "四", 5: "五", 6: "六"}.get(value, str(value))
+
+
 def _split_overlong_sentences(text: str) -> str:
     def split_match(match: re.Match[str]) -> str:
         sentence = match.group(0)
@@ -375,9 +520,17 @@ def _split_overlong_sentences(text: str) -> str:
         if len(parts) < 3:
             return sentence
         midpoint = max(1, len(parts) // 2)
+        if len(parts[0]) <= 4 and len(parts) >= 3:
+            midpoint = min(2, len(parts) - 1)
         return "，".join(parts[:midpoint]) + "。随后，" + "，".join(parts[midpoint:])
 
     return re.sub(r"[^。；！？\n]{58,}", split_match, text)
+
+
+def _normalize_punctuation(text: str) -> str:
+    text = re.sub(r"。{2,}", "。", text)
+    text = re.sub(r"，{2,}", "，", text)
+    return text
 
 
 def _locate_improved_phrases(
@@ -403,6 +556,8 @@ def _locate_improved_phrases(
 
 
 def _risk_score(text: str, hits: list[PhraseHit]) -> int:
+    if not hits and has_verifiable_detail(text):
+        return 12
     score = 12 + sum(hit.weight for hit in hits)
     sentence_lengths = [len(item) for item in re.split(r"[。！？；\n]", text) if item.strip()]
     if sentence_lengths:

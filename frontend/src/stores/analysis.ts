@@ -143,5 +143,12 @@ export const useAnalysisStore = defineStore('analysis', () => {
     error.value = ''
   }
 
-  return { submitting, uploadProgress, taskStatus, runStatus, report, error, history, startAnalysis, loadReport, clearCurrent, refreshHistory }
+  function resetSubmissionState() {
+    submitting.value = false
+    uploadProgress.value = 0
+    taskStatus.value = null
+    error.value = ''
+  }
+
+  return { submitting, uploadProgress, taskStatus, runStatus, report, error, history, startAnalysis, loadReport, clearCurrent, resetSubmissionState, refreshHistory }
 })

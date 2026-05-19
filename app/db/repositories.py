@@ -17,6 +17,12 @@ def get_repository() -> "UnifiedRepository":
     return UnifiedRepository(get_connection_pool())
 
 
+def _strip_nul_bytes(value: Any) -> Any:
+    if isinstance(value, str):
+        return value.replace("\x00", "")
+    return value
+
+
 class UnifiedRepository:
     def __init__(self, pool: ConnectionPool) -> None:
         self.pool = pool
@@ -613,6 +619,22 @@ class UnifiedRepository:
             RETURNING *
             """,
             (user_id, document_id, task_type),
+        )
+
+    def list_active_analysis_tasks(
+        self, document_id: str, limit: int = 1
+    ) -> list[dict[str, Any]]:
+        return self._fetchall(
+            """
+            SELECT tasks.*, documents.title, documents.filename
+            FROM analysis_tasks AS tasks
+            JOIN documents ON documents.id = tasks.document_id
+            WHERE tasks.document_id = %s
+              AND tasks.status IN ('queued', 'processing')
+            ORDER BY tasks.created_at DESC
+            LIMIT %s
+            """,
+            (document_id, limit),
         )
 
     def mark_analysis_task_processing(
@@ -1297,13 +1319,13 @@ class UnifiedRepository:
                 document_id,
                 b["block_id"],
                 b["block_type"],
-                b["text"],
-                b.get("html"),
+                _strip_nul_bytes(b["text"]),
+                _strip_nul_bytes(b.get("html")),
                 b["source_type"],
                 Jsonb(b.get("source_map") or {}),
                 b.get("section_index"),
                 b.get("paragraph_index"),
-                b.get("section_title"),
+                _strip_nul_bytes(b.get("section_title")),
                 b.get("section_type"),
                 b.get("char_count", 0),
                 b["display_order"],

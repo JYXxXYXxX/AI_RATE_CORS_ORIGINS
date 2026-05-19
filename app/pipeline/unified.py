@@ -130,7 +130,8 @@ class UnifiedPipeline:
             if source_type not in ("docx", "pdf", "doc", "txt", "md"):
                 source_type = "txt"
             blocks = parse_document_to_blocks(original_path, source_type)
-            if blocks and not existing:
+            existing_blocks = self.repository.list_document_blocks(str(document["id"]))
+            if blocks and not existing_blocks:
                 self.repository.insert_document_blocks(
                     str(document["id"]),
                     [b.__dict__ for b in blocks],

@@ -31,7 +31,7 @@ class TextSegment:
 
 
 def normalize_text(text: str) -> str:
-    normalized = text.replace("\u3000", " ")
+    normalized = text.replace("\x00", "").replace("\u3000", " ")
     normalized = re.sub(r"-\n", "", normalized)
     normalized = WHITESPACE_RE.sub(" ", normalized)
     normalized = re.sub(r"\n[ \t]+", "\n", normalized)

@@ -35,11 +35,13 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'new',
         name: 'new-analysis',
+        meta: { requiresAuth: true },
         component: () => import('./pages/NewAnalysisPage.vue')
       },
       {
         path: 'report/:runId',
         name: 'report',
+        meta: { requiresAuth: true },
         component: () => import('./pages/ReportPage.vue'),
         props: true
       },
@@ -58,6 +60,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'rewrite/:runId',
         name: 'rewrite',
+        meta: { requiresAuth: true },
         component: () => import('./pages/RewritePage.vue'),
         props: true
       }
@@ -70,12 +73,10 @@ const router = createRouter({
   routes
 })
 
-router.beforeEach((to, _from, next) => {
+router.beforeEach((to) => {
   const auth = useAuthStore()
   if (to.meta.requiresAuth && !auth.isLoggedIn) {
-    next({ name: 'login', query: { redirect: to.fullPath } })
-  } else {
-    next()
+    return { name: 'login', query: { redirect: to.fullPath } }
   }
 })
 
