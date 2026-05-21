@@ -220,9 +220,9 @@
               </div>
               <div class="learning-consent">
                 <div class="learning-options">
-                  <label class="learning-option" :class="{ active: cnkiForm.learningScope === 'none' }">
+                  <label class="learning-option learning-option-default" :class="{ active: cnkiForm.learningScope === 'none' }">
                     <input v-model="cnkiForm.learningScope" type="radio" value="none" />
-                    <span>{{ copy.learningNone }}</span>
+                    <span>{{ copy.learningNone }}<em>{{ copy.recommended }}</em></span>
                     <small>{{ copy.learningNoneDesc }}</small>
                   </label>
                   <label class="learning-option" :class="{ active: cnkiForm.learningScope === 'private_account' }">
@@ -359,6 +359,7 @@ const copy = computed(() => locale.value === 'en'
       notesPlaceholder: 'e.g. first official scan',
       learningNone: 'Default: no shared learning',
       learningNoneDesc: 'Only used for this scan and rewrite; not added to calibration samples.',
+      recommended: 'Recommended',
       learningPrivate: 'Optimize only my account',
       learningPrivateDesc: 'Helps future scans match your school standard without contributing globally.',
       learningGlobal: 'Contribute anonymous calibration',
@@ -431,6 +432,7 @@ const copy = computed(() => locale.value === 'en'
       notesPlaceholder: '例如：第 1 次正式检测',
       learningNone: '默认不参与共享学习',
       learningNoneDesc: '仅用于本次检测与改写，不进入校准样本。',
+      recommended: '推荐',
       learningPrivate: '仅用于本人账号优化',
       learningPrivateDesc: '帮助后续更贴合你的学校标准，不贡献给全局模型。',
       learningGlobal: '匿名贡献给系统校准',
@@ -1358,9 +1360,22 @@ function handleLanguageChange(event: Event) {
   background: rgba(255, 255, 255, 0.74);
   cursor: pointer;
 }
+.learning-option-default {
+  border-color: rgba(224, 156, 52, 0.55);
+  background: #fff7e6;
+  box-shadow: 0 0 0 1px rgba(224, 156, 52, 0.12) inset;
+}
+.learning-option-default.active {
+  border-color: #d8912e;
+  background: #fff1cf;
+}
 .learning-option.active {
   border-color: rgba(47, 125, 103, 0.38);
   background: rgba(47, 125, 103, 0.1);
+}
+.learning-option-default.active {
+  border-color: #d8912e;
+  background: #fff1cf;
 }
 .learning-option input {
   grid-row: span 2;
@@ -1368,9 +1383,22 @@ function handleLanguageChange(event: Event) {
   margin-top: 2px;
 }
 .learning-option span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
   font-size: 13px;
   font-weight: 700;
   color: #344150;
+}
+.learning-option span em {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #d8912e;
+  color: #fff;
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.4;
 }
 .learning-option small {
   font-size: 12px;
