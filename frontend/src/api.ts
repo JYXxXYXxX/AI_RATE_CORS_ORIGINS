@@ -64,7 +64,7 @@ async function fetchWithRetry(
       await new Promise((r) => setTimeout(r, RETRY_DELAY_MS * (MAX_RETRIES - retries + 1)))
       return fetchWithRetry(url, options, retries - 1)
     }
-    throw err
+    throw new Error('无法连接到后端服务。请确认 Render 服务已启动，并且后端 CORS 已允许当前域名。')
   }
 }
 
@@ -248,12 +248,13 @@ export async function convertDocumentToDocx(
       const xhr = new XMLHttpRequest()
       xhr.open('POST', `${baseUrl}/v1/documents/convert-to-docx`)
       xhr.withCredentials = true
+      xhr.timeout = 300000
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable) {
           options?.onProgress?.(Math.min(70, Math.round((event.loaded / event.total) * 70)))
         }
       }
-      xhr.onload = () => {
+      xhr.onload = async () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           const blob = xhr.response
           resolve({
@@ -265,17 +266,20 @@ export async function convertDocumentToDocx(
         }
         let detail = formatApiError(xhr.status)
         try {
-          const body = JSON.parse(xhr.responseText)
+          const text = xhr.response instanceof Blob ? await xhr.response.text() : xhr.responseText
+          const body = JSON.parse(text)
           detail = formatApiError(xhr.status, body.detail)
         } catch { /* ignore */ }
         reject(new Error(detail))
       }
-      xhr.onerror = () => reject(new Error('转换请求被中断，请稍后重试；如果是较大的 .doc 文件，建议先用 Word/WPS 另存为 .docx 后再上传。'))
+      xhr.onerror = () => reject(new Error('转换服务连接失败。请确认 Render 后端已完成部署、CORS 已允许当前域名；如果是较大的 .doc 文件，建议先用 Word/WPS 另存为 .docx 后再上传。'))
+      xhr.ontimeout = () => reject(new Error('转换超时。这个文件可能较大或结构复杂，请先用 Word/WPS 另存为 .docx 后再上传。'))
       xhr.responseType = 'blob'
       xhr.send(formData)
     })
-  } catch {
-    throw new Error('转换请求被中断，请稍后重试；如果是较大的 .doc 文件，建议先用 Word/WPS 另存为 .docx 后再上传。')
+  } catch (err) {
+    if (err instanceof Error) throw err
+    throw new Error('转换服务连接失败。请稍后重试。')
   }
 }
 
@@ -336,13 +340,22 @@ export async function getUnifiedReportMarkdown(runId: string): Promise<string> {
 export async function previewCnkiFeedbackOcr(file: File): Promise<CnkiFeedbackOcrPreviewResponse> {
   const formData = new FormData()
   formData.append('file', file)
-  const response = await fetchWithRetry(`${baseUrl}/v1/cnki-feedback/ocr-preview`, {
-    method: 'POST',
-    headers: authHeaders(),
-    credentials: 'include',
-    body: formData
-  })
-  return parseResponse<CnkiFeedbackOcrPreviewResponse>(response)
+  try {
+    const response = await fetchWithRetry(`${baseUrl}/v1/cnki-feedback/ocr-preview`, {
+      method: 'POST',
+      headers: authHeaders(),
+      credentials: 'include',
+      body: formData
+    })
+    return parseResponse<CnkiFeedbackOcrPreviewResponse>(response)
+  } catch (err) {
+    if (err instanceof Error) {
+      throw new Error(err.message === 'Failed to fetch'
+        ? '检测报告识别服务连接失败。请确认 Render 后端已完成部署，并且 CORS 已允许当前域名。'
+        : err.message)
+    }
+    throw new Error('检测报告识别服务连接失败。')
+  }
 }
 
 export async function submitCnkiFeedback(payload: {

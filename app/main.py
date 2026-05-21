@@ -7,6 +7,7 @@ import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -171,6 +172,20 @@ settings = get_settings()
 cors_origins = getattr(settings, "cors_origins", "*")
 if isinstance(cors_origins, str):
     cors_origins = [o.strip() for o in cors_origins.split(",") if o.strip()]
+else:
+    cors_origins = list(cors_origins)
+
+public_web_origin = settings.public_web_base_url.rstrip("/")
+if public_web_origin and public_web_origin not in cors_origins:
+    cors_origins.append(public_web_origin)
+
+parsed_public_web = urlparse(public_web_origin)
+if parsed_public_web.hostname and parsed_public_web.scheme:
+    origin = f"{parsed_public_web.scheme}://{parsed_public_web.hostname}"
+    if parsed_public_web.port:
+        origin = f"{origin}:{parsed_public_web.port}"
+    if origin not in cors_origins:
+        cors_origins.append(origin)
 
 # 开发模式下若未配置 origins，自动加入常用本地地址，避免空列表阻断跨域
 if not cors_origins and settings.service_env == "dev":
@@ -186,6 +201,7 @@ if not cors_origins and settings.service_env == "dev":
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
+    allow_origin_regex=r"https://([a-z0-9-]+\.)*opcstaff\.ai",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -201,6 +217,7 @@ app.add_middleware(StrictRateLimitMiddleware, requests_per_minute=10)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
+    allow_origin_regex=r"https://([a-z0-9-]+\.)*opcstaff\.ai",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
