@@ -159,12 +159,17 @@ def _set_session_cookie(response: Response, token: str) -> None:
         value=token,
         httponly=True,
         secure=settings.cookie_secure,
-        samesite="lax",
+        samesite=settings.cookie_samesite,
         max_age=settings.cookie_max_age_seconds,
         path="/",
     )
 
 
 def _clear_session_cookie(response: Response) -> None:
-    response.delete_cookie(key="session", path="/")
-
+    settings = get_settings()
+    response.delete_cookie(
+        key="session",
+        path="/",
+        secure=settings.cookie_secure,
+        samesite=settings.cookie_samesite,
+    )

@@ -76,6 +76,7 @@ class Settings(BaseSettings):
     wechat_serial_no: str | None = None
     cors_origins: str = ""
     cookie_secure: bool = False
+    cookie_samesite: Literal["lax", "strict", "none"] = "lax"
     cookie_max_age_seconds: int = Field(default=60 * 60 * 24 * 14, ge=3600)
     llm_provider: Literal["kimi", "openai", "yunwu", "codex", "none"] = "none"
     llm_api_key: str | None = None

@@ -19,6 +19,14 @@ export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = computed(() => !!user.value)
   const credits = computed(() => billing.value?.user.credits_balance ?? 0)
 
+  async function refreshBillingAfterAuth() {
+    try {
+      billing.value = await getBillingSummary()
+    } catch {
+      billing.value = null
+    }
+  }
+
   async function init() {
     try {
       user.value = await getCurrentAccount()
@@ -41,7 +49,7 @@ export const useAuthStore = defineStore('auth', () => {
         return session
       }
       user.value = session.user || null
-      billing.value = await getBillingSummary()
+      await refreshBillingAfterAuth()
       pendingVerificationEmail.value = ''
       pendingDevVerificationUrl.value = ''
       return session
@@ -62,7 +70,7 @@ export const useAuthStore = defineStore('auth', () => {
         return session
       }
       user.value = session.user || null
-      billing.value = await getBillingSummary()
+      await refreshBillingAfterAuth()
       pendingVerificationEmail.value = ''
       pendingDevVerificationUrl.value = ''
       return session
