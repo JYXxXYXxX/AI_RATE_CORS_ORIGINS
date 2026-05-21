@@ -13,8 +13,16 @@
     </div>
 
     <div class="preview-shell">
-      <div v-if="loading" class="preview-state">
-        正在按原始文件渲染文档，图片、表格和段落格式会随原文件保留。
+      <div v-if="loading" class="preview-waiting">
+        <div class="preview-waiting__notice">
+          正在按原始文件渲染文档，图片、表格和段落格式会随原文件保留。
+        </div>
+        <iframe
+          class="preview-waiting__game"
+          src="/rewrite-wait-game.html"
+          sandbox="allow-scripts"
+          title="PataFix 等待小游戏"
+        />
       </div>
       <div v-else-if="highlighting" class="preview-state sub">
         正在标记风险段落，请稍候…
@@ -528,11 +536,47 @@ function revokeObjectUrl() {
 }
 
 .preview-shell {
+  position: relative;
   min-height: 0;
   overflow: auto;
   border-radius: 18px;
   background: #eef1ee;
   border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.preview-waiting {
+  min-height: 720px;
+  display: grid;
+  place-items: center;
+  padding: 86px 40px 44px;
+}
+
+.preview-waiting__notice {
+  position: absolute;
+  top: 42px;
+  left: 50%;
+  z-index: 2;
+  width: min(640px, calc(100% - 48px));
+  transform: translateX(-50%);
+  padding: 16px 20px;
+  border-radius: 14px;
+  border: 1px solid #dfe6df;
+  background: rgba(255, 255, 255, 0.96);
+  color: #374151;
+  font-size: 14px;
+  line-height: 1.7;
+  text-align: center;
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.06);
+}
+
+.preview-waiting__game {
+  width: min(860px, 92%);
+  height: min(520px, 58vh);
+  min-height: 420px;
+  border: 0;
+  border-radius: 22px;
+  background: #f8faf6;
+  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.14);
 }
 
 .docx-preview-host {

@@ -75,6 +75,49 @@ def test_docx_patch_can_optionally_export_highlighted_copy(tmp_path) -> None:
     assert "<w:shd" in patched.paragraphs[0]._element.get_or_add_pPr().xml
 
 
+def test_docx_patch_applies_sentence_replacements_without_paragraph_overwrite(tmp_path) -> None:
+    original = tmp_path / "original.docx"
+    doc = Document()
+    paragraph = doc.add_paragraph()
+    paragraph.add_run("原文第一句。")
+    bold_run = paragraph.add_run("需要逐字修改的句子。")
+    bold_run.bold = True
+    paragraph.add_run("原文第三句。")
+    doc.save(original)
+
+    blocks = [
+        {
+            "block_id": "b1",
+            "block_type": "paragraph",
+            "text": "原文第一句。需要逐字修改的句子。原文第三句。",
+            "source_map": {"paragraphIndex": 0},
+        }
+    ]
+    patches = [
+        {
+            "block_id": "b1",
+            "old_text": "原文第一句。需要逐字修改的句子。原文第三句。",
+            "new_text": "原文第一句。需要局部调整的句子。原文第三句。",
+            "source_map": {
+                "replacements": [
+                    {
+                        "old_text": "需要逐字修改的句子。",
+                        "new_text": "需要局部调整的句子。",
+                    }
+                ]
+            },
+        }
+    ]
+
+    report = export_docx_with_patch_report(str(original), blocks, patches, strict=True)
+    patched = Document(BytesIO(report.content))
+
+    assert patched.paragraphs[0].text == "原文第一句。需要局部调整的句子。原文第三句。"
+    assert patched.paragraphs[0].runs[1].bold is True
+    assert report.stats.applied_count == 1
+    assert report.stats.failed_count == 0
+
+
 def test_docx_patch_strict_mode_refuses_unsafe_paragraph_overwrite(tmp_path) -> None:
     original = tmp_path / "original.docx"
     doc = Document()

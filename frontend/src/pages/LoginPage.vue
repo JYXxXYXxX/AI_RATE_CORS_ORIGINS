@@ -41,14 +41,21 @@ const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
 
-const email = ref('')
+const email = ref(typeof route.query.email === 'string' ? route.query.email : '')
 const password = ref('')
-const errorMsg = ref('')
+const errorMsg = ref(typeof route.query.verified === 'string' ? '邮箱已验证，请登录。' : '')
 
 async function handleLogin() {
   errorMsg.value = ''
   try {
-    await auth.login(email.value, password.value)
+    const session = await auth.login(email.value, password.value)
+    if (session?.status === 'pending_verification') {
+      router.push({
+        name: 'email-verification-pending',
+        query: { email: session.email || email.value },
+      })
+      return
+    }
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/app'
     router.push(redirect.startsWith('/') ? redirect : '/app')
   } catch (err) {

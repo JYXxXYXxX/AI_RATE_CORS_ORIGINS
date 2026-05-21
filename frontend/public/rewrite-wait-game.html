@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PataFix Wait Game</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --green: #0f8f4f;
+      --green-dark: #0b5f3b;
+      --sage: #dfece2;
+      --paper: #fffdf8;
+      --ink: #10231a;
+      --red: #ef4444;
+      --orange: #f59e0b;
+      --purple: #8b5cf6;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #f8faf6;
+      color: var(--ink);
+      font-family: Inter, "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+      padding: 14px;
+    }
+
+    .game-card {
+      width: min(100%, 860px);
+      height: min(100%, 520px);
+      min-height: 390px;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      overflow: hidden;
+      border: 1px solid rgba(15, 143, 79, 0.14);
+      border-radius: 22px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 253, 248, 0.94)),
+        repeating-linear-gradient(0deg, rgba(15, 143, 79, 0.035) 0 1px, transparent 1px 24px),
+        repeating-linear-gradient(90deg, rgba(15, 143, 79, 0.035) 0 1px, transparent 1px 24px);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
+    }
+
+    .hud {
+      min-height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 18px 22px 12px;
+      border-bottom: 1px solid rgba(15, 143, 79, 0.1);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .patch-logo {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border-radius: 13px;
+      background: #e8f5e9;
+      color: var(--green);
+      font-size: 27px;
+      font-weight: 950;
+      line-height: 1;
+      box-shadow: inset 0 -3px 0 rgba(15, 143, 79, 0.1);
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.2;
+    }
+
+    .brand p {
+      margin: 4px 0 0;
+      color: #64756b;
+      font-size: 12px;
+    }
+
+    .meters {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    .pill {
+      min-width: 86px;
+      padding: 9px 12px;
+      border: 1px solid rgba(15, 143, 79, 0.12);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.7);
+      text-align: center;
+    }
+
+    .pill span {
+      display: block;
+      color: #64756b;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .pill strong {
+      display: block;
+      margin-top: 2px;
+      color: var(--green);
+      font-size: 18px;
+      line-height: 1.1;
+    }
+
+    .stage-wrap {
+      position: relative;
+      min-height: 0;
+      padding: 14px 18px 10px;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      border: 1px solid rgba(15, 143, 79, 0.12);
+      border-radius: 16px;
+      background: #eef4ee;
+      image-rendering: pixelated;
+      outline: none;
+    }
+
+    .tip {
+      position: absolute;
+      left: 34px;
+      bottom: 24px;
+      max-width: calc(100% - 68px);
+      padding: 8px 12px;
+      border: 1px solid rgba(15, 143, 79, 0.12);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.86);
+      color: #496052;
+      font-size: 12px;
+      pointer-events: none;
+    }
+
+    .footer {
+      min-height: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 22px 16px;
+      color: #64756b;
+      font-size: 12px;
+    }
+
+    .progress {
+      width: min(280px, 42vw);
+      height: 8px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #dfe9df;
+    }
+
+    .progress i {
+      display: block;
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--green), #58b37f);
+      transition: width 0.2s ease;
+    }
+
+    @media (max-width: 640px) {
+      body {
+        padding: 8px;
+      }
+
+      .hud,
+      .footer {
+        padding-left: 14px;
+        padding-right: 14px;
+      }
+
+      .brand p,
+      .tip {
+        display: none;
+      }
+
+      .pill {
+        min-width: 68px;
+        padding: 8px;
+      }
+
+      .pill strong {
+        font-size: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="game-card" aria-label="PataFix 等待小游戏">
+    <header class="hud">
+      <div class="brand">
+        <div class="patch-logo" aria-hidden="true">P</div>
+        <div>
+          <h1>修补红区小游戏</h1>
+          <p>移动 PataFix 修补贴，覆盖红色风险句，收集绿色改写稿。</p>
+        </div>
+      </div>
+      <div class="meters">
+        <div class="pill">
+          <span>得分</span>
+          <strong id="score">0</strong>
+        </div>
+        <div class="pill">
+          <span>已修补</span>
+          <strong id="fixed">0</strong>
+        </div>
+      </div>
+    </header>
+
+    <section class="stage-wrap">
+      <canvas id="game" tabindex="0" aria-label="使用方向键或 WASD 移动修补贴"></canvas>
+      <div class="tip">方向键 / WASD 移动，碰到红句会修补，碰到绿句会加速生成。</div>
+    </section>
+
+    <footer class="footer">
+      <span>文档渲染中，小游戏不会修改论文内容。</span>
+      <div class="progress" aria-hidden="true"><i id="progress"></i></div>
+    </footer>
+  </main>
+
+  <script>
+    const canvas = document.getElementById('game')
+    const ctx = canvas.getContext('2d')
+    const scoreEl = document.getElementById('score')
+    const fixedEl = document.getElementById('fixed')
+    const progressEl = document.getElementById('progress')
+
+    const state = {
+      width: 760,
+      height: 320,
+      score: 0,
+      fixed: 0,
+      progress: 7,
+      tick: 0,
+      keys: new Set(),
+      items: [],
+      particles: [],
+      player: { x: 120, y: 166, w: 46, h: 54, speed: 4.1 },
+      pointer: null,
+    }
+
+    const riskText = ['模板化表达', '泛化结论', '句式重复', '逻辑跳跃', '缺少语境']
+    const rewriteText = ['可替换稿', '具体细节', '格式保留', '句式调整']
+
+    function resize() {
+      const rect = canvas.getBoundingClientRect()
+      const dpr = Math.min(window.devicePixelRatio || 1, 2)
+      canvas.width = Math.max(520, Math.floor(rect.width * dpr))
+      canvas.height = Math.max(260, Math.floor(rect.height * dpr))
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      state.width = rect.width
+      state.height = rect.height
+      state.player.y = Math.min(state.player.y, state.height - state.player.h - 18)
+    }
+
+    function addItem(type) {
+      const high = type === 'risk'
+      state.items.push({
+        type,
+        x: state.width + 30,
+        y: 42 + Math.random() * Math.max(80, state.height - 112),
+        w: high ? 128 + Math.random() * 44 : 90,
+        h: high ? 28 : 24,
+        speed: high ? 2.1 + Math.random() * 1.2 : 2.6 + Math.random() * 1.4,
+        label: high
+          ? riskText[Math.floor(Math.random() * riskText.length)]
+          : rewriteText[Math.floor(Math.random() * rewriteText.length)],
+      })
+    }
+
+    function hit(a, b) {
+      return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+    }
+
+    function sparkle(x, y, color) {
+      for (let i = 0; i < 10; i += 1) {
+        state.particles.push({
+          x,
+          y,
+          vx: (Math.random() - 0.5) * 4,
+          vy: (Math.random() - 0.8) * 4,
+          life: 24 + Math.random() * 14,
+          color,
+        })
+      }
+    }
+
+    function update() {
+      state.tick += 1
+      state.progress = Math.min(99, state.progress + 0.016)
+      progressEl.style.width = `${state.progress}%`
+
+      const p = state.player
+      const left = state.keys.has('ArrowLeft') || state.keys.has('a')
+      const right = state.keys.has('ArrowRight') || state.keys.has('d')
+      const up = state.keys.has('ArrowUp') || state.keys.has('w')
+      const down = state.keys.has('ArrowDown') || state.keys.has('s')
+
+      if (left) p.x -= p.speed
+      if (right) p.x += p.speed
+      if (up) p.y -= p.speed
+      if (down) p.y += p.speed
+
+      if (state.pointer) {
+        p.x += (state.pointer.x - p.x - p.w / 2) * 0.08
+        p.y += (state.pointer.y - p.y - p.h / 2) * 0.08
+      }
+
+      p.x = Math.max(16, Math.min(state.width - p.w - 16, p.x))
+      p.y = Math.max(22, Math.min(state.height - p.h - 22, p.y))
+
+      if (state.tick % 54 === 0) addItem('risk')
+      if (state.tick % 118 === 0) addItem('rewrite')
+
+      state.items = state.items.filter((item) => {
+        item.x -= item.speed
+        if (hit(p, item)) {
+          if (item.type === 'risk') {
+            state.fixed += 1
+            state.score += 15
+            state.progress = Math.min(99, state.progress + 1.8)
+            sparkle(item.x + item.w / 2, item.y + item.h / 2, '#0f8f4f')
+          } else {
+            state.score += 25
+            state.progress = Math.min(99, state.progress + 2.4)
+            sparkle(item.x + item.w / 2, item.y + item.h / 2, '#22c55e')
+          }
+          scoreEl.textContent = state.score
+          fixedEl.textContent = state.fixed
+          return false
+        }
+        return item.x + item.w > -20
+      })
+
+      state.particles = state.particles.filter((particle) => {
+        particle.x += particle.vx
+        particle.y += particle.vy
+        particle.vy += 0.08
+        particle.life -= 1
+        return particle.life > 0
+      })
+    }
+
+    function drawPaperLines() {
+      ctx.save()
+      ctx.strokeStyle = 'rgba(15, 143, 79, 0.08)'
+      ctx.lineWidth = 1
+      for (let y = 42; y < state.height; y += 30) {
+        ctx.beginPath()
+        ctx.moveTo(28, y)
+        ctx.lineTo(state.width - 28, y)
+        ctx.stroke()
+      }
+      ctx.restore()
+    }
+
+    function drawItem(item) {
+      ctx.save()
+      ctx.imageSmoothingEnabled = false
+      if (item.type === 'risk') {
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.18)'
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.7)'
+      } else {
+        ctx.fillStyle = 'rgba(15, 143, 79, 0.16)'
+        ctx.strokeStyle = 'rgba(15, 143, 79, 0.72)'
+      }
+      roundRect(item.x, item.y, item.w, item.h, 7)
+      ctx.fill()
+      ctx.stroke()
+      ctx.fillStyle = item.type === 'risk' ? '#b91c1c' : '#0f8f4f'
+      ctx.font = '700 12px Microsoft YaHei, Arial'
+      ctx.fillText(item.label, item.x + 12, item.y + 18)
+      ctx.restore()
+    }
+
+    function drawPlayer() {
+      const p = state.player
+      ctx.save()
+      ctx.translate(Math.round(p.x), Math.round(p.y))
+      ctx.fillStyle = '#0f8f4f'
+      roundRect(0, 0, p.w, p.h, 12)
+      ctx.fill()
+      ctx.fillStyle = '#e8f5e9'
+      roundRect(9, 8, 22, 38, 6)
+      ctx.fill()
+      ctx.fillStyle = '#0f8f4f'
+      roundRect(18, 16, 19, 12, 5)
+      ctx.fill()
+      ctx.fillStyle = '#f7fff9'
+      ctx.fillRect(11, 34, 24, 5)
+      ctx.fillRect(11, 41, 18, 5)
+      ctx.restore()
+    }
+
+    function drawParticles() {
+      for (const particle of state.particles) {
+        ctx.globalAlpha = Math.max(0, particle.life / 36)
+        ctx.fillStyle = particle.color
+        ctx.fillRect(particle.x, particle.y, 4, 4)
+      }
+      ctx.globalAlpha = 1
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, state.width, state.height)
+      drawPaperLines()
+      state.items.forEach(drawItem)
+      drawPlayer()
+      drawParticles()
+    }
+
+    function loop() {
+      update()
+      draw()
+      requestAnimationFrame(loop)
+    }
+
+    function roundRect(x, y, w, h, r) {
+      ctx.beginPath()
+      ctx.moveTo(x + r, y)
+      ctx.arcTo(x + w, y, x + w, y + h, r)
+      ctx.arcTo(x + w, y + h, x, y + h, r)
+      ctx.arcTo(x, y + h, x, y, r)
+      ctx.arcTo(x, y, x + w, y, r)
+      ctx.closePath()
+    }
+
+    window.addEventListener('resize', resize)
+    window.addEventListener('keydown', (event) => {
+      const key = event.key.length === 1 ? event.key.toLowerCase() : event.key
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'a', 'd', 'w', 's'].includes(key)) {
+        event.preventDefault()
+        state.keys.add(key)
+      }
+    })
+    window.addEventListener('keyup', (event) => {
+      const key = event.key.length === 1 ? event.key.toLowerCase() : event.key
+      state.keys.delete(key)
+    })
+    canvas.addEventListener('pointermove', (event) => {
+      const rect = canvas.getBoundingClientRect()
+      state.pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+    })
+    canvas.addEventListener('pointerleave', () => {
+      state.pointer = null
+    })
+
+    resize()
+    addItem('risk')
+    addItem('rewrite')
+    canvas.focus()
+    loop()
+  </script>
+</body>
+</html>

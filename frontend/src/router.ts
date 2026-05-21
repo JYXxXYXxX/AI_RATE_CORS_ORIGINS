@@ -18,6 +18,16 @@ const routes: RouteRecordRaw[] = [
     component: () => import('./pages/RegisterPage.vue')
   },
   {
+    path: '/email-verification/pending',
+    name: 'email-verification-pending',
+    component: () => import('./pages/EmailVerificationPendingPage.vue')
+  },
+  {
+    path: '/email-verification/complete',
+    name: 'email-verification-complete',
+    component: () => import('./pages/EmailVerificationCompletePage.vue')
+  },
+  {
     path: '/app',
     component: () => import('./layouts/AppLayout.vue'),
     children: [

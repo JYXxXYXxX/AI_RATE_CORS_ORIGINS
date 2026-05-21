@@ -135,13 +135,47 @@ function levelLabel(level: 'high' | 'medium' | 'low' | 'normal', status: Rewrite
   return '正常'
 }
 
-const suggestionText = computed(() =>
-  props.suggestion?.rewritten_paragraph || props.activeItem?.rewriteHint || '正在生成改写建议...'
-)
+const suggestionText = computed(() => {
+  const item = props.activeItem
+  if (!item) return '正在生成改写建议...'
+  const source = item.currentText || item.originalText
+  const replaced = applySentenceReplacements(source, props.suggestion)
+  if (replaced !== cleanText(source)) return replaced
+  const paragraph = props.suggestion?.rewritten_paragraph?.trim()
+  if (paragraph && isConservativeRewrite(source, paragraph)) return paragraph
+  return source || '正在生成改写建议...'
+})
 
 const principleText = computed(() =>
   props.suggestion?.overall_advice || props.activeItem?.principle || '通过调整句式结构、补充细节和弱化模板表达来降低风险。'
 )
+
+function applySentenceReplacements(text: string, advice?: RewriteAdviceResponse | null) {
+  let next = cleanText(text)
+  for (const sentence of advice?.sentences || []) {
+    const original = cleanText(sentence.original || '')
+    const rewritten = cleanText(sentence.rewritten || '')
+    if (!original || !rewritten || !next.includes(original)) continue
+    if (!isConservativeRewrite(original, rewritten)) continue
+    next = next.replace(original, rewritten)
+  }
+  return next
+}
+
+function cleanText(value = '') {
+  return value.replace(/\u0000/g, '').replace(/\s+/g, ' ').trim()
+}
+
+function isConservativeRewrite(original = '', rewritten = '') {
+  const left = cleanText(original).replace(/\s+/g, '')
+  const right = cleanText(rewritten).replace(/\s+/g, '')
+  if (!left || !right) return false
+  const ratio = right.length / Math.max(left.length, 1)
+  if (ratio < 0.7 || ratio > 1.25) return false
+  const leftChars = new Set([...left])
+  const overlap = [...new Set([...right])].filter((char) => leftChars.has(char)).length
+  return overlap / Math.max(leftChars.size, 1) >= 0.65
+}
 </script>
 
 <style scoped>

@@ -131,13 +131,14 @@ const activePosition = computed(() => {
 
 const activeSuggestionText = computed(() => {
   const advice = props.suggestion
-  if (advice?.rewritten_paragraph?.trim()) return advice.rewritten_paragraph.trim()
-  const rebuilt = advice?.sentences
-    ?.map((sentence) => sentence.rewritten?.trim())
-    .filter((sentence): sentence is string => Boolean(sentence))
-    .join(' ')
-  if (rebuilt) return rebuilt
-  return props.activeItem?.rewriteHint || props.activeItem?.currentText || ''
+  const item = props.activeItem
+  if (!item) return ''
+  const source = item.currentText || item.originalText
+  const replaced = applySentenceReplacements(source, advice)
+  if (replaced !== cleanText(source)) return replaced
+  const paragraph = advice?.rewritten_paragraph?.trim()
+  if (paragraph && isConservativeRewrite(source, paragraph)) return paragraph
+  return source
 })
 
 const activePrincipleText = computed(() => {
@@ -160,7 +161,34 @@ function levelLabel(item: RewriteRiskItem) {
 }
 
 function previewSuggestion(item: RewriteRiskItem) {
-  return item.rewriteHint || item.currentText || item.originalText
+  return item.currentText || item.originalText
+}
+
+function applySentenceReplacements(text: string, advice?: RewriteAdviceResponse | null) {
+  let next = cleanText(text)
+  for (const sentence of advice?.sentences || []) {
+    const original = cleanText(sentence.original || '')
+    const rewritten = cleanText(sentence.rewritten || '')
+    if (!original || !rewritten || !next.includes(original)) continue
+    if (!isConservativeRewrite(original, rewritten)) continue
+    next = next.replace(original, rewritten)
+  }
+  return next
+}
+
+function cleanText(value = '') {
+  return value.replace(/\u0000/g, '').replace(/\s+/g, ' ').trim()
+}
+
+function isConservativeRewrite(original = '', rewritten = '') {
+  const left = cleanText(original).replace(/\s+/g, '')
+  const right = cleanText(rewritten).replace(/\s+/g, '')
+  if (!left || !right) return false
+  const ratio = right.length / Math.max(left.length, 1)
+  if (ratio < 0.7 || ratio > 1.25) return false
+  const leftChars = new Set([...left])
+  const overlap = [...new Set([...right])].filter((char) => leftChars.has(char)).length
+  return overlap / Math.max(leftChars.size, 1) >= 0.65
 }
 
 function fallbackDiagnosis(level: RiskLevel) {

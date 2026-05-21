@@ -125,6 +125,7 @@ type RiskStatus = RewriteWorkspaceRiskItem['status']
 interface RiskState {
   status: RiskStatus
   currentText: string
+  replacements?: Array<{ old_text: string; new_text: string }>
 }
 
 interface HistoryEntry {
@@ -501,6 +502,52 @@ function adviceTargetIndex(item: RewriteWorkspaceRiskItem) {
   return item.sectionIndex
 }
 
+function cleanRewriteText(value = '') {
+  return value.replace(/\u0000/g, '').replace(/\s+/g, ' ').trim()
+}
+
+function isConservativeRewrite(original = '', rewritten = '') {
+  const left = cleanRewriteText(original).replace(/\s+/g, '')
+  const right = cleanRewriteText(rewritten).replace(/\s+/g, '')
+  if (!left || !right) return false
+  const ratio = right.length / Math.max(left.length, 1)
+  if (ratio < 0.7 || ratio > 1.25) return false
+  const leftChars = new Set([...left])
+  const overlap = [...new Set([...right])].filter((char) => leftChars.has(char)).length
+  return overlap / Math.max(leftChars.size, 1) >= 0.65
+}
+
+function buildAdviceReplacements(item: RewriteWorkspaceRiskItem, advice?: RewriteAdviceResponse | null) {
+  const source = item.currentText || item.originalText
+  return (advice?.sentences || [])
+    .map((sentence) => ({
+      old_text: cleanRewriteText(sentence.original || ''),
+      new_text: cleanRewriteText(sentence.rewritten || ''),
+    }))
+    .filter((entry) =>
+      entry.old_text &&
+      entry.new_text &&
+      entry.old_text !== entry.new_text &&
+      source.includes(entry.old_text) &&
+      isConservativeRewrite(entry.old_text, entry.new_text)
+    )
+}
+
+function resolveRewriteText(item: RewriteWorkspaceRiskItem, advice?: RewriteAdviceResponse | null) {
+  let next = cleanRewriteText(item.currentText || item.originalText)
+  for (const replacement of buildAdviceReplacements(item, advice)) {
+    next = next.replace(replacement.old_text, replacement.new_text)
+  }
+  if (next !== cleanRewriteText(item.currentText || item.originalText)) return next
+
+  const paragraph = advice?.rewritten_paragraph?.trim()
+  if (paragraph && isConservativeRewrite(item.currentText || item.originalText, paragraph)) {
+    return cleanRewriteText(paragraph)
+  }
+
+  return cleanRewriteText(item.currentText || item.originalText)
+}
+
 function pushHistory(entry: HistoryEntry) {
   undoStack.value = [...undoStack.value, entry]
   redoStack.value = []
@@ -528,12 +575,14 @@ async function applyActiveSuggestion() {
   applyLoading.value = true
   try {
     const advice = await ensureAdvice(item)
-    const rewrittenText = advice.rewritten_paragraph?.trim() || item.rewriteHint || item.currentText || item.originalText
+    const replacements = buildAdviceReplacements(item, advice)
+    const rewrittenText = resolveRewriteText(item, advice)
     applyStateChange(
       item.riskId,
       {
         status: 'applied',
         currentText: rewrittenText,
+        replacements,
       }
     )
     ElMessage.success('已替换到正文预览中')
@@ -568,12 +617,14 @@ async function applyAllVisible() {
   try {
     for (const item of candidates) {
       const advice = await ensureAdvice(item)
-      const rewrittenText = advice.rewritten_paragraph?.trim() || item.rewriteHint || item.currentText || item.originalText
+      const replacements = buildAdviceReplacements(item, advice)
+      const rewrittenText = resolveRewriteText(item, advice)
       applyStateChange(
         item.riskId,
         {
           status: 'applied',
           currentText: rewrittenText,
+          replacements,
         }
       )
     }
@@ -631,6 +682,7 @@ async function persistSession() {
         action: current.status === 'ignored' ? 'ignored' : 'rewrite',
         risk_id: item.riskId,
         section_id: item.sectionId,
+        replacements: current.replacements || [],
       },
     })
   }

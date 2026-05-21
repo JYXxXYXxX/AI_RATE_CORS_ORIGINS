@@ -110,15 +110,27 @@ class UnifiedRepository:
         )
 
     def create_user(
-        self, *, email: str, password_hash: str, display_name: str
+        self,
+        *,
+        email: str,
+        password_hash: str,
+        display_name: str,
+        email_verified_at: datetime | None,
     ) -> dict[str, Any]:
         return self._fetchone(
             """
-            INSERT INTO app_users (email, password_hash, display_name, status, credits_balance)
-            VALUES (%s, %s, %s, 'active', 0)
+            INSERT INTO app_users (
+                email,
+                password_hash,
+                display_name,
+                status,
+                email_verified_at,
+                credits_balance
+            )
+            VALUES (%s, %s, %s, 'active', %s, 0)
             RETURNING *
             """,
-            (email, password_hash, display_name),
+            (email, password_hash, display_name, email_verified_at),
         )
 
     def get_user(self, user_id: str) -> dict[str, Any] | None:
@@ -126,6 +138,86 @@ class UnifiedRepository:
 
     def get_user_by_email(self, email: str) -> dict[str, Any] | None:
         return self._fetchone("SELECT * FROM app_users WHERE email = %s", (email,))
+
+    def update_user_verification_email_sent_at(
+        self, user_id: str, sent_at: datetime
+    ) -> None:
+        self._execute(
+            """
+            UPDATE app_users
+            SET verification_email_sent_at = %s, updated_at = now()
+            WHERE id = %s
+            """,
+            (sent_at, user_id),
+        )
+
+    def create_email_verification_token(
+        self, *, user_id: str, token_hash: str, expires_at: datetime
+    ) -> dict[str, Any]:
+        return self._fetchone(
+            """
+            INSERT INTO user_email_verification_tokens (user_id, token_hash, expires_at)
+            VALUES (%s, %s, %s)
+            RETURNING *
+            """,
+            (user_id, token_hash, expires_at),
+        )
+
+    def revoke_active_email_verification_tokens(self, user_id: str) -> None:
+        self._execute(
+            """
+            UPDATE user_email_verification_tokens
+            SET revoked_at = now()
+            WHERE user_id = %s AND used_at IS NULL AND revoked_at IS NULL
+            """,
+            (user_id,),
+        )
+
+    def get_email_verification_token(
+        self, token_hash: str
+    ) -> dict[str, Any] | None:
+        return self._fetchone(
+            """
+            SELECT
+                tokens.*,
+                users.email,
+                users.display_name,
+                users.status,
+                users.email_verified_at,
+                users.credits_balance,
+                users.created_at AS user_created_at
+            FROM user_email_verification_tokens AS tokens
+            JOIN app_users AS users ON users.id = tokens.user_id
+            WHERE tokens.token_hash = %s
+            LIMIT 1
+            """,
+            (token_hash,),
+        )
+
+    def mark_email_verification_token_used(
+        self, token_hash: str, used_at: datetime
+    ) -> None:
+        self._execute(
+            """
+            UPDATE user_email_verification_tokens
+            SET used_at = %s
+            WHERE token_hash = %s AND used_at IS NULL
+            """,
+            (used_at, token_hash),
+        )
+
+    def mark_user_email_verified(
+        self, user_id: str, verified_at: datetime
+    ) -> dict[str, Any] | None:
+        return self._fetchone(
+            """
+            UPDATE app_users
+            SET email_verified_at = COALESCE(email_verified_at, %s), updated_at = now()
+            WHERE id = %s
+            RETURNING *
+            """,
+            (verified_at, user_id),
+        )
 
     def delete_user(self, user_id: str) -> bool:
         """删除用户及其关联数据（GDPR/个人信息保护法删除权）。"""
@@ -213,6 +305,7 @@ class UnifiedRepository:
                 users.email,
                 users.display_name,
                 users.status,
+                users.email_verified_at,
                 users.credits_balance,
                 users.created_at AS user_created_at
             FROM user_sessions AS sessions

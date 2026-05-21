@@ -13,6 +13,8 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<UserSummary | null>(null)
   const billing = ref<BillingSummaryResponse | null>(null)
   const loading = ref(false)
+  const pendingVerificationEmail = ref('')
+  const pendingDevVerificationUrl = ref('')
 
   const isLoggedIn = computed(() => !!user.value)
   const credits = computed(() => billing.value?.user.credits_balance ?? 0)
@@ -31,8 +33,18 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true
     try {
       const session = await loginAccount({ email, password })
-      user.value = session.user
+      if (session.status === 'pending_verification') {
+        user.value = null
+        billing.value = null
+        pendingVerificationEmail.value = session.email || email
+        pendingDevVerificationUrl.value = session.dev_verification_url || ''
+        return session
+      }
+      user.value = session.user || null
       billing.value = await getBillingSummary()
+      pendingVerificationEmail.value = ''
+      pendingDevVerificationUrl.value = ''
+      return session
     } finally {
       loading.value = false
     }
@@ -42,8 +54,18 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true
     try {
       const session = await registerAccount({ email, password, displayName })
-      user.value = session.user
+      if (session.status === 'pending_verification') {
+        user.value = null
+        billing.value = null
+        pendingVerificationEmail.value = session.email || email
+        pendingDevVerificationUrl.value = session.dev_verification_url || ''
+        return session
+      }
+      user.value = session.user || null
       billing.value = await getBillingSummary()
+      pendingVerificationEmail.value = ''
+      pendingDevVerificationUrl.value = ''
+      return session
     } finally {
       loading.value = false
     }
@@ -57,6 +79,8 @@ export const useAuthStore = defineStore('auth', () => {
     }
     user.value = null
     billing.value = null
+    pendingVerificationEmail.value = ''
+    pendingDevVerificationUrl.value = ''
   }
 
   async function refreshBilling() {
@@ -64,5 +88,30 @@ export const useAuthStore = defineStore('auth', () => {
     billing.value = await getBillingSummary()
   }
 
-  return { user, billing, loading, isLoggedIn, credits, init, login, register, logout, refreshBilling }
+  function setPendingVerification(email: string, devUrl?: string | null) {
+    pendingVerificationEmail.value = email
+    pendingDevVerificationUrl.value = devUrl || ''
+  }
+
+  function clearPendingVerification() {
+    pendingVerificationEmail.value = ''
+    pendingDevVerificationUrl.value = ''
+  }
+
+  return {
+    user,
+    billing,
+    loading,
+    isLoggedIn,
+    credits,
+    pendingVerificationEmail,
+    pendingDevVerificationUrl,
+    init,
+    login,
+    register,
+    logout,
+    refreshBilling,
+    setPendingVerification,
+    clearPendingVerification
+  }
 })

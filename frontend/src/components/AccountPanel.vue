@@ -71,6 +71,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import {
   createBillingOrder,
@@ -92,6 +93,8 @@ const props = defineProps<{
   user: UserSummary | null
   billing: BillingSummaryResponse | null
 }>()
+
+const router = useRouter()
 
 const emit = defineEmits<{
   sessionChange: [payload: { user: UserSummary | null; billing: BillingSummaryResponse | null }]
@@ -163,6 +166,14 @@ async function submitAuth() {
       authMode.value === 'login'
         ? await loginAccount({ email: form.email, password: form.password })
         : await registerAccount({ email: form.email, password: form.password, displayName: form.displayName })
+    if (session.status === 'pending_verification') {
+      ElMessage.success('验证邮件已发送，请先完成邮箱验证')
+      router.push({
+        name: 'email-verification-pending',
+        query: { email: session.email || form.email }
+      })
+      return
+    }
     const billing = await getBillingSummary()
     syncSelectedProvider(billing)
     emit('sessionChange', { user: billing.user, billing })

@@ -160,6 +160,22 @@ def _fallback_replace_paragraph(paragraph, new_text: str) -> None:
         paragraph.add_run(new_text)
 
 
+def _source_map_replacements(patch: dict) -> list[dict[str, str]]:
+    source_map = patch.get("source_map") or {}
+    raw = source_map.get("replacements") if isinstance(source_map, dict) else None
+    if not isinstance(raw, list):
+        return []
+    replacements: list[dict[str, str]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        old_text = str(item.get("old_text") or "").strip()
+        new_text = str(item.get("new_text") or "").strip()
+        if old_text and new_text and old_text != new_text:
+            replacements.append({"old_text": old_text, "new_text": new_text})
+    return replacements
+
+
 def export_docx_with_patches(
     original_path: str,
     blocks: list[dict],
@@ -246,7 +262,30 @@ def export_docx_with_patch_report(
             handled_patch_ids.add(str(block_id))
             old_text = patch["old_text"]
             new_text = patch["new_text"]
-            if _try_replace_in_runs(para, old_text, new_text):
+            replacements = _source_map_replacements(patch)
+            if replacements:
+                failed = [
+                    item for item in replacements
+                    if not _try_replace_in_runs(para, item["old_text"], item["new_text"])
+                ]
+                if not failed:
+                    stats.applied_count += 1
+                elif strict:
+                    stats.failed_count += 1
+                    stats.failures.append(
+                        DocxPatchFailure(
+                            block_id=str(block_id),
+                            paragraph_index=para_idx,
+                            reason="部分逐句替换未在对应段落中找到，未执行整段覆盖以避免破坏格式",
+                            old_text_preview=str(failed[0].get("old_text", ""))[:80],
+                        )
+                    )
+                elif _try_replace_in_runs(para, old_text, new_text):
+                    stats.applied_count += 1
+                else:
+                    _fallback_replace_paragraph(para, new_text)
+                    stats.applied_count += 1
+            elif _try_replace_in_runs(para, old_text, new_text):
                 stats.applied_count += 1
             elif strict:
                 stats.failed_count += 1

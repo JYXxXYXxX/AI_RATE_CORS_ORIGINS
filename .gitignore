@@ -33,6 +33,7 @@ data/test_billing_orders_runtime/
 data/*.jsonl
 data/app.db
 data/job_store.json
+data/last_email_verification_link.txt
 
 # Keep provider_configs.json and provider_results (demo data)
 !data/provider_configs.json

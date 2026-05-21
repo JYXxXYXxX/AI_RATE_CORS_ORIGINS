@@ -1,4 +1,4 @@
-"""认证相关路由。"""
+"""Authentication routes."""
 
 from typing import Any
 
@@ -14,10 +14,15 @@ from app.routes.deps import (
 from app.schemas_unified import (
     AuthLoginRequest,
     AuthRegisterRequest,
+    AuthResendVerificationRequest,
+    AuthResendVerificationResponse,
     AuthSessionResponse,
+    AuthVerifyEmailRequest,
+    AuthVerifyEmailResponse,
     UserSummary,
 )
 from app.services.account import AccountService
+from app.services.mailer import MailDeliveryError
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
 
@@ -28,19 +33,17 @@ def register_account(
     payload: AuthRegisterRequest,
     account_service: AccountService = Depends(get_account_service),
 ) -> AuthSessionResponse:
-    # 速率限制由全局 limiter 处理 (120/min)
     try:
-        session = account_service.register(
+        result = account_service.register(
             email=payload.email,
             password=payload.password,
             display_name=payload.display_name,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    _set_session_cookie(response, session.token)
-    return AuthSessionResponse(
-        token=session.token, user=UserSummary.model_validate(session.user)
-    )
+    except MailDeliveryError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return _auth_response(response, result)
 
 
 @router.post("/login", response_model=AuthSessionResponse)
@@ -50,12 +53,48 @@ def login_account(
     account_service: AccountService = Depends(get_account_service),
 ) -> AuthSessionResponse:
     try:
-        session = account_service.login(email=payload.email, password=payload.password)
+        result = account_service.login(email=payload.email, password=payload.password)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    _set_session_cookie(response, session.token)
-    return AuthSessionResponse(
-        token=session.token, user=UserSummary.model_validate(session.user)
+    except MailDeliveryError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return _auth_response(response, result)
+
+
+@router.post("/email/resend", response_model=AuthResendVerificationResponse)
+def resend_verification_email(
+    payload: AuthResendVerificationRequest,
+    account_service: AccountService = Depends(get_account_service),
+) -> AuthResendVerificationResponse:
+    try:
+        result = account_service.resend_verification_email(email=payload.email)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except MailDeliveryError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return AuthResendVerificationResponse(
+        ok=True,
+        email=result.email or payload.email,
+        verification_sent=result.verification_sent,
+        message=result.message,
+        dev_verification_url=result.dev_verification_url,
+    )
+
+
+@router.post("/email/verify", response_model=AuthVerifyEmailResponse)
+def verify_email(
+    payload: AuthVerifyEmailRequest,
+    account_service: AccountService = Depends(get_account_service),
+) -> AuthVerifyEmailResponse:
+    try:
+        result = account_service.verify_email(token=payload.token)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return AuthVerifyEmailResponse(
+        ok=True,
+        email=result.email,
+        already_verified=result.already_verified,
+        message=result.message,
     )
 
 
@@ -72,7 +111,6 @@ def delete_current_account(
     user: dict[str, Any] = Depends(get_current_user),
     account_service: AccountService = Depends(get_account_service),
 ) -> dict[str, bool]:
-    """删除当前用户账户（GDPR/个人信息保护法删除权）。"""
     account_service.delete_account(str(user["id"]))
     _clear_session_cookie(response)
     return {"deleted": True}
@@ -83,7 +121,6 @@ def export_current_account_data(
     user: dict[str, Any] = Depends(get_current_user),
     account_service: AccountService = Depends(get_account_service),
 ) -> dict[str, Any]:
-    """导出当前用户全部个人数据（GDPR/个人信息保护法查阅权）。"""
     return account_service.repository.export_user_data(str(user["id"]))
 
 
@@ -96,6 +133,23 @@ def logout_account(
     account_service.logout(auth.token)
     _clear_session_cookie(response)
     return {"ok": True}
+
+
+def _auth_response(response: Response, result: Any) -> AuthSessionResponse:
+    if result.status == "authenticated" and result.token:
+        _set_session_cookie(response, result.token)
+    else:
+        _clear_session_cookie(response)
+    return AuthSessionResponse(
+        status=result.status,
+        token=result.token,
+        user=UserSummary.model_validate(result.user) if result.user else None,
+        requires_email_verification=result.status == "pending_verification",
+        email=result.email,
+        verification_sent=result.verification_sent,
+        message=result.message,
+        dev_verification_url=result.dev_verification_url,
+    )
 
 
 def _set_session_cookie(response: Response, token: str) -> None:
@@ -113,3 +167,4 @@ def _set_session_cookie(response: Response, token: str) -> None:
 
 def _clear_session_cookie(response: Response) -> None:
     response.delete_cookie(key="session", path="/")
+

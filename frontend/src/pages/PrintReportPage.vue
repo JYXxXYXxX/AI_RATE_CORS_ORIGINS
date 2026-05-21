@@ -2,6 +2,7 @@
   <div class="print-report" v-if="report">
     <!-- 报告头部 -->
     <header class="report-header">
+      <img class="report-logo" src="/logo-icon.png?v=3" alt="PataFix" />
       <h1>论文风险预检报告</h1>
       <div class="report-meta">
         <span>报告编号：{{ report.run_id }}</span>
@@ -254,10 +255,21 @@ function formatDate(value: string) {
 }
 
 .report-header {
+  position: relative;
+  min-height: 56px;
   text-align: center;
   border-bottom: 3px double #333;
   padding-bottom: 20px;
   margin-bottom: 24px;
+}
+
+.report-logo {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
 }
 
 .report-header h1 {

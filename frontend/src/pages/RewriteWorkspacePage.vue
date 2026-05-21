@@ -558,16 +558,49 @@ function adviceTargetIndex(item: RewriteRiskItem) {
 }
 
 function resolveRewriteText(item: RewriteRiskItem, advice?: RewriteAdviceResponse | null) {
+  const original = item.currentText || item.originalText
+  const replaced = applyAdviceReplacements(original, advice)
+  if (replaced !== cleanText(original)) return replaced
+
   const rewrittenParagraph = advice?.rewritten_paragraph?.trim()
-  if (rewrittenParagraph) return cleanText(rewrittenParagraph)
+  if (rewrittenParagraph && isConservativeRewrite(original, rewrittenParagraph)) return cleanText(rewrittenParagraph)
 
-  const rebuilt = advice?.sentences
-    ?.map((sentence) => sentence.rewritten?.trim())
-    .filter((sentence): sentence is string => Boolean(sentence))
-    .join(' ')
-  if (rebuilt) return cleanText(rebuilt)
+  return cleanText(original)
+}
 
-  return cleanText(item.rewriteHint || item.currentText || item.originalText)
+function buildAdviceReplacements(item: RewriteRiskItem, advice?: RewriteAdviceResponse | null) {
+  const source = item.currentText || item.originalText
+  return (advice?.sentences || [])
+    .map((sentence) => ({
+      old_text: cleanText(sentence.original || ''),
+      new_text: cleanText(sentence.rewritten || ''),
+    }))
+    .filter((entry) =>
+      entry.old_text &&
+      entry.new_text &&
+      entry.old_text !== entry.new_text &&
+      source.includes(entry.old_text) &&
+      isConservativeRewrite(entry.old_text, entry.new_text)
+    )
+}
+
+function applyAdviceReplacements(text: string, advice?: RewriteAdviceResponse | null) {
+  let next = cleanText(text)
+  for (const item of buildAdviceReplacements({ currentText: next, originalText: text } as RewriteRiskItem, advice)) {
+    next = next.replace(item.old_text, item.new_text)
+  }
+  return next
+}
+
+function isConservativeRewrite(original = '', rewritten = '') {
+  const left = cleanText(original).replace(/\s+/g, '')
+  const right = cleanText(rewritten).replace(/\s+/g, '')
+  if (!left || !right) return false
+  const ratio = right.length / Math.max(left.length, 1)
+  if (ratio < 0.7 || ratio > 1.25) return false
+  const leftChars = new Set([...left])
+  const overlap = [...new Set([...right])].filter((char) => leftChars.has(char)).length
+  return overlap / Math.max(leftChars.size, 1) >= 0.65
 }
 
 async function applyActive() {
@@ -576,6 +609,8 @@ async function applyActive() {
   const paragraph = paragraphs.value.find((entry) => entry.riskId === item.riskId)
   if (!paragraph) return
   const advice = await ensureAdvice(item)
+  const previousText = item.currentText || item.originalText
+  const replacements = buildAdviceReplacements(item, advice)
   const nextText = resolveRewriteText(item, advice)
   const entry: RewriteHistoryEntry = {
     riskId: item.riskId,
@@ -592,9 +627,14 @@ async function applyActive() {
   try {
     await createPatch(props.runId, {
       block_id: paragraph.blockId,
-      old_text: item.currentText || item.originalText,
+      old_text: previousText,
       new_text: nextText,
-      source_map: paragraph.sourceMap || item.sourceMap,
+      source_map: {
+        ...(paragraph.sourceMap || item.sourceMap || {}),
+        action: 'rewrite',
+        risk_id: item.riskId,
+        replacements,
+      },
     })
   } catch (error) {
     console.warn(error)
@@ -654,12 +694,40 @@ async function rewriteAllAsync() {
     applyHistoryEntry(entry)
     history.value.push(entry)
   }
+  await persistAppliedPatches()
   redoStack.value = []
   ElMessage.success('已按建议批量替换页面正文')
 }
 
 function save() {
-  ElMessage.success('当前改写状态已保存在页面中，导出时会带上替换内容。')
+  void persistAppliedPatches().then((count) => {
+    ElMessage.success(count ? `已保存 ${count} 条逐句替换` : '当前没有需要保存的改动')
+  }).catch((error) => {
+    ElMessage.error(error instanceof Error ? error.message : '保存失败')
+  })
+}
+
+async function persistAppliedPatches() {
+  let count = 0
+  for (const item of riskItems.value.filter((risk) => risk.status === 'applied')) {
+    const paragraph = paragraphs.value.find((entry) => entry.riskId === item.riskId)
+    if (!paragraph) continue
+    const advice = adviceCache.value[item.riskId]
+    const replacements = buildAdviceReplacements({ ...item, currentText: item.originalText }, advice)
+    await createPatch(props.runId, {
+      block_id: paragraph.blockId,
+      old_text: item.originalText,
+      new_text: paragraph.text,
+      source_map: {
+        ...(paragraph.sourceMap || item.sourceMap || {}),
+        action: 'rewrite',
+        risk_id: item.riskId,
+        replacements,
+      },
+    })
+    count += 1
+  }
+  return count
 }
 
 function applyHistoryEntry(entry: RewriteHistoryEntry) {
@@ -685,6 +753,7 @@ function reverseHistoryEntry(entry: RewriteHistoryEntry) {
 async function exportDocument() {
   exportLoading.value = true
   try {
+    await persistAppliedPatches()
     const sectionsPayload = paragraphs.value.map((paragraph, index) => ({
       section_index: index,
       content: paragraph.text,

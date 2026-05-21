@@ -3,7 +3,9 @@
   AnalysisTaskCreateResponse,
   AnalysisTaskStatusResponse,
   AnalyzeDocumentResponse,
+  AuthResendVerificationResponse,
   AuthSessionResponse,
+  AuthVerifyEmailResponse,
   BillingOrderDetailResponse,
   BillingOrderPaymentResponse,
   BillingSummaryResponse,
@@ -93,6 +95,26 @@ export async function loginAccount(payload: {
     body: JSON.stringify(payload)
   })
   return parseResponse<AuthSessionResponse>(response)
+}
+
+export async function resendVerificationEmail(email: string): Promise<AuthResendVerificationResponse> {
+  const response = await fetchWithRetry(`${baseUrl}/v1/auth/email/resend`, {
+    method: 'POST',
+    headers: jsonHeaders(),
+    credentials: 'include',
+    body: JSON.stringify({ email })
+  })
+  return parseResponse<AuthResendVerificationResponse>(response)
+}
+
+export async function verifyEmailToken(token: string): Promise<AuthVerifyEmailResponse> {
+  const response = await fetchWithRetry(`${baseUrl}/v1/auth/email/verify`, {
+    method: 'POST',
+    headers: jsonHeaders(),
+    credentials: 'include',
+    body: JSON.stringify({ token })
+  })
+  return parseResponse<AuthVerifyEmailResponse>(response)
 }
 
 export async function getCurrentAccount(): Promise<UserSummary> {

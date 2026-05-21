@@ -53,7 +53,14 @@ const errorMsg = ref('')
 async function handleRegister() {
   errorMsg.value = ''
   try {
-    await auth.register(email.value, password.value, displayName.value || undefined)
+    const session = await auth.register(email.value, password.value, displayName.value || undefined)
+    if (session?.status === 'pending_verification') {
+      router.push({
+        name: 'email-verification-pending',
+        query: { email: session.email || email.value },
+      })
+      return
+    }
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/app'
     router.push(redirect.startsWith('/') ? redirect : '/app')
   } catch (err) {

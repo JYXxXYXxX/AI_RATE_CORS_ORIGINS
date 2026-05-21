@@ -21,6 +21,8 @@ class UserSummary(BaseModel):
     email: str
     display_name: str | None = None
     status: str
+    email_verified: bool = False
+    email_verified_at: datetime | None = None
     credits_balance: int = Field(..., ge=0)
     created_at: datetime
 
@@ -37,8 +39,37 @@ class AuthLoginRequest(BaseModel):
 
 
 class AuthSessionResponse(BaseModel):
+    status: Literal["authenticated", "pending_verification"]
+    token: str | None = None
+    user: UserSummary | None = None
+    requires_email_verification: bool = False
+    email: str | None = None
+    verification_sent: bool = False
+    message: str | None = None
+    dev_verification_url: str | None = None
+
+
+class AuthResendVerificationRequest(BaseModel):
+    email: str
+
+
+class AuthResendVerificationResponse(BaseModel):
+    ok: bool
+    email: str
+    verification_sent: bool = False
+    message: str | None = None
+    dev_verification_url: str | None = None
+
+
+class AuthVerifyEmailRequest(BaseModel):
     token: str
-    user: UserSummary
+
+
+class AuthVerifyEmailResponse(BaseModel):
+    ok: bool
+    email: str
+    already_verified: bool = False
+    message: str | None = None
 
 
 class BillingPackage(BaseModel):

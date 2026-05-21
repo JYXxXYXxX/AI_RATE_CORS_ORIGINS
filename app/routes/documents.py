@@ -1408,18 +1408,26 @@ async def export_rewritten_document(
                 headers=headers,
             )
         except DocxPatchError as exc:
-            # Patch 部分失败时回退到 sections 重建，避免用户完全无法导出
-            import logging
-            logging.getLogger("patfix.export").warning(
-                f"DocxPatchError for run {run_id}, falling back to section rebuild: {exc}"
-            )
-            return _build_fallback_docx()
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "有改写句未能在原 Word 段落中精确定位，已停止导出以避免破坏原文档格式。",
+                    "failures": [
+                        {
+                            "block_id": item.block_id,
+                            "paragraph_index": item.paragraph_index,
+                            "reason": item.reason,
+                            "old_text_preview": item.old_text_preview,
+                        }
+                        for item in exc.stats.failures[:8]
+                    ],
+                },
+            ) from exc
         except Exception as exc:
-            import logging
-            logging.getLogger("patfix.export").warning(
-                f"Unexpected export error for run {run_id}, falling back to section rebuild: {exc}"
-            )
-            return _build_fallback_docx()
+            raise HTTPException(
+                status_code=500,
+                detail="原 Word 文档补丁导出失败，已停止重建导出以避免格式错乱。",
+            ) from exc
 
     return _build_fallback_docx()
 

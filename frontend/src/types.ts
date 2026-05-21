@@ -15,13 +15,36 @@ export interface UserSummary {
   email: string
   display_name?: string | null
   status: string
+  email_verified: boolean
+  email_verified_at?: string | null
   credits_balance: number
   created_at: string
 }
 
 export interface AuthSessionResponse {
-  token: string
-  user: UserSummary
+  status: 'authenticated' | 'pending_verification'
+  token?: string | null
+  user?: UserSummary | null
+  requires_email_verification: boolean
+  email?: string | null
+  verification_sent: boolean
+  message?: string | null
+  dev_verification_url?: string | null
+}
+
+export interface AuthResendVerificationResponse {
+  ok: boolean
+  email: string
+  verification_sent: boolean
+  message?: string | null
+  dev_verification_url?: string | null
+}
+
+export interface AuthVerifyEmailResponse {
+  ok: boolean
+  email: string
+  already_verified: boolean
+  message?: string | null
 }
 
 export interface BillingPackage {

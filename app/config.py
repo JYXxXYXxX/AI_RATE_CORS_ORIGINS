@@ -40,6 +40,19 @@ class Settings(BaseSettings):
     auto_train_enabled: bool = False
     auto_train_every_feedbacks: int = Field(default=5, ge=1)
     auth_session_ttl_hours: int = Field(default=24 * 14, ge=1)
+    email_verification_required: bool = False
+    email_verification_token_ttl_minutes: int = Field(default=24 * 60, ge=5)
+    email_verification_resend_cooldown_seconds: int = Field(default=60, ge=0)
+    public_web_base_url: str = "http://127.0.0.1:3000"
+    smtp_host: str | None = None
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_from_email: str | None = None
+    smtp_from_name: str = "PataFix"
+    smtp_use_tls: bool = True
+    smtp_use_ssl: bool = False
+    smtp_timeout_seconds: int = Field(default=20, ge=1, le=120)
     starter_credits: int = Field(default=2, ge=0)
     analysis_credit_cost: int = Field(default=1, ge=1)
     async_queue_backend: Literal["local", "celery"] = "local"

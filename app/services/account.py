@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from hmac import compare_digest
+from pathlib import Path
 from secrets import token_urlsafe
 from typing import Any
 
@@ -12,6 +13,7 @@ from app.config import Settings
 from app.db.repositories import UnifiedRepository
 from app.payments.base import PaymentChannelSummary, PaymentOrderRequest, PaymentPackage
 from app.payments.registry import PaymentProviderRegistry
+from app.services.mailer import MailDeliveryError, send_email, smtp_configured
 
 
 MOCK_PACKAGES: list[dict[str, Any]] = [
@@ -45,6 +47,24 @@ class SessionIdentity:
     user: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class AuthOutcome:
+    status: str
+    token: str | None = None
+    user: dict[str, Any] | None = None
+    email: str | None = None
+    verification_sent: bool = False
+    message: str | None = None
+    dev_verification_url: str | None = None
+
+
+@dataclass(frozen=True)
+class VerifyEmailOutcome:
+    email: str
+    already_verified: bool
+    message: str
+
+
 class AccountService:
     def __init__(self, settings: Settings, repository: UnifiedRepository) -> None:
         self.settings = settings
@@ -62,7 +82,7 @@ class AccountService:
 
     def register(
         self, *, email: str, password: str, display_name: str | None
-    ) -> SessionIdentity:
+    ) -> AuthOutcome:
         normalized_email = _normalize_email(email)
         if self.repository.get_user_by_email(normalized_email) is not None:
             raise ValueError("email already registered")
@@ -74,26 +94,85 @@ class AccountService:
             password_hash=hash_password(password),
             display_name=(display_name or "").strip()
             or _default_display_name(normalized_email),
+            email_verified_at=(
+                None if self.settings.email_verification_required else datetime.now(UTC)
+            ),
         )
-        if self.settings.starter_credits > 0:
-            self.repository.change_user_credits(
-                user_id=str(user["id"]),
-                delta=self.settings.starter_credits,
-                source_type="starter_bonus",
-                source_id=None,
-                note="starter credits",
-            )
-            user = self.repository.get_user(str(user["id"])) or user
-        return self._create_session(user)
+        if self.settings.email_verification_required:
+            return self._build_pending_verification(user)
+        self._grant_starter_credits_if_applicable(str(user["id"]))
+        return self._create_authenticated_outcome(user)
 
-    def login(self, *, email: str, password: str) -> SessionIdentity:
+    def login(self, *, email: str, password: str) -> AuthOutcome:
         normalized_email = _normalize_email(email)
         user = self.repository.get_user_by_email(normalized_email)
         if user is None or not verify_password(password, str(user["password_hash"])):
             raise ValueError("invalid email or password")
         if user.get("status") != "active":
             raise ValueError("account is not active")
-        return self._create_session(user)
+        if self.settings.email_verification_required and not user.get(
+            "email_verified_at"
+        ):
+            return self._build_pending_verification(user)
+        return self._create_authenticated_outcome(user)
+
+    def resend_verification_email(self, *, email: str) -> AuthOutcome:
+        normalized_email = _normalize_email(email)
+        user = self.repository.get_user_by_email(normalized_email)
+        if user is None:
+            raise ValueError("email not registered")
+        if user.get("email_verified_at"):
+            raise ValueError("email already verified")
+        return self._build_pending_verification(user, enforce_cooldown=True)
+
+    def verify_email(self, *, token: str) -> VerifyEmailOutcome:
+        raw_token = (token or "").strip()
+        if not raw_token:
+            raise ValueError("verification token required")
+
+        token_record = self.repository.get_email_verification_token(hash_token(raw_token))
+        if token_record is None:
+            raise ValueError("verification link is invalid or expired")
+
+        if token_record.get("email_verified_at"):
+            if token_record.get("used_at") is None:
+                self.repository.mark_email_verification_token_used(
+                    str(token_record["token_hash"]), datetime.now(UTC)
+                )
+            return VerifyEmailOutcome(
+                email=str(token_record["email"]),
+                already_verified=True,
+                message="email already verified",
+            )
+
+        if token_record.get("used_at") is not None:
+            return VerifyEmailOutcome(
+                email=str(token_record["email"]),
+                already_verified=True,
+                message="email already verified",
+            )
+
+        expires_at = token_record.get("expires_at")
+        if expires_at is None or expires_at <= datetime.now(UTC):
+            raise ValueError("verification link expired, please request a new email")
+
+        now = datetime.now(UTC)
+        self.repository.mark_email_verification_token_used(
+            str(token_record["token_hash"]), now
+        )
+        user = self.repository.mark_user_email_verified(
+            str(token_record["user_id"]), now
+        )
+        self.repository.revoke_active_email_verification_tokens(
+            str(token_record["user_id"])
+        )
+        self._grant_starter_credits_if_applicable(str(token_record["user_id"]))
+        verified_user = user or self.repository.get_user(str(token_record["user_id"]))
+        return VerifyEmailOutcome(
+            email=str(verified_user["email"] if verified_user else token_record["email"]),
+            already_verified=False,
+            message="email verified successfully",
+        )
 
     def get_user_by_token(self, token: str | None) -> dict[str, Any] | None:
         if not token:
@@ -108,6 +187,8 @@ class AccountService:
             "email": session["email"],
             "display_name": session.get("display_name"),
             "status": session.get("status"),
+            "email_verified": bool(session.get("email_verified_at")),
+            "email_verified_at": session.get("email_verified_at"),
             "credits_balance": int(session.get("credits_balance", 0)),
             "created_at": session.get("user_created_at"),
         }
@@ -281,6 +362,115 @@ class AccountService:
         refreshed_user = self.repository.get_user(str(user["id"])) or user
         return SessionIdentity(token=token, user=_sanitize_user(refreshed_user))
 
+    def _create_authenticated_outcome(self, user: dict[str, Any]) -> AuthOutcome:
+        session = self._create_session(user)
+        return AuthOutcome(
+            status="authenticated",
+            token=session.token,
+            user=session.user,
+        )
+
+    def _build_pending_verification(
+        self, user: dict[str, Any], *, enforce_cooldown: bool = False
+    ) -> AuthOutcome:
+        verification_url = self._issue_email_verification(user, enforce_cooldown=enforce_cooldown)
+        return AuthOutcome(
+            status="pending_verification",
+            email=str(user["email"]),
+            verification_sent=True,
+            message="please verify your email before signing in",
+            dev_verification_url=verification_url
+            if self.settings.service_env == "dev"
+            else None,
+        )
+
+    def _issue_email_verification(
+        self, user: dict[str, Any], *, enforce_cooldown: bool = False
+    ) -> str | None:
+        user_id = str(user["id"])
+        now = datetime.now(UTC)
+        last_sent_at = user.get("verification_email_sent_at")
+        cooldown = max(0, int(self.settings.email_verification_resend_cooldown_seconds))
+        if (
+            enforce_cooldown
+            and cooldown > 0
+            and last_sent_at is not None
+            and (now - last_sent_at).total_seconds() < cooldown
+        ):
+            raise ValueError(f"please wait {cooldown} seconds before requesting again")
+
+        raw_token = token_urlsafe(32)
+        token_hash = hash_token(raw_token)
+        expires_at = now + timedelta(
+            minutes=self.settings.email_verification_token_ttl_minutes
+        )
+        self.repository.revoke_active_email_verification_tokens(user_id)
+        self.repository.create_email_verification_token(
+            user_id=user_id,
+            token_hash=token_hash,
+            expires_at=expires_at,
+        )
+        self.repository.update_user_verification_email_sent_at(user_id, now)
+
+        verification_url = self._build_verification_url(raw_token)
+        subject = "请验证你的 PataFix 邮箱"
+        text_body = (
+            f"你好，\n\n"
+            f"请点击下面的链接完成邮箱验证：\n{verification_url}\n\n"
+            f"该链接将在 {self.settings.email_verification_token_ttl_minutes} 分钟后失效。"
+        )
+        html_body = (
+            "<div style=\"font-family:Arial,'PingFang SC','Microsoft YaHei',sans-serif;"
+            "line-height:1.7;color:#172033\">"
+            "<h2 style=\"margin:0 0 12px\">验证你的 PataFix 邮箱</h2>"
+            "<p>请点击下面的按钮完成邮箱验证，验证后才能正常使用邮箱登录。</p>"
+            f"<p><a href=\"{verification_url}\" "
+            "style=\"display:inline-block;padding:12px 18px;border-radius:10px;"
+            "background:#0f8f4f;color:#fff;text-decoration:none;font-weight:700\">"
+            "立即验证邮箱</a></p>"
+            f"<p>如果按钮无法打开，也可以复制这个链接：<br>{verification_url}</p>"
+            f"<p>链接有效期：{self.settings.email_verification_token_ttl_minutes} 分钟。</p>"
+            "</div>"
+        )
+
+        if smtp_configured(self.settings):
+            send_email(
+                settings=self.settings,
+                to_email=str(user["email"]),
+                subject=subject,
+                text_body=text_body,
+                html_body=html_body,
+            )
+            return None
+
+        if self.settings.service_env == "dev":
+            Path("data").mkdir(exist_ok=True)
+            preview_path = Path("data") / "last_email_verification_link.txt"
+            preview_path.write_text(verification_url, encoding="utf-8")
+            return verification_url
+
+        raise MailDeliveryError("smtp not configured")
+
+    def _build_verification_url(self, raw_token: str) -> str:
+        base = self.settings.public_web_base_url.rstrip("/")
+        return f"{base}/email-verification/complete?token={raw_token}"
+
+    def _grant_starter_credits_if_applicable(self, user_id: str) -> None:
+        if self.settings.starter_credits <= 0:
+            return
+        user = self.repository.get_user(user_id)
+        if user is None:
+            return
+        if int(user.get("credits_balance", 0)) > 0:
+            return
+        self.repository.change_user_credits(
+            user_id=user_id,
+            delta=self.settings.starter_credits,
+            source_type="starter_bonus",
+            source_id=None,
+            note="starter credits",
+        )
+
     def _build_order_detail(self, order: dict[str, Any]) -> dict[str, Any]:
         order_summary = _serialize_order(order)
         intent = self.payment_registry.hydrate_order(order)
@@ -401,6 +591,8 @@ def _sanitize_user(user: dict[str, Any]) -> dict[str, Any]:
         "email": user["email"],
         "display_name": user.get("display_name"),
         "status": user.get("status"),
+        "email_verified": bool(user.get("email_verified_at")),
+        "email_verified_at": user.get("email_verified_at"),
         "credits_balance": int(user.get("credits_balance", 0)),
         "created_at": user.get("created_at"),
     }
