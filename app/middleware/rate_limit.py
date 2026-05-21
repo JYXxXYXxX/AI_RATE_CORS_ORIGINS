@@ -41,6 +41,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 del self._requests[ip]
 
     async def dispatch(self, request: Request, call_next: Callable):
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         client_ip = request.client.host if request.client else "unknown"
         now = time.time()
 
@@ -88,6 +91,9 @@ class StrictRateLimitMiddleware(BaseHTTPMiddleware):
                 del self._requests[key]
 
     async def dispatch(self, request: Request, call_next: Callable):
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         if request.url.path not in self.STRICT_PATHS:
             return await call_next(request)
 

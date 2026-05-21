@@ -198,6 +198,14 @@ app.add_middleware(AuditLogMiddleware)
 # 速率限制：全局 120/min，认证端点 10/min
 app.add_middleware(RateLimitMiddleware, requests_per_minute=120)
 app.add_middleware(StrictRateLimitMiddleware, requests_per_minute=10)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["Content-Disposition", "X-Conversion-Engine"],
+)
 
 # ---------------------------------------------------------------------------
 # 注册路由
