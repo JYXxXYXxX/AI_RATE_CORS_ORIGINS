@@ -50,21 +50,23 @@ def convert_to_docx(
             output_path=output_path,
             output_name=output_name,
         )
-    if suffix == ".doc":
+    try:
+        return _convert_office_to_docx(
+            source_name=source_name,
+            content=content,
+            output_path=output_path,
+            output_name=output_name,
+            timeout_seconds=timeout_seconds,
+        )
+    except RuntimeError:
+        if suffix != ".doc":
+            raise
         return _convert_doc_text_to_docx(
             source_name=source_name,
             content=content,
             output_path=output_path,
             output_name=output_name,
         )
-
-    return _convert_office_to_docx(
-        source_name=source_name,
-        content=content,
-        output_path=output_path,
-        output_name=output_name,
-        timeout_seconds=timeout_seconds,
-    )
 
 
 def _convert_pdf_to_docx(
