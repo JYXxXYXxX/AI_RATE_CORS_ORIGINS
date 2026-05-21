@@ -239,12 +239,17 @@ export async function uploadDocument(payload: {
 export async function convertDocumentToDocx(file: File): Promise<DocumentConversionResponse> {
   const formData = new FormData()
   formData.append('file', file)
-  const response = await fetchWithRetry(`${baseUrl}/v1/documents/convert-to-docx`, {
-    method: 'POST',
-    headers: authHeaders(),
-    credentials: 'include',
-    body: formData
-  })
+  let response: Response
+  try {
+    response = await fetch(`${baseUrl}/v1/documents/convert-to-docx`, {
+      method: 'POST',
+      headers: authHeaders(),
+      credentials: 'include',
+      body: formData
+    })
+  } catch {
+    throw new Error('转换请求被中断，请稍后重试；如果是较大的 .doc 文件，建议先用 Word/WPS 另存为 .docx 后再上传。')
+  }
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}))
     throw new Error(formatApiError(response.status, payload.detail))

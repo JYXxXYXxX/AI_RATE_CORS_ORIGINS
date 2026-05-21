@@ -111,6 +111,11 @@ async def convert_document_to_docx(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="转换服务异常，请稍后重试；如果是旧版 .doc 文件，建议先用 Word/WPS 另存为 .docx。",
+        ) from exc
 
     return FileResponse(
         converted.path,

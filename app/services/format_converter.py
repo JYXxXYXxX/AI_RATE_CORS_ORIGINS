@@ -23,7 +23,7 @@ def convert_to_docx(
     filename: str,
     content: bytes,
     output_dir: str,
-    timeout_seconds: int = 120,
+    timeout_seconds: int = 300,
 ) -> ConvertedDocument:
     source_name = Path(filename or "paper").name
     suffix = Path(source_name).suffix.lower()
@@ -119,12 +119,17 @@ def _convert_office_to_docx(
             str(temp_path),
             str(source_path),
         ]
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds,
-        )
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                "转换超时。这个文件可能较大、受保护或结构复杂，请先尝试用 Word/WPS 另存为 .docx 后再上传。"
+            ) from exc
         if result.returncode != 0:
             detail = (result.stderr or result.stdout or "").strip()
             raise RuntimeError(detail or "LibreOffice 转换失败")
