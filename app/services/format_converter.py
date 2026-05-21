@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import tempfile
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -115,6 +116,7 @@ def _convert_doc_text_to_docx(
         raise RuntimeError(
             "旧版 .doc 解析失败。请先用 Word/WPS 打开并另存为 .docx 后再上传。"
         ) from exc
+    text = _xml_compatible_text(text)
     if not text.strip():
         raise RuntimeError("旧版 .doc 没有提取到可转换的正文内容")
 
@@ -188,3 +190,12 @@ def _convert_office_to_docx(
 def _safe_stem(value: str) -> str:
     safe = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in value)
     return safe.strip("_")[:80] or "converted"
+
+
+_INVALID_XML_CHARS = re.compile(
+    r"[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]"
+)
+
+
+def _xml_compatible_text(value: str) -> str:
+    return _INVALID_XML_CHARS.sub("", value)
