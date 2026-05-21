@@ -70,6 +70,7 @@ from app.services.feedback_learning import (
     build_feedback_learning_sample,
     refresh_feedback_learning_skill,
 )
+from app.services.format_converter import convert_to_docx
 from app.services.onlyoffice import (
     SAVE_STATUSES,
     apply_patch_to_working_copy,
@@ -87,6 +88,36 @@ from app.services.text_processing import preview_text, segment_document
 from app.task_queue import dispatch_analysis_task
 
 router = APIRouter(prefix="/v1", tags=["documents"])
+
+
+@router.post("/documents/convert-to-docx")
+async def convert_document_to_docx(
+    file: UploadFile = File(...),
+    settings: Settings = Depends(get_settings),
+) -> FileResponse:
+    if file.size is not None and file.size > settings.max_upload_bytes:
+        raise HTTPException(status_code=400, detail="文件过大")
+    content = await file.read()
+    if len(content) > settings.max_upload_bytes:
+        raise HTTPException(status_code=400, detail="文件过大")
+    try:
+        converted = await asyncio.to_thread(
+            convert_to_docx,
+            filename=file.filename or "paper",
+            content=content,
+            output_dir=settings.upload_storage_dir,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return FileResponse(
+        converted.path,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=converted.filename,
+        headers={"X-Conversion-Engine": converted.engine},
+    )
 
 
 @router.post("/documents/upload", response_model=DocumentUploadResponse)

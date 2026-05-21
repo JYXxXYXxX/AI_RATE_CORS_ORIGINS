@@ -12,6 +12,7 @@
   CnkiFeedbackOcrPreviewResponse,
   CnkiFeedbackResponse,
   CnkiReportFragment,
+  DocumentConversionResponse,
   DocumentBlock,
   DocumentPatch,
   DocumentUploadResponse,
@@ -233,6 +234,26 @@ export async function uploadDocument(payload: {
     body: formData
   })
   return parseResponse<DocumentUploadResponse>(response)
+}
+
+export async function convertDocumentToDocx(file: File): Promise<DocumentConversionResponse> {
+  const formData = new FormData()
+  formData.append('file', file)
+  const response = await fetchWithRetry(`${baseUrl}/v1/documents/convert-to-docx`, {
+    method: 'POST',
+    headers: authHeaders(),
+    credentials: 'include',
+    body: formData
+  })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}))
+    throw new Error(formatApiError(response.status, payload.detail))
+  }
+  return {
+    blob: await response.blob(),
+    filename: parseDownloadFilename(response.headers.get('Content-Disposition')) || toDocxName(file.name),
+    engine: response.headers.get('X-Conversion-Engine')
+  }
 }
 
 export async function analyzeDocument(documentId: string, force = true): Promise<AnalyzeDocumentResponse> {
@@ -1003,6 +1024,25 @@ function jsonHeaders(includeAuth = false) {
   const headers = new Headers()
   headers.set('Content-Type', 'application/json')
   return headers
+}
+
+function parseDownloadFilename(contentDisposition: string | null): string | null {
+  if (!contentDisposition) return null
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1])
+    } catch {
+      return utf8Match[1]
+    }
+  }
+  const asciiMatch = contentDisposition.match(/filename="?([^";]+)"?/i)
+  return asciiMatch?.[1] || null
+}
+
+function toDocxName(filename: string): string {
+  const stem = filename.replace(/\.[^.]+$/, '') || 'converted'
+  return `${stem}.docx`
 }
 
 async function parseResponse<T>(response: Response): Promise<T> {

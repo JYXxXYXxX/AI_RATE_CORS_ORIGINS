@@ -18,7 +18,7 @@
         <input
           ref="fileInputRef"
           type="file"
-          accept=".docx"
+          accept=".docx,.doc,.pdf,.rtf,.odt"
           class="file-input-hidden"
           @change="handleFileSelect"
         />
@@ -40,6 +40,54 @@
           <p class="drop-hint">{{ copy.dropHint }}</p>
         </template>
       </div>
+
+      <section class="format-converter">
+        <div class="converter-head">
+          <div>
+            <strong>{{ copy.converterTitle }}</strong>
+            <p>{{ copy.converterHint }}</p>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" @click="triggerConverterInput">
+            {{ copy.converterChoose }}
+          </button>
+        </div>
+        <input
+          ref="converterInputRef"
+          type="file"
+          accept=".doc,.pdf,.rtf,.odt"
+          class="file-input-hidden"
+          @change="handleConverterSelect"
+        />
+        <div v-if="converterFile" class="converter-body">
+          <div class="file-preview">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <div>
+              <strong>{{ converterFile.name }}</strong>
+              <span>{{ formatFileSize(converterFile.size) }}</span>
+            </div>
+            <button type="button" class="btn-icon" @click="clearConverter" :title="copy.remove">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="converter-actions">
+            <button type="button" class="btn btn-primary" :disabled="converterLoading" @click="handleConvertToDocx">
+              {{ converterLoading ? copy.converting : copy.convertNow }}
+            </button>
+            <button
+              v-if="convertedDownloadUrl"
+              type="button"
+              class="btn btn-secondary"
+              @click="downloadConvertedFile"
+            >
+              {{ copy.downloadConverted }}
+            </button>
+          </div>
+          <p v-if="convertedFile" class="converter-success">
+            {{ copy.convertedReady }} <strong>{{ convertedFile.name }}</strong>
+          </p>
+          <p v-if="converterError" class="converter-error">{{ converterError }}</p>
+        </div>
+      </section>
 
       <!-- 知网报告上传（可选） -->
       <div class="cnki-section">
@@ -259,7 +307,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, reactive, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAnalysisStore } from '../stores/analysis'
-import { previewCnkiFeedbackOcr } from '../api'
+import { convertDocumentToDocx, previewCnkiFeedbackOcr } from '../api'
 import type { CnkiFeedbackOcrPreviewResponse, LearningScope } from '../types'
 
 const router = useRouter()
@@ -272,7 +320,15 @@ const copy = computed(() => locale.value === 'en'
       title: 'New scan',
       subtitle: 'Upload a paper and let the system generate a detailed risk precheck report.',
       dropText: 'Drop a file or <strong>click to choose</strong>',
-      dropHint: 'Supports .docx only, up to 50MB',
+      dropHint: 'Supports .docx directly; .doc, .pdf, .rtf and .odt can be converted first',
+      converterTitle: 'Format converter',
+      converterHint: 'Convert .doc, .pdf, .rtf or .odt to .docx before uploading.',
+      converterChoose: 'Choose file',
+      convertNow: 'Convert to DOCX',
+      converting: 'Converting...',
+      convertedReady: 'Ready for upload:',
+      downloadConverted: 'Download DOCX',
+      remove: 'Remove',
       cnkiTitle: 'Upload official report (optional, enables report-driven mode)',
       uploaded: 'Uploaded',
       cnkiHint: 'After uploading an official similarity or AIGC report, the system treats it as the highest-priority risk source and locates paragraphs that need rewriting.',
@@ -313,7 +369,7 @@ const copy = computed(() => locale.value === 'en'
       uploading: 'Uploading file...',
       oversizedPaper: 'File size cannot exceed 50MB',
       unsupportedPaper: 'Unsupported file type: ',
-      supportedPaper: 'Please upload .docx only',
+      supportedPaper: 'Please upload .docx, or convert .doc/.pdf/.rtf/.odt first',
       oversizedReport: 'Report size cannot exceed 10MB',
       unsupportedReport: 'Unsupported report type: ',
       supportedReport: 'Please upload .pdf, .html, or .docx',
@@ -335,7 +391,15 @@ const copy = computed(() => locale.value === 'en'
       title: '新建分析',
       subtitle: '上传论文文件，系统将自动生成详细风险预检报告',
       dropText: '拖入文件或<strong>点击选择</strong>',
-      dropHint: '仅支持 .docx 格式，最大 50MB',
+      dropHint: '可直接上传 .docx；.doc、.pdf、.rtf、.odt 可先在下方转换',
+      converterTitle: '格式转换工具',
+      converterHint: '格式不对时，先把 .doc、.pdf、.rtf 或 .odt 转成 .docx，再继续上传论文。',
+      converterChoose: '选择文件',
+      convertNow: '转成 DOCX',
+      converting: '转换中...',
+      convertedReady: '已放入上传区：',
+      downloadConverted: '下载 DOCX',
+      remove: '移除',
       cnkiTitle: '上传检测报告（可选，启用报告驱动模式）',
       uploaded: '已上传',
       cnkiHint: '上传知网查重报告或 AIGC 检测报告后，系统会以知网结果为最高优先级风险来源，直接定位需要改写的段落。支持 PDF、HTML、Word 格式。',
@@ -377,7 +441,7 @@ const copy = computed(() => locale.value === 'en'
       uploading: '正在上传文件...',
       oversizedPaper: '文件大小不能超过 50MB',
       unsupportedPaper: '不支持的文件格式：',
-      supportedPaper: '请上传 .docx 格式',
+      supportedPaper: '请上传 .docx，或先把 .doc/.pdf/.rtf/.odt 转成 .docx',
       oversizedReport: '文件大小不能超过 10MB',
       unsupportedReport: '不支持的文件格式：',
       supportedReport: '请上传 .pdf、.html、.docx 格式',
@@ -399,6 +463,12 @@ const copy = computed(() => locale.value === 'en'
 const selectedFile = ref<File | null>(null)
 const isDragging = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
+const converterInputRef = ref<HTMLInputElement | null>(null)
+const converterFile = ref<File | null>(null)
+const convertedFile = ref<File | null>(null)
+const convertedDownloadUrl = ref('')
+const converterLoading = ref(false)
+const converterError = ref('')
 
 const cnkiReportFile = ref<File | null>(null)
 const cnkiExpanded = ref(false)
@@ -439,6 +509,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('patafix:language-change', handleLanguageChange)
+  revokeConvertedUrl()
 })
 
 watch(
@@ -479,22 +550,105 @@ function setFile(file: File) {
     return
   }
   const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
-  const allowed = ['.docx']
-  if (!allowed.includes(ext)) {
-    alert(copy.value.unsupportedPaper + ext + '\n' + copy.value.supportedPaper)
+  if (ext === '.docx') {
+    selectedFile.value = file
     return
   }
-  selectedFile.value = file
+  const convertible = ['.doc', '.pdf', '.rtf', '.odt']
+  if (convertible.includes(ext)) {
+    setConverterFile(file)
+    return
+  }
+  if (!ext) {
+    alert(copy.value.unsupportedPaper + file.name + '\n' + copy.value.supportedPaper)
+    return
+  }
+  alert(copy.value.unsupportedPaper + ext + '\n' + copy.value.supportedPaper)
 }
 
 function removeFile() {
   selectedFile.value = null
 }
 
+function triggerConverterInput() {
+  if (analysis.isAnalysisActive || converterLoading.value) return
+  converterInputRef.value?.click()
+}
+
+function handleConverterSelect(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (file) setConverterFile(file)
+  input.value = ''
+}
+
+function setConverterFile(file: File) {
+  if (file.size > MAX_SIZE) {
+    alert(copy.value.oversizedPaper)
+    return
+  }
+  const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
+  const allowed = ['.doc', '.pdf', '.rtf', '.odt']
+  if (!allowed.includes(ext)) {
+    alert(copy.value.unsupportedPaper + ext + '\n' + copy.value.supportedPaper)
+    return
+  }
+  converterFile.value = file
+  convertedFile.value = null
+  converterError.value = ''
+  revokeConvertedUrl()
+}
+
+async function handleConvertToDocx() {
+  if (!converterFile.value || converterLoading.value) return
+  converterLoading.value = true
+  converterError.value = ''
+  try {
+    const result = await convertDocumentToDocx(converterFile.value)
+    const docxFile = new File([result.blob], result.filename, {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    })
+    convertedFile.value = docxFile
+    selectedFile.value = docxFile
+    revokeConvertedUrl()
+    convertedDownloadUrl.value = URL.createObjectURL(result.blob)
+  } catch (err) {
+    convertedFile.value = null
+    converterError.value = err instanceof Error ? err.message : '转换失败，请确认文件未加密或损坏'
+  } finally {
+    converterLoading.value = false
+  }
+}
+
+function clearConverter() {
+  converterFile.value = null
+  convertedFile.value = null
+  converterError.value = ''
+  revokeConvertedUrl()
+}
+
+function revokeConvertedUrl() {
+  if (convertedDownloadUrl.value) {
+    URL.revokeObjectURL(convertedDownloadUrl.value)
+    convertedDownloadUrl.value = ''
+  }
+}
+
+function downloadConvertedFile() {
+  if (!convertedFile.value || !convertedDownloadUrl.value) return
+  const anchor = document.createElement('a')
+  anchor.href = convertedDownloadUrl.value
+  anchor.download = convertedFile.value.name
+  document.body.appendChild(anchor)
+  anchor.click()
+  document.body.removeChild(anchor)
+}
+
 function handleCancel() {
   analysis.resetSubmissionState()
   selectedFile.value = null
   cnkiReportFile.value = null
+  clearConverter()
 }
 
 // CNKI report upload
@@ -855,9 +1009,25 @@ function handleLanguageChange(event: Event) {
   border-radius: 12px;
 }
 
+.btn-sm {
+  padding: 8px 12px;
+  font-size: 13px;
+  border-radius: 8px;
+}
+
 .btn-primary {
   background: linear-gradient(135deg, #2f7d67, #236451);
   color: #fff;
+}
+
+.btn-secondary {
+  background: #fff;
+  color: #2f7d67;
+  border: 1px solid rgba(47, 125, 103, 0.24);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(47, 125, 103, 0.08);
 }
 
 .btn-primary:hover:not(:disabled) {
@@ -908,6 +1078,64 @@ function handleLanguageChange(event: Event) {
   border-radius: inherit;
   background: linear-gradient(90deg, #2f7d67, #3ba57f);
   transition: width 0.3s ease;
+}
+
+.format-converter {
+  margin: -4px 0 20px;
+  padding: 16px;
+  border: 1.5px solid rgba(47, 125, 103, 0.14);
+  border-radius: 14px;
+  background: rgba(47, 125, 103, 0.04);
+}
+
+.converter-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.converter-head strong {
+  display: block;
+  color: #263746;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.converter-head p {
+  margin: 0;
+  color: #6f7a86;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.converter-body {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(31, 54, 73, 0.08);
+}
+
+.converter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.converter-success,
+.converter-error {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.converter-success {
+  color: #21755d;
+}
+
+.converter-error {
+  color: #c84b52;
 }
 
 /* CNKI report section */
@@ -1096,6 +1324,12 @@ function handleLanguageChange(event: Event) {
 
   .form-row {
     grid-template-columns: 1fr;
+  }
+
+  .converter-head,
+  .converter-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 </style>

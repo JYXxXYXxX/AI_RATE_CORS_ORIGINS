@@ -17,7 +17,7 @@ WORKDIR /app
 
 # 系统依赖（antiword 用于 .doc 解析）
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends antiword catdoc curl \
+    && apt-get install -y --no-install-recommends antiword catdoc curl libreoffice-writer fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
 # Python 依赖

@@ -10,6 +10,12 @@ export interface DocumentUploadResponse {
   created_at: string
 }
 
+export interface DocumentConversionResponse {
+  blob: Blob
+  filename: string
+  engine?: string | null
+}
+
 export interface UserSummary {
   id: string
   email: string
