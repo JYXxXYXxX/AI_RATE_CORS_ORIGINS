@@ -3,15 +3,9 @@ from __future__ import annotations
 import shutil
 import subprocess
 import tempfile
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
-
-from docx import Document
-
-from app.services.document_loader import extract_text
-
 
 SUPPORTED_CONVERSION_EXTENSIONS = {".doc", ".pdf", ".rtf", ".odt"}
 
@@ -50,23 +44,13 @@ def convert_to_docx(
             output_path=output_path,
             output_name=output_name,
         )
-    try:
-        return _convert_office_to_docx(
-            source_name=source_name,
-            content=content,
-            output_path=output_path,
-            output_name=output_name,
-            timeout_seconds=timeout_seconds,
-        )
-    except RuntimeError:
-        if suffix != ".doc":
-            raise
-        return _convert_doc_text_to_docx(
-            source_name=source_name,
-            content=content,
-            output_path=output_path,
-            output_name=output_name,
-        )
+    return _convert_office_to_docx(
+        source_name=source_name,
+        content=content,
+        output_path=output_path,
+        output_name=output_name,
+        timeout_seconds=timeout_seconds,
+    )
 
 
 def _convert_pdf_to_docx(
@@ -103,36 +87,6 @@ def _convert_pdf_to_docx(
     if not output_path.exists() or output_path.stat().st_size == 0:
         raise RuntimeError("PDF 转换没有生成有效的 DOCX 文件")
     return ConvertedDocument(path=output_path, filename=output_name, engine="pdf2docx")
-
-
-def _convert_doc_text_to_docx(
-    *,
-    source_name: str,
-    content: bytes,
-    output_path: Path,
-    output_name: str,
-) -> ConvertedDocument:
-    try:
-        text = extract_text(source_name, content)
-    except Exception as exc:
-        raise RuntimeError(
-            "旧版 .doc 解析失败。请先用 Word/WPS 打开并另存为 .docx 后再上传。"
-        ) from exc
-    text = _xml_compatible_text(text)
-    if not text.strip():
-        raise RuntimeError("旧版 .doc 没有提取到可转换的正文内容")
-
-    document = Document()
-    document.add_heading(Path(source_name).stem or "Converted document", level=1)
-    for chunk in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
-        paragraph = chunk.strip()
-        if paragraph:
-            document.add_paragraph(paragraph)
-    document.save(output_path)
-
-    if not output_path.exists() or output_path.stat().st_size == 0:
-        raise RuntimeError("旧版 .doc 转换没有生成有效的 DOCX 文件")
-    return ConvertedDocument(path=output_path, filename=output_name, engine="doc-text")
 
 
 def _convert_office_to_docx(
@@ -192,12 +146,3 @@ def _convert_office_to_docx(
 def _safe_stem(value: str) -> str:
     safe = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in value)
     return safe.strip("_")[:80] or "converted"
-
-
-_INVALID_XML_CHARS = re.compile(
-    r"[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]"
-)
-
-
-def _xml_compatible_text(value: str) -> str:
-    return _INVALID_XML_CHARS.sub("", value)

@@ -94,7 +94,6 @@
           <p v-if="convertedFile" class="converter-success">
             {{ copy.convertedReady }} <strong>{{ convertedFile.name }}</strong>
           </p>
-          <p v-if="converterWarning" class="converter-warning">{{ converterWarning }}</p>
           <p v-if="converterError" class="converter-error">{{ converterError }}</p>
         </div>
       </section>
@@ -338,7 +337,6 @@ const copy = computed(() => locale.value === 'en'
       converting: 'Converting...',
       convertComplete: 'Conversion complete',
       convertedReady: 'Ready for upload:',
-      fallbackConverted: 'Original layout conversion failed, so a text-only DOCX was generated.',
       downloadConverted: 'Download DOCX',
       remove: 'Remove',
       cnkiTitle: 'Upload official report (optional, enables report-driven mode)',
@@ -412,7 +410,6 @@ const copy = computed(() => locale.value === 'en'
       converting: '转换中...',
       convertComplete: '转换完成',
       convertedReady: '已放入上传区：',
-      fallbackConverted: '原排版转换失败，已生成正文版 DOCX，部分格式可能不完整。',
       downloadConverted: '下载 DOCX',
       remove: '移除',
       cnkiTitle: '上传检测报告（可选，启用报告驱动模式）',
@@ -486,7 +483,6 @@ const convertedDownloadUrl = ref('')
 const converterLoading = ref(false)
 const converterProgress = ref(0)
 const converterError = ref('')
-const converterWarning = ref('')
 let converterProgressTimer: number | undefined
 
 const cnkiReportFile = ref<File | null>(null)
@@ -616,7 +612,6 @@ function setConverterFile(file: File) {
   converterFile.value = file
   convertedFile.value = null
   converterError.value = ''
-  converterWarning.value = ''
   converterProgress.value = 0
   revokeConvertedUrl()
 }
@@ -638,14 +633,12 @@ async function handleConvertToDocx() {
     })
     convertedFile.value = docxFile
     selectedFile.value = docxFile
-    converterWarning.value = result.engine === 'doc-text' ? copy.value.fallbackConverted : ''
     revokeConvertedUrl()
     convertedDownloadUrl.value = URL.createObjectURL(result.blob)
     converterProgress.value = 100
   } catch (err) {
     convertedFile.value = null
     converterProgress.value = 0
-    converterWarning.value = ''
     converterError.value = err instanceof Error ? err.message : '转换失败，请确认文件未加密或损坏'
   } finally {
     stopConverterProgress()
@@ -657,7 +650,6 @@ function clearConverter() {
   converterFile.value = null
   convertedFile.value = null
   converterError.value = ''
-  converterWarning.value = ''
   converterProgress.value = 0
   stopConverterProgress()
   revokeConvertedUrl()
@@ -1201,7 +1193,6 @@ function handleLanguageChange(event: Event) {
 }
 
 .converter-success,
-.converter-warning,
 .converter-error {
   margin: 0;
   font-size: 13px;
@@ -1210,14 +1201,6 @@ function handleLanguageChange(event: Event) {
 
 .converter-success {
   color: #21755d;
-}
-
-.converter-warning {
-  padding: 9px 11px;
-  border: 1px solid rgba(214, 139, 32, 0.28);
-  border-radius: 10px;
-  background: #fff7e6;
-  color: #9a5a12;
 }
 
 .converter-error {
