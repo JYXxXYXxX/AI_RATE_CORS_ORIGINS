@@ -13,6 +13,7 @@
   CnkiFeedbackResponse,
   CnkiReportFragment,
   DocumentConversionResponse,
+  DocumentConversionOptions,
   DocumentBlock,
   DocumentPatch,
   DocumentUploadResponse,
@@ -236,28 +237,45 @@ export async function uploadDocument(payload: {
   return parseResponse<DocumentUploadResponse>(response)
 }
 
-export async function convertDocumentToDocx(file: File): Promise<DocumentConversionResponse> {
+export async function convertDocumentToDocx(
+  file: File,
+  options?: DocumentConversionOptions
+): Promise<DocumentConversionResponse> {
   const formData = new FormData()
   formData.append('file', file)
-  let response: Response
   try {
-    response = await fetch(`${baseUrl}/v1/documents/convert-to-docx`, {
-      method: 'POST',
-      headers: authHeaders(),
-      credentials: 'include',
-      body: formData
+    return await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', `${baseUrl}/v1/documents/convert-to-docx`)
+      xhr.withCredentials = true
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          options?.onProgress?.(Math.min(70, Math.round((event.loaded / event.total) * 70)))
+        }
+      }
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          const blob = xhr.response
+          resolve({
+            blob,
+            filename: parseDownloadFilename(xhr.getResponseHeader('Content-Disposition')) || toDocxName(file.name),
+            engine: xhr.getResponseHeader('X-Conversion-Engine')
+          })
+          return
+        }
+        let detail = formatApiError(xhr.status)
+        try {
+          const body = JSON.parse(xhr.responseText)
+          detail = formatApiError(xhr.status, body.detail)
+        } catch { /* ignore */ }
+        reject(new Error(detail))
+      }
+      xhr.onerror = () => reject(new Error('转换请求被中断，请稍后重试；如果是较大的 .doc 文件，建议先用 Word/WPS 另存为 .docx 后再上传。'))
+      xhr.responseType = 'blob'
+      xhr.send(formData)
     })
   } catch {
     throw new Error('转换请求被中断，请稍后重试；如果是较大的 .doc 文件，建议先用 Word/WPS 另存为 .docx 后再上传。')
-  }
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}))
-    throw new Error(formatApiError(response.status, payload.detail))
-  }
-  return {
-    blob: await response.blob(),
-    filename: parseDownloadFilename(response.headers.get('Content-Disposition')) || toDocxName(file.name),
-    engine: response.headers.get('X-Conversion-Engine')
   }
 }
 

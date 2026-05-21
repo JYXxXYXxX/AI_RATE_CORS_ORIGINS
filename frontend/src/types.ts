@@ -16,6 +16,10 @@ export interface DocumentConversionResponse {
   engine?: string | null
 }
 
+export interface DocumentConversionOptions {
+  onProgress?: (percent: number) => void
+}
+
 export interface UserSummary {
   id: string
   email: string

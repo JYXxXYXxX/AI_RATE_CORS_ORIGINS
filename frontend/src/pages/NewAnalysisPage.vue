@@ -82,6 +82,15 @@
               {{ copy.downloadConverted }}
             </button>
           </div>
+          <div v-if="converterLoading || converterProgress > 0" class="converter-progress">
+            <div class="converter-progress-head">
+              <span>{{ converterLoading ? copy.converting : copy.convertComplete }}</span>
+              <strong>{{ converterProgress }}%</strong>
+            </div>
+            <div class="progress-bar converter-progress-bar">
+              <div class="progress-fill" :style="{ width: `${converterProgress}%` }"></div>
+            </div>
+          </div>
           <p v-if="convertedFile" class="converter-success">
             {{ copy.convertedReady }} <strong>{{ convertedFile.name }}</strong>
           </p>
@@ -326,6 +335,7 @@ const copy = computed(() => locale.value === 'en'
       converterChoose: 'Choose file',
       convertNow: 'Convert to DOCX',
       converting: 'Converting...',
+      convertComplete: 'Conversion complete',
       convertedReady: 'Ready for upload:',
       downloadConverted: 'Download DOCX',
       remove: 'Remove',
@@ -397,6 +407,7 @@ const copy = computed(() => locale.value === 'en'
       converterChoose: '选择文件',
       convertNow: '转成 DOCX',
       converting: '转换中...',
+      convertComplete: '转换完成',
       convertedReady: '已放入上传区：',
       downloadConverted: '下载 DOCX',
       remove: '移除',
@@ -468,7 +479,9 @@ const converterFile = ref<File | null>(null)
 const convertedFile = ref<File | null>(null)
 const convertedDownloadUrl = ref('')
 const converterLoading = ref(false)
+const converterProgress = ref(0)
 const converterError = ref('')
+let converterProgressTimer: number | undefined
 
 const cnkiReportFile = ref<File | null>(null)
 const cnkiExpanded = ref(false)
@@ -509,6 +522,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('patafix:language-change', handleLanguageChange)
+  stopConverterProgress()
   revokeConvertedUrl()
 })
 
@@ -596,15 +610,22 @@ function setConverterFile(file: File) {
   converterFile.value = file
   convertedFile.value = null
   converterError.value = ''
+  converterProgress.value = 0
   revokeConvertedUrl()
 }
 
 async function handleConvertToDocx() {
   if (!converterFile.value || converterLoading.value) return
   converterLoading.value = true
+  converterProgress.value = 1
   converterError.value = ''
+  startConverterProgress()
   try {
-    const result = await convertDocumentToDocx(converterFile.value)
+    const result = await convertDocumentToDocx(converterFile.value, {
+      onProgress: (percent) => {
+        converterProgress.value = Math.max(converterProgress.value, percent)
+      }
+    })
     const docxFile = new File([result.blob], result.filename, {
       type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     })
@@ -612,10 +633,13 @@ async function handleConvertToDocx() {
     selectedFile.value = docxFile
     revokeConvertedUrl()
     convertedDownloadUrl.value = URL.createObjectURL(result.blob)
+    converterProgress.value = 100
   } catch (err) {
     convertedFile.value = null
+    converterProgress.value = 0
     converterError.value = err instanceof Error ? err.message : '转换失败，请确认文件未加密或损坏'
   } finally {
+    stopConverterProgress()
     converterLoading.value = false
   }
 }
@@ -624,7 +648,28 @@ function clearConverter() {
   converterFile.value = null
   convertedFile.value = null
   converterError.value = ''
+  converterProgress.value = 0
+  stopConverterProgress()
   revokeConvertedUrl()
+}
+
+function startConverterProgress() {
+  stopConverterProgress()
+  converterProgressTimer = window.setInterval(() => {
+    if (!converterLoading.value) return
+    if (converterProgress.value < 70) {
+      converterProgress.value += 2
+    } else if (converterProgress.value < 92) {
+      converterProgress.value += 1
+    }
+  }, 700)
+}
+
+function stopConverterProgress() {
+  if (converterProgressTimer) {
+    window.clearInterval(converterProgressTimer)
+    converterProgressTimer = undefined
+  }
 }
 
 function revokeConvertedUrl() {
@@ -1121,6 +1166,28 @@ function handleLanguageChange(event: Event) {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.converter-progress {
+  display: grid;
+  gap: 8px;
+}
+
+.converter-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: #53606f;
+}
+
+.converter-progress-head strong {
+  color: #21755d;
+}
+
+.converter-progress-bar {
+  height: 7px;
 }
 
 .converter-success,
